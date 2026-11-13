@@ -56,6 +56,9 @@ export function formatRoute(route: Route, stage?: string): string {
   const outcome = route.outcome === 'chosen' ? `→ ${route.chosen}` : route.outcome === 'nobody-fits' ? `→ ${t('nobody takes it')}` : `→ ${t('waits for {w}', { w: route.ideal ?? '-' })}`;
   const lines = route.candidates.map(c => `    ${c.worker} [${verdictWord[c.verdict]}]: ${c.reason}`);
   const role = route.role;
-  const roleLines = role ? [`    role: ${role.id ?? 'none'} (${role.source})`, ...(role.definition ? [`    skills: ${(role.definition.skills ?? []).join(', ') || '-'}`, `    MCP: ${Object.keys(role.definition.mcp ?? {}).join(', ') || '-'}`, `    rules: ${role.definition.rules ?? '-'}`, `    requires: ${(role.definition.requires ?? []).join(', ') || '-'}`, `    prefer: ${(role.definition.workers?.prefer ?? []).join(', ') || '-'}; avoid: ${(role.definition.workers?.avoid ?? []).join(', ') || '-'}`] : [])] : [];
+  const d = role?.definition;
+  // A route with a worker group shows the group in its order; an earlier-style role also shows its skills, MCP servers and rules.
+  const roleLines = !role ? [] : d?.group ? [`    route: ${role.id ?? 'none'} (${role.source})`, `    group ${d.group}: ${(d.workers?.prefer ?? []).join(' > ')}`, `    requires: ${(d.requires ?? []).join(', ') || '-'}; avoid: ${(d.workers?.avoid ?? []).join(', ') || '-'}`]
+    : [`    role: ${role.id ?? 'none'} (${role.source})`, ...(d ? [`    skills: ${(d.skills ?? []).join(', ') || '-'}`, `    MCP: ${Object.keys(d.mcp ?? {}).join(', ') || '-'}`, `    rules: ${d.rules ?? '-'}`, `    requires: ${(d.requires ?? []).join(', ') || '-'}`, `    prefer: ${(d.workers?.prefer ?? []).join(', ') || '-'}; avoid: ${(d.workers?.avoid ?? []).join(', ') || '-'}`] : [])];
   return [`${head}  ${outcome}${route.named ? `  (${t('worker text names it by {how}', { how: route.named })})` : ''}`, ...roleLines, ...lines].join('\n');
 }

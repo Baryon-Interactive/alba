@@ -18,9 +18,9 @@ export interface Choosable {
   roleHistory?: Record<string, { samples: number; rate?: number }>;
 }
 
-export interface RolePolicy { id?: string; requires?: string[]; prefer?: string[]; avoid?: string[]; only?: string[] }
+export interface RolePolicy { id?: string; requires?: string[]; prefer?: string[]; avoid?: string[]; only?: string[]; /** The route's worker group, whose members are `prefer` and `only`. */ group?: string }
 export function rolePolicy(role: ResolvedRole): RolePolicy | undefined {
-  return role.definition ? { id: role.id, requires: role.definition.requires, ...role.definition.workers } : undefined;
+  return role.definition ? { id: role.id, requires: role.definition.requires, ...role.definition.workers, ...(role.definition.group ? { group: role.definition.group } : {}) } : undefined;
 }
 export interface RouteInput {
   pinnedWorker?: string;
@@ -102,9 +102,9 @@ function rank(list: Ranked[]): Ranked[] {
   return out;
 }
 
-const why = (c: Ranked, kindLabel: string): string => [
+const why = (c: Ranked, kindLabel: string, group?: string): string => [
   `${c.worker}: role ${kindLabel}`, c.cost === 'included' ? t('included') : t('paid'), pct(c.history),
-  c.preferred ? `role preference ${c.preference! + 1}` : 'unlisted fallback', ...(c.warnings ?? []),
+  c.preferred ? (group ? `group ${group} #${c.preference! + 1}` : `role preference ${c.preference! + 1}`) : 'unlisted fallback', ...(c.warnings ?? []),
   c.load ? t('{n} running', { n: c.running }) : undefined,
 ].filter(Boolean).join(', ');
 
@@ -126,7 +126,7 @@ export function chooseWorker(input: RouteInput, workers: readonly Choosable[]): 
     const base: Ranked = { worker: c.id, preference: preference < 0 ? Number.MAX_SAFE_INTEGER : preference, preferred: preference >= 0, cost: c.cost, running: load, concurrency: c.concurrency, history, verdict: 'passed-over', reason: '', index, load, ...(warnings.length ? { warnings } : {}) };
     if ((!named || input.pinnedWorker) && missing.length) return { ...base, verdict: 'unfit' as const, reason: `missing capabilities: ${missing.join(', ')}` };
     if (!named && input.role!.avoid?.some(matches)) return { ...base, verdict: 'unfit' as const, reason: 'avoided by role' };
-    if (!named && input.role!.only && !input.role!.only.some(matches)) return { ...base, verdict: 'unfit' as const, reason: 'outside role workers.only' };
+    if (!named && input.role!.only && !input.role!.only.some(matches)) return { ...base, verdict: 'unfit' as const, reason: input.role!.group ? `not in worker group ${input.role!.group}` : 'outside role workers.only' };
     if (!c.enabled) return { ...base, verdict: 'unavailable' as const, blocked: 'unavailable' as const, reason: 'turned off in the workers file' };
     if (w.overCap) return { ...base, verdict: 'unavailable' as const, blocked: 'limit' as const, reason: 'daily spend cap reached' };
     if (!w.available) return { ...base, verdict: 'unavailable' as const, blocked: 'unavailable' as const, reason: [w.reasons.join('; ') || t('not available'), c.enabled ? sharedQuota(c, workers) : ''].filter(Boolean).join('; ') };
@@ -146,7 +146,7 @@ export function chooseWorker(input: RouteInput, workers: readonly Choosable[]): 
   const ideal = rank(takers)[0]?.worker;
   for (const c of ranked.slice(1)) {
     const d = better(best, c);
-    const because = d?.because === 'role' ? 'earlier role preference wins'
+    const because = d?.because === 'role' ? (input.role.group ? `earlier in worker group ${input.role.group}` : 'earlier role preference wins')
       : d?.because === 'cost' ? t('paid, while {w} is included', { w: best.worker })
       : d?.because === 'history' ? t('fewer accepted ({a} against {b})', { a: pct(c.history) ?? '-', b: pct(best.history) ?? '-' })
       : d?.because === 'load' ? t('busier ({a} running against {b})', { a: c.running, b: best.running })
@@ -154,10 +154,10 @@ export function chooseWorker(input: RouteInput, workers: readonly Choosable[]): 
     const shared = sharedQuota(workers.find(w => w.config.id === c.worker)!.config, workers.filter(w => w.config.id === best.worker));
     c.reason = `${because}; ${t('{w} is chosen', { w: best.worker })}${shared ? `; ${shared}` : ''}`;
   }
-  if (best) { best.verdict = 'chosen'; best.reason = why(best, label); }
+  if (best) { best.verdict = 'chosen'; best.reason = why(best, label, input.role.group); }
   const sorted: Candidate[] = [...ranked, ...all.filter(c => c.verdict === 'unavailable'), ...all.filter(c => c.verdict === 'unfit')].map(({ index: _i, load: _l, ...c }) => c);
 
-  if (best) return { ...(named ? { named } : {}), outcome: 'chosen', chosen: best.worker, ...(ideal ? { ideal } : {}), why: why(best, label), candidates: sorted };
+  if (best) return { ...(named ? { named } : {}), outcome: 'chosen', chosen: best.worker, ...(ideal ? { ideal } : {}), why: why(best, label, input.role.group), candidates: sorted };
   if (!takers.length) {
     return { ...(named ? { named } : {}), outcome: 'nobody-fits', why: all.length ? t('nobody takes {kind}: {list}', { kind: `role ${label}`, list: all.map(c => `${c.worker} (${c.reason})`).join('; ') }) : t('there is no worker to choose from'), candidates: sorted };
   }

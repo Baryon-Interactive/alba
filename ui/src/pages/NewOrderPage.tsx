@@ -54,7 +54,7 @@ export function NewOrderPage() {
           <Field label={t('Tag')} hint={f.tag && !TAG.test(tag) ? t('Letters and digits, starting with a letter') : undefined}><Input value={f.tag} onChange={e => set('tag', e.target.value)} placeholder="MV5" className="font-mono" autoFocus /></Field>
           <Field label={t('Title')}><Input value={f.title} onChange={e => set('title', e.target.value)} placeholder={t('One line: what is done when it is finished')} /></Field>
         </div>
-        <Field label={t('Role')}><Select value={f.role} onChange={e => set('role', e.target.value)}><option value="">{t('From kind')}</option>{roles.data?.roles.map(r => <option key={r.id} value={r.id}>{r.id}</option>)}</Select>{roles.isError && <ErrorBox error={roles.error} />}</Field>
+        <Field label={t('Route')}><Select value={f.role} onChange={e => set('role', e.target.value)}><option value="">{t('From kind')}</option>{roles.data?.roles.map(r => <option key={r.id} value={r.id}>{r.id}</option>)}</Select>{roles.isError && <ErrorBox error={roles.error} />}</Field>
         <div className="grid items-start gap-4 sm:grid-cols-3">
           <Field label={t('Kind')}><Input value={f.kind} onChange={e => set('kind', e.target.value)} placeholder="gameplay" /></Field>
           <Field label={t('Worker')}>
@@ -66,7 +66,7 @@ export function NewOrderPage() {
           <Field label="base_ref" hint={t('Local branch the worktree starts from')}><Input value={f.base_ref} onChange={e => set('base_ref', e.target.value)} placeholder="main" className="font-mono" /></Field>
         </div>
         {roles.data && <div className="rounded-md border p-3 text-sm">
-          <p>{t('Role')}: <strong>{resolved?.id || t('none')}</strong> → {t('Worker')}: <strong>{candidate || t('No qualifying worker right now')}</strong></p>
+          <p>{t('Route')}: <strong>{resolved?.id || t('none')}</strong> → {t('Worker')}: <strong>{candidate || t('No qualifying worker right now')}</strong></p>
           {!resolved && <p className="text-destructive">{t('No role: choose a role or configure a default.')}</p>}
           {f.worker && missing.length > 0 && <p className="text-warning">{t('Explicit worker is missing capabilities')}: {missing.join(', ')}</p>}
           {!f.role && !f.kind.trim() && <p className="text-xs text-muted-foreground">{t('Preview uses the default role; classification may change it when the order is created.')}</p>}

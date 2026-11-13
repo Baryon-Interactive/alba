@@ -115,7 +115,7 @@ alba orders cancel NEXT
 
 `orders plan` with the tag of an order that is only listed (stage `draft`: no work-order file, never queued or run) turns that order into a plan in place; an empty `--title` keeps its title and omitted `--needs` keep its dependencies. Orders past the draft stage are refused.
 
-`--role` selects a configured execution role for the plan; see [role resolution](../workers/012-routing-and-skills.md#roles). Create plans with `POST /api/orders/plan` (`project`, `tag`, `title`, `kind`, `needs`, `intent`, optional `role`). Edit through `POST /api/orders/:tag/plan` with changed fields. The ordinary cancel action applies. A changed plan invalidates its pending draft.
+`--role` selects a configured execution role for the plan; see [role resolution](../workers/012-routing-and-skills.md#routing-worker-groups-and-routes). Create plans with `POST /api/orders/plan` (`project`, `tag`, `title`, `kind`, `needs`, `intent`, optional `role`). Edit through `POST /api/orders/:tag/plan` with changed fields. The ordinary cancel action applies. A changed plan invalidates its pending draft.
 
 `GET /api/orders/:tag/draft` returns the latest draft action and its preview. `POST` to the same path takes `project`, `actionId`, and `decision: save|accept|reject`; `save` also takes the Markdown `body`. The order page reuses the order body editor, saves the draft durably and refreshes the preview before acceptance. Accept creates `<TAG>-<slug>.md`, records `draft-accepted`, and queues the order. Repeated acceptance does not duplicate the file or action. Existing different files are refused. Reject keeps the plan and draft history; editing the plan opens a new drafting case.
 

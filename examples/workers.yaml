@@ -35,7 +35,7 @@ workers:
     paid: true
     concurrency: 2
     daily_runs: 10
-    notes: Long unattended work: builds, merges, anything that needs care.
+    notes: "Long unattended work: builds, merges, anything that needs care."
     cost: paid
     aliases: [Codex]
     quota: demo-subscription
@@ -93,8 +93,9 @@ workers:
         new: [-s, "{session_id}"]
         resume: [-r, "{session_id}"]
 
-roles:
-  build:
-    kinds: [sim, level]
-    workers: { prefer: [coder-subscription, coder-local] }
-  default: {}
+routing:
+  groups:
+    coders: [coder-subscription, coder-local, "*"]   # in order; then any other worker
+  routes:
+    build: { kinds: [sim, level], group: coders }
+  default: coders

@@ -195,11 +195,69 @@ A worker never edits a shared skill. If one is wrong or missing something it say
 
 ### In the console
 
-The order page shows *Who takes it* (the kind, its source and reason, the resolved role first, its chosen worker, and every candidate with preference, cost, role yield and verdict) with the buttons *Classify again* and *Ask the classifier*, and *Skills for this order* (layer and reason for each skill, where they are put, what workers suggested). The run list shows why each run's worker was chosen and which skills it got. The Workers page shows supply capabilities, model, route, quota, cost, limits and notes; the Roles page shows job definitions, viewable rules, current eligibility and role results; the Skills page shows the registry, the sources, the project layer, who uses each skill and where each engine finds them.
+The order page shows *Who takes it* (the kind, its source and reason, the resolved role first, its chosen worker, and every candidate with preference, cost, role yield and verdict) with the buttons *Classify again* and *Ask the classifier*, and *Skills for this order* (layer and reason for each skill, where they are put, what workers suggested). The run list shows why each run's worker was chosen and which skills it got. The Workers page shows supply capabilities, model, route, quota, cost, limits and notes; the Routing page shows the worker groups, then each route (or earlier role) with its viewable rules, current eligibility and results; the Skills page shows the registry, the sources, the project layer, who uses each skill and where each engine finds them.
 
-## Roles
+## Routing: worker groups and routes
 
-A role defines the job: kinds, required capabilities, skills, MCP servers, standing rules and ordered worker preferences for one run. Define `roles` in the workers file for shared defaults and in `alba.yaml` for project overrides. The producer remains the coordinating layer.
+Routing is the layer above the workers. It says who does which kind of work, in one place:
+
+- A **worker group** is a named, ordered list of workers (ids, aliases, model families or other groups). The first available one
+  takes the order; when it is busy, out of quota, over its spend cap or switched off, the next one does. `"*"` at the end means
+  "then anyone else" (any other worker the route does not avoid); without it, nobody outside the group is chosen.
+- A **route** sends kinds of work to a group, with the capabilities those orders need.
+- `routing.default` names the group of orders no route takes, and `routing.avoid` lists workers no route chooses by itself.
+
+```yaml
+# workers.yaml (shared) or alba.yaml (this project)
+routing:
+  groups:
+    main:  [codex, claude-sonnet]       # in order; the next one when the first cannot start now
+    cheap: [grok, opencode, "*"]        # then anyone else
+    all:   [main, cheap]                # a group may name groups
+  default: main                         # orders that no route takes
+  avoid: [claude-opus]                  # never chosen by a route (an order that names it still gets it)
+  routes:
+    ue:   { kinds: [ue, build], group: main, requires: [shell, git, windows] }
+    art:  { kinds: [art], group: cheap, avoid: [grok] }
+    docs: { kinds: [docs, research], group: all }
+```
+
+Changing a group changes every route that uses it: "Codex first everywhere" is one edit of `main`.
+
+How a route resolves:
+
+- The order's route is its explicit `role` (`--role`), else the first route whose `kinds` has the order's kind, else the default.
+  An order whose worker text names a worker still goes to that worker, as before.
+- The group's workers, in order, are the route's preference; without `"*"` they are also the only workers it may use. Within the
+  group the usual rules choose: required capabilities, availability, limits, then the group's order, accepted-without-rework share,
+  included before paid, load and file order ([Choosing the worker](#choosing-the-worker)).
+- A route may also write `workers: { prefer, avoid, only }` instead of `group` (not both `group` and `prefer`/`only`).
+- Routing in `alba.yaml` adds to the workers file's: a project group replaces the shared group of the same name, a project route the
+  shared route of the same name (a project route with its own worker list drops the shared route's group).
+- A group member that names no worker, a group that contains itself and a route with an unknown group are errors when the files are
+  read.
+
+A route only routes. `skills`, `mcp`, `rules`, `tools` and `effort` are refused on a route, with where they belong instead: skills by
+kind under `skills.by_kind`, MCP servers and tools as [tool plugins](031-tool-plugins.md) under `plugins.by_kind`, standing rules
+as a skill, effort in the worker's launch template.
+
+```sh
+alba routing                 # groups with their workers in order, routes, and who qualifies now (--json for the view)
+alba routing migrate         # the routing that replaces each file's roles, and where their skills, MCP servers and rules go
+alba route <TAG>             # who takes one order and why: "group main #2", "not in worker group main"
+```
+
+`alba routing migrate` writes nothing. Each role becomes a route; a role that limited its workers (`only`) gets a group with them in
+its preferred order, one that only preferred some gets a group of those followed by `"*"`, roles with the same list share a group,
+and a worker that two routes or more avoided (and no route could otherwise reach) is written once under `routing.avoid`. The routing it prints chooses the same worker as the
+roles did. Replace `roles:` with it in that file (a file may have `roles` or `routing`, not both).
+
+The console's **Routing** page shows the groups (their workers in order and the routes that use them) and each route with its
+candidates and results. `GET /api/roles?project=` answers `{ roles, groups }`.
+
+## Roles (the earlier form)
+
+`roles` is still read, in the workers file and in `alba.yaml`, and routes the same way; routes are roles that only route, and `alba routing migrate` prints the routing that replaces a file's roles. A role defines the job: kinds, required capabilities, skills, MCP servers, standing rules and ordered worker preferences for one run. Define `roles` in the workers file for shared defaults and in `alba.yaml` for project overrides. The producer remains the coordinating layer.
 
 ```yaml
 roles:
@@ -277,7 +335,7 @@ Only environment variable **names** belong in `env_from`. Missing variables fail
 
 A server's optional `engines` list limits it to those engines; absent or empty means all. Filtering out a server produces no unsupported-engine warning. OpenCode generation refuses an existing unmanaged config instead of replacing it. A checksum identifies the generated file; the next launch removes it (also when the next run has no role), and refuses to remove a file that was edited. Claude's ignored JSON is passed explicitly, so a later run without a role does not load it through the adapter. Existing engine/user configuration still follows each engine's normal loading rules.
 
-The order page has a role selector and the complete role contribution beside routing reasons. `GET /api/roles?project=...` returns definitions, sources and results; order creation accepts `role`; `POST /api/orders/:tag/role` takes `{project, role}` (empty role restores inference). Role edits are stored as order-update events and affect the next launch. The dedicated Roles page lists definitions, current qualifying workers, exclusion reasons, viewable rule text and lifetime worker results; the Usage page shows results for its selected period.
+The order page has a role selector and the complete role contribution beside routing reasons. `GET /api/roles?project=...` returns definitions, sources and results; order creation accepts `role`; `POST /api/orders/:tag/role` takes `{project, role}` (empty role restores inference). Role edits are stored as order-update events and affect the next launch. The Routing page lists the worker groups and the definitions, current qualifying workers, exclusion reasons, viewable rule text and lifetime worker results; the Usage page shows results for its selected period.
 
 ### Role × worker results
 

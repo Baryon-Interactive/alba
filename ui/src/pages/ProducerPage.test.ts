@@ -22,7 +22,7 @@ afterEach(() => setLang('en'));
 it('renders stored fixture facts in section order and defers order-event reads', () => {
   vi.mocked(useProducerAnalysis).mockReturnValue({ data: { project: 'demo', snapshot: producerFactsFixture().snapshot } } as ReturnType<typeof useProducerAnalysis>);
   const html = render();
-  const names = ['Constraint now', 'Goal', 'Flow', 'Rule agreement', 'Routing', 'Brief history', 'Order events'];
+  const names = ['Constraint now', 'Goal', 'Flow', 'Rule agreement', 'Dispatch results', 'Brief history', 'Order events'];
   expect(names.map(n => html.indexOf(n))).toEqual(names.map(n => html.indexOf(n)).sort((a, b) => a - b));
   for (const text of ['Slot occupancy', 'Non-ready report causes', 'Cumulative flow', 'Open item age', 'unclassified', 'Fewer than five decided orders', '1008 samples']) expect(html).toContain(text);
   expect(html).not.toContain('<details open');
@@ -47,7 +47,7 @@ it('renders the producer page, metrics, constraint and risks in Chinese', () => 
   setLang('zh');
   vi.mocked(useProducerAnalysis).mockReturnValue({ data: { project: 'demo', snapshot: producerFactsFixture().snapshot } } as ReturnType<typeof useProducerAnalysis>);
   const html = render();
-  for (const text of [translated["Constraint now"], translated['Risk register ({count})'].split('{count}')[0].slice(0, -1), translated["Standard responses"], translated['Evidence ({count})'].split('{count}')[0].slice(0, -1), translated["Slot occupancy"], translated["Non-ready report causes"], translated["Cumulative flow"], translated['Open item age against kind p85'], translated["Routing"], translated["Order events"], ...translated['First seen {first} · Last seen {last}'].replace('{first}', '').replace('{last}', '').split(' · ').map(s => s.trim()), translated['{count} samples'].replace('{count}', '1008'), translated['{cap} · cap {limit}'].split(' · ')[1].replace('{limit}', '').trim()]) expect(html).toContain(text);
+  for (const text of [translated["Constraint now"], translated['Risk register ({count})'].split('{count}')[0].slice(0, -1), translated["Standard responses"], translated['Evidence ({count})'].split('{count}')[0].slice(0, -1), translated["Slot occupancy"], translated["Non-ready report causes"], translated["Cumulative flow"], translated['Open item age against kind p85'], translated["Dispatch results"], translated["Order events"], ...translated['First seen {first} · Last seen {last}'].replace('{first}', '').replace('{last}', '').split(' · ').map(s => s.trim()), translated['{count} samples'].replace('{count}', '1008'), translated['{cap} · cap {limit}'].split(' · ')[1].replace('{limit}', '').trim()]) expect(html).toContain(text);
   for (const text of ['Constraint now', 'Slot occupancy', 'Non-ready report causes', 'Cumulative flow', 'First seen', 'Standard responses', 'Comparisons are hidden']) expect(html).not.toContain(text);
   expect(html).toContain('F:constraint.queue.stopped.share.7d');
   expect(html).toContain('F:cause.environment.7d');

@@ -1,4 +1,5 @@
 import { rolesView } from '../roles/view.ts';
+import { migrateRoles } from '../roles/migrate.ts';
 import { fail } from '../i18n.ts';
 import type { ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
@@ -33,6 +34,30 @@ export async function runRouting(group: string, rest: string[], values: RoutingV
     }
     if ((rest[0] === 'list' && rest.length === 1) || !rest.length) return JSON.stringify(view, null, 2);
     return fail('Usage: alba roles list | alba roles show <ID>');
+  }
+  if (group === 'routing') {
+    // alba routing [list] [--json]: worker groups and routes; alba routing migrate: the routing that replaces the roles of each file
+    let file: WorkersFile | undefined;
+    try { file = workers(); } catch { file = undefined; }
+    if (rest[0] === 'migrate' && rest.length === 1) {
+      const out: string[] = [];
+      for (const [label, roles, current] of [[cfg.file, cfg.roles, cfg.uses_routing], [file?.file, file?.roles, file?.uses_routing]] as const) {
+        if (!label || !roles || !Object.keys(roles).length) continue;
+        if (current) { out.push(t('{file}: already uses routing.', { file: label })); continue; }
+        const m = migrateRoles(roles);
+        out.push(t('# {file}: replace "roles:" with', { file: label }), m.yaml.trimEnd(), ...(m.notes.length ? ['', t('# Moved out of the routes:'), ...m.notes.map(n => `#   ${n}`)] : []), '');
+      }
+      return out.length ? out.join('\n') : t('Nothing to migrate: no roles in the project or workers file.');
+    }
+    if (rest.length && !(rest[0] === 'list' && rest.length === 1)) return fail('Usage: alba routing [list] [--json] | alba routing migrate');
+    const view = rolesView(cfg, file, orders.all(), [], file ? tick(cfg, orders, file, systemProbes, { record: false }).workers : []);
+    if (values.json) return JSON.stringify(view, null, 2);
+    const lines = [t('Worker groups'), ...(view.groups.length ? view.groups.map(g => `  ${g.name}: ${g.members.map(m => (m === '*' ? t('anyone else') : m)).join(' > ')}${g.routes.length ? `  (${t('routes')}: ${g.routes.join(', ')})` : ''}`) : [`  ${t('none')}`]), '', t('Routes')];
+    for (const r of view.roles) {
+      const who = r.group ? `${t('group')} ${r.group}` : r.workers?.prefer?.length ? `${t('prefer')} ${r.workers.prefer.join(' > ')}` : t('any worker');
+      lines.push(`  ${r.id}${r.default || r.id === 'default' ? ` (${t('default')})` : ''}: ${r.kinds?.length ? r.kinds.join(', ') : r.default || r.id === 'default' ? t('everything no other route takes') : '-'} -> ${who}${r.workers?.avoid?.length ? `; ${t('avoid')} ${r.workers.avoid.join(', ')}` : ''}${r.requires?.length ? `; ${t('requires')} ${r.requires.join(', ')}` : ''}  [${t('now')}: ${r.qualifying.join(', ') || t('nobody')}]`);
+    }
+    return lines.join('\n');
   }
   if (group === 'route') {
     // alba route [TAG...] [--all] [--json]: who would take each order and why; nothing is started or stored

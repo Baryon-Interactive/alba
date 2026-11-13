@@ -13,7 +13,7 @@ So the tool reads the quota of every worker before it decides anything, and trea
 
 ## The workers file
 
-One `workers.yaml` per person or machine (not per project). Its path is given with `--workers` or `ALBA_WORKERS`. Workers describe compute supply: engine, model, route, capabilities, quota, cost and limits. Job knowledge belongs to [roles](012-routing-and-skills.md#roles), which can also be shared from this file. The file holds no credentials, only references to environment variables or quota commands.
+One `workers.yaml` per person or machine (not per project). Its path is given with `--workers` or `ALBA_WORKERS`. Workers describe compute supply: engine, model, route, capabilities, quota, cost and limits. Job knowledge belongs to [roles](012-routing-and-skills.md#routing-worker-groups-and-routes), which can also be shared from this file. The file holds no credentials, only references to environment variables or quota commands.
 
 ```yaml
 quota_sources:
@@ -232,4 +232,4 @@ Transient errors are looked for only in `error` events and in the program's own 
 
 ## Shared roles
 
-The workers file may define top-level `roles` containing kinds, required capabilities, skills, MCP servers, Markdown rules and ordered worker prefer/avoid/only lists. Projects override these definitions key by key. Every order resolves an explicit role, a kind mapping or a default; without one, it cannot dispatch. Rank is role preference, reviewed role yield, cost, load, then file order. See [Roles](012-routing-and-skills.md#roles) for examples, engine adapters and results.
+The workers file may define top-level `roles` containing kinds, required capabilities, skills, MCP servers, Markdown rules and ordered worker prefer/avoid/only lists. Projects override these definitions key by key. Every order resolves an explicit role, a kind mapping or a default; without one, it cannot dispatch. Rank is role preference, reviewed role yield, cost, load, then file order. See [Roles](012-routing-and-skills.md#routing-worker-groups-and-routes) for examples, engine adapters and results.

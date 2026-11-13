@@ -145,7 +145,7 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
         </Section>
         <Section title={t('Definition')}>
           <Card><CardContent><dl>
-            <Fact label={t('Role')}>{route.data?.role?.id ?? o.role}</Fact>
+            <Fact label={t('Route')}>{route.data?.role?.id ?? o.role}</Fact>
             <Fact label={t('Worker')}>{route.data?.chosen ?? o.worker}</Fact>
             <Fact label={t('Next worker')}>{o.nextWorker}</Fact>
             <Fact label={t('Kind')}>{o.kind}</Fact>

@@ -177,7 +177,9 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   leases [list] | leases release <resource> <TAG>   the leases held now; a person takes one back (a run that is gone, a lease that ran out)
   loops [TAG] [--all]                        read the logs of open runs (every run with --all) and say which repeated a failing command, took turns between two commands, or sat idle with the log growing; nothing is changed
   route [TAG...] [--all] [--json]            who would take each order and why (role, kind, capabilities, preferences, yield, cost and load); nothing is started. Without tags: the queued orders and those waiting for a need
-  roles list | roles show ID [--json]       effective roles, per-key source files and per-worker results
+  routing [list] [--json]                   worker groups and the routes that send each kind of work to them, and who qualifies now
+  routing migrate                           print the routing (routes and worker groups) that replaces each file's roles; nothing is written
+  roles list | roles show ID [--json]       effective routes (earlier: roles), per-key source files and per-worker results
   plugins [list] | show <id> | doctor [<id>...] [--json]   tool plugins: built in, the project's own, which are enabled, and whether they work on this machine
   editors [list] [--json] | restart <TAG> | stop <TAG>
                                              the editors runs have for themselves (editors: in alba.yaml): order, machine, port, whether the MCP server answers; restart or stop a local one
@@ -508,7 +510,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
   })();
   if (group === 'tools') return runTools(cfg, orders, command, rest, { json: values.json === true, order: values.order, input: values.input, arg: values.arg, quote: values.quote }, code => { exitCode = code; });
   if (group === 'plugins') return runPlugins(cfg, command, rest, values.json === true, code => { exitCode = code; });
-  if (group === 'route' || group === 'classify' || group === 'skills' || group === 'roles') return runRouting(group, command === undefined ? rest : [command, ...rest], values, cfg, orders, () => workersOf(values.workers, cfg)).then(text => text ?? '');
+  if (group === 'route' || group === 'classify' || group === 'skills' || group === 'roles' || group === 'routing') return runRouting(group, command === undefined ? rest : [command, ...rest], values, cfg, orders, () => workersOf(values.workers, cfg)).then(text => text ?? '');
 
   const library = runLibrary(group, command, rest, values, cfg, orders, () => { const file = values.workers ?? process.env.ALBA_WORKERS ?? cfg.workers; return file ? loadWorkers(file) : undefined; }, code => { exitCode = code; });
   if (library !== undefined) return library;

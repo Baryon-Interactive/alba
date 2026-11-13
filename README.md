@@ -20,7 +20,10 @@ right worker on the right machine, watches the run live and accepts nothing with
   facts (commits, reports, decisions), so the board cannot drift from what happened. [Orders and stages](docs/workflow/002-orders-and-stages.md)
 - **One worktree per run.** Every run gets its own branch and worktree, so parallel workers never step on each other, and a review
   looks at exactly what the worker committed. [Runs and resume](docs/workflow/005-run-and-resume.md)
-- **Scheduling across workers and machines.** A tick picks the next orders and the worker for each: by role, capability, quota left,
+- **Routing above the workers.** Worker groups are ordered lists of workers with a fallback: the first that can start takes the
+  order, then the next. Routes send each kind of work to a group, so "Codex first everywhere" is one edit of one group, and workers
+  you never want chosen are listed once. [Routing](docs/workers/012-routing-and-skills.md#routing-worker-groups-and-routes)
+- **Scheduling across workers and machines.** A tick picks the next orders and the worker for each: by route, capability, quota left,
   daily spend, concurrency, shared resources and caps. A worker can live on another machine; Alba ships the work there over SSH and
   brings the commits back. [Scheduling across machines](#scheduling-across-machines)
 - **Quota-aware hand-over.** When a worker's usage window runs out or its service is at capacity, the order waits for it or goes to the
@@ -32,8 +35,8 @@ right worker on the right machine, watches the run live and accepts nothing with
 - **Review by evidence.** A worker's exit code approves nothing. A delivery shows its report, diff, acceptance evidence and merge
   readiness; an optional pipeline checks, verifies independently and merges, and nightly gates run the expensive suites once per
   batch. [Review](docs/workflow/006-review.md), [acceptance pipeline](docs/workflow/026-acceptance-pipeline.md), [nightly gates](docs/operations/029-nightly-gates.md)
-- **Roles, skills and lessons.** Roles map kinds of work to requirements, preferred workers, skills and MCP servers. A run sees only the
-  skills Alba chose for it, and the prompt carries the lessons that share a tag with the order. [Routing and skills](docs/workers/012-routing-and-skills.md)
+- **Skills and lessons.** Skills are attached by kind, by order or by a tool, and a run sees only the skills Alba chose for it; the
+  prompt carries the lessons that share a tag with the order. [Skills](docs/workers/012-routing-and-skills.md#skills)
 - **Tool plugins and spend.** Image, 3D and other paid services come in as plugins with their MCP server, skill and resources; a paid
   call is quoted first and waits for approval. [Tool plugins](docs/workers/031-tool-plugins.md), [usage and cost](docs/console/020-usage-and-cost.md)
 - **An optional producer.** A policy-gated assistant turns facts into cases and proposed actions, and acts by itself only where your
@@ -163,6 +166,8 @@ To use Alba with your own repository (any engine, one machine, a Codex or Claude
 | Order | A bounded task with intent, dependencies and acceptance criteria |
 | Run | One worker attempt on an order, recorded with process identity and outcome |
 | Worker | Configured compute supply: CLI/script, capabilities, quota and launch template |
+| Worker group | An ordered list of workers with a fallback; the layer routes draw on |
+| Route | Sends kinds of work to a worker group, with the capabilities they need |
 | Review | A decision based on the report, committed changes and acceptance evidence |
 | Gate | A deterministic condition that blocks dispatch or approval when unmet |
 

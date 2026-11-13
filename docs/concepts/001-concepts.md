@@ -12,7 +12,7 @@
 | Stage | Where an order stands, computed from runs, reports and actions (document 002). Never stored. |
 | Mandate | Why an order may be done and how far: the person's words, a decision-number range, a spend cap, protected paths. Stored and shown only. |
 | Worker | Compute supply: engine, model, route/provider, capabilities, quota, cost and limits, or a session offered as a card. Workers hold no kinds, job preferences or skills selection. `notes` describe supply and never affect routing. |
-| Role | The job: kinds, required capabilities, skills, MCP servers, rules and ordered worker preferences. Resolve explicit role, then kind mapping, then default role; without a match, routing reports `no role`. |
+| Route | Who does a kind of work: kinds, required capabilities and a worker group (an ordered list of workers with a fallback, the layer above the workers). Resolve the order's explicit `role`, then the kind mapping, then the default route; without a match, routing reports `no role`. The earlier form, a role, also carried skills, MCP servers and rules; see [routing](../workers/012-routing-and-skills.md#routing-worker-groups-and-routes). |
 | Capability | A supply tag such as `shell`, `vision` or `long-context`. A role requires every listed tag; custom tags are allowed and listed. |
 | Quota source | Where a worker's usage windows and balance are read from (document 003). |
 | Kind / heavy class | Labels on an order used for limits: `kind` says what sort of work it is (for example `sim` or `build`), `heavy` names a scarce shared resource (for example a core module that only two orders may change at once). |

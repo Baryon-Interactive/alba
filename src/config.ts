@@ -5,7 +5,8 @@ import { validateAccept, type AcceptConfig } from './review/accept-config.ts';
 import { safePackageRoot } from './clean/safety.ts';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { validateRoles, type Roles } from './roles/config.ts';
+import type { Roles } from './roles/config.ts';
+import { routingOf } from './workers/config.ts';
 import path from 'node:path';
 import { parse } from 'yaml';
 import { STAGES, type Stage } from './orders/model.ts';
@@ -207,6 +208,12 @@ export interface ProjectConfig {
   intake?: IntakeConfig;
   accept?: AcceptConfig;
   roles?: Roles;
+  /** `routing.groups` of the project file. */
+  worker_groups?: import('./roles/config.ts').WorkerGroups;
+  /** `routing.avoid` of the project file: workers no route chooses by itself. */
+  routing_avoid?: string[];
+  /** The project file writes `routing` (otherwise its routes, if any, are the earlier `roles`). */
+  uses_routing?: true;
   drafting?: DraftingConfig;
   budget?: { tokens_per_day?: number; tokens_per_order?: number; cost_per_day?: number; currency?: string };
   usage_warnings?: import('./usage/types.ts').WasteRules;
@@ -515,7 +522,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.kinds !== undefined) cfg.kinds = validateKinds(raw.kinds, file);
   if (raw.classifier !== undefined) cfg.classifier = validateClassifier(raw.classifier, file);
   if (raw.skills !== undefined) cfg.skills = validateProjectSkills(raw.skills, file, base);
-  if (raw.roles !== undefined) cfg.roles = validateRoles(raw.roles, file);
+  Object.assign(cfg, routingOf(raw, file));
   if (raw.resources !== undefined) cfg.resources = validateResources(raw.resources, file);
   if (raw.plugins !== undefined) {
     cfg.plugins = validatePlugins(raw.plugins, file, base);
@@ -531,7 +538,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.art !== undefined) cfg.art = validateArt(raw.art, file, base, cfg.root, id);
   if (raw.credits !== undefined) cfg.credits = validateCredits(raw.credits, file, base, cfg.root, id);
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'plugins', 'editors'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }

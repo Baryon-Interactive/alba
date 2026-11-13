@@ -108,10 +108,12 @@ function documents(c: Ctx): boolean {
   return send(res, 200, { project: p.info.id, q, count: items.length, items }), true;
 }
 
+/** The mock's routing: two worker groups and three routes, resolved as `effectiveRoles` would (a group gives prefer and only). */
+const GROUPS = { main: ['codex', 'codex-gpu', 'opencode-build'], art: ['claude-card', '*'] };
 const ROLES: Roles = {
-  builder: { description: 'Build, edit and verify the project', kinds: ['gameplay', 'systems', 'tools', 'ui', 'build'], requires: ['shell', 'edit', 'git'], workers: { prefer: ['codex', 'opencode'] }, skills: ['commit-style'], sources: {} },
-  visual: { description: 'Review and prepare artwork', kinds: ['art'], requires: ['vision'], workers: { prefer: ['claude-card'] }, sources: {} },
-  default: { description: 'General project work', requires: ['shell'], sources: {} },
+  builder: { description: 'Build, edit and verify the project', kinds: ['gameplay', 'systems', 'tools', 'ui', 'build'], requires: ['shell', 'edit', 'git'], group: 'main', workers: { prefer: GROUPS.main, only: GROUPS.main, avoid: ['grok'] }, sources: {} },
+  visual: { description: 'Review and prepare artwork', kinds: ['art'], requires: ['vision'], group: 'art', workers: { prefer: ['claude-card'], avoid: ['grok'] }, sources: {} },
+  default: { description: 'General project work', requires: ['shell'], group: 'main', workers: { prefer: GROUPS.main, only: GROUPS.main, avoid: ['grok'] }, sources: {} },
 };
 function supplyOf(p: MockProject): Choosable[] {
   return makeWorkers(p).map(w => ({
@@ -152,9 +154,9 @@ export function handleExtras(c: Ctx): boolean {
   if (path === 'roles' && method === 'GET') {
     const supply = supplyOf(p);
     return send(res, 200, { roles: Object.entries(ROLES).map(([id, role]) => {
-      const candidates = chooseWorker({ kind: '', tags: [], role: { id, requires: role.requires, ...role.workers } }, supply).candidates;
+      const candidates = chooseWorker({ kind: '', tags: [], role: { id, requires: role.requires, ...role.workers, group: role.group } }, supply).candidates;
       return { id, ...role, candidates, qualifying: candidates.filter(c => c.verdict === 'chosen' || c.verdict === 'passed-over').map(c => c.worker), results: [] };
-    }) }), true;
+    }), groups: Object.entries(GROUPS).map(([name, members]) => ({ name, list: members, members, routes: Object.entries(ROLES).filter(([, r]) => r.group === name).map(([id]) => id), source: 'workers' as const })) }), true;
   }
   const roleEdit = /^orders\/([^/]+)\/role$/.exec(path);
   if (roleEdit && method === 'POST') {

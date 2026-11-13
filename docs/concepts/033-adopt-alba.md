@@ -1,7 +1,7 @@
 # 033. Adopt Alba in your own project
 
 This page takes an existing game repository (any engine, or none) from nothing to a first order run by a worker. It assumes
-one machine and one Codex or Claude subscription; everything else ([roles](../workers/012-routing-and-skills.md#roles), kinds, caps,
+one machine and one Codex or Claude subscription; everything else ([routing](../workers/012-routing-and-skills.md#routing-worker-groups-and-routes), kinds, caps,
 remote machines, the producer, tools) can be added later.
 
 You need Node 24, Git and Alba, either as a checkout (`pnpm install --frozen-lockfile`, and `pnpm -C ui build` for the
@@ -63,7 +63,7 @@ workers:
 ```
 
 `alba workers` lists the workers and says why one cannot be used (no launch template; a Claude worker that names no sign-in is
-reported on every pass). With no `roles` written, every order may go to any worker; write roles when several workers should
+reported on every pass). With no `routing` written, every order may go to any worker; write routing when several workers should
 split the work ([012](../workers/012-routing-and-skills.md)).
 
 Keep Alba's files out of your commits: add the state folder (`.alba/`) to `.gitignore`. The `orders/` folder may be
@@ -90,7 +90,7 @@ report. Review it on the console (`alba serve`, then open the printed address) o
 
 | Need | Where |
 |---|---|
-| Several workers splitting the work by kind, preferences, fallbacks | [roles and routing](../workers/012-routing-and-skills.md) |
+| Several workers splitting the work by kind, preferences, fallbacks | [routing: worker groups and routes](../workers/012-routing-and-skills.md#routing-worker-groups-and-routes) |
 | One build at a time, shared devices | `dispatch.caps`, `resources` ([014](../workers/014-monitor-leases-loops.md)) |
 | Skills for your engine, and Alba's built-in ones (`game-capture-windows`, `unreal-headless-pipeline`, ...) | [skills](../workers/012-routing-and-skills.md#albas-skill-library) |
 | Rules every order should carry | `lessons` and Alba's lesson packs ([library formats](../library-formats.md#lessons)) |

@@ -1,6 +1,6 @@
 export const CAPABILITIES = ['shell', 'edit', 'git', 'vision', 'web', 'long-context', 'long-run', 'windows', 'mcp', 'fast', 'cheap', 'strong-reasoning'] as const;
 import { existsSync, readFileSync } from 'node:fs';
-import { validateRoles, type Roles } from '../roles/config.ts';
+import { validateRoles, validateRouting, type Roles, type WorkerGroups } from '../roles/config.ts';
 import path from 'node:path';
 import { parse } from 'yaml';
 import { fail } from '../i18n.ts';
@@ -87,6 +87,12 @@ export interface WorkerConfig {
 
 export interface WorkersFile {
   roles?: Roles;
+  /** `routing.groups` of this file. */
+  worker_groups?: WorkerGroups;
+  /** `routing.avoid` of this file: workers no route chooses by itself. */
+  routing_avoid?: string[];
+  /** The file writes `routing` (otherwise its routes, if any, are the earlier `roles`). */
+  uses_routing?: true;
   warnings?: string[];
   extraCapabilities?: string[];
   pricing?: Record<string, Pricing>;
@@ -110,7 +116,7 @@ export function loadWorkers(file: string): WorkersFile {
 
 export function validateWorkers(raw: unknown, file: string): WorkersFile {
   if (!isRecord(raw)) fail('{file}: the top level must be a mapping with "workers" (and optionally "quota_sources").', { file });
-  const unknownTop = Object.keys(raw).filter(k => !['workers', 'quota_sources', 'skills', 'usage_ledgers', 'pricing', 'roles'].includes(k));
+  const unknownTop = Object.keys(raw).filter(k => !['workers', 'quota_sources', 'skills', 'usage_ledgers', 'pricing', 'roles', 'routing'].includes(k));
   if (unknownTop.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknownTop.join(', ') });
   const sources: Record<string, QuotaConfig> = {};
   if (raw.quota_sources !== undefined) {
@@ -136,7 +142,14 @@ export function validateWorkers(raw: unknown, file: string): WorkersFile {
   const ledgers = raw.usage_ledgers === undefined ? undefined : validateUsageLedgers(raw.usage_ledgers, file, path.dirname(path.resolve(file)));
   return { workers, pricing, quota_sources: sources, warnings,
     extraCapabilities: [...new Set(workers.flatMap(w => w.capabilities).filter(c => !(CAPABILITIES as readonly string[]).includes(c)))],
-    ...(raw.roles !== undefined ? { roles: validateRoles(raw.roles, file) } : {}), ...(skills ? { skills } : {}), ...(ledgers ? { usage_ledgers: ledgers } : {}), file };
+    ...routingOf(raw, file), ...(skills ? { skills } : {}), ...(ledgers ? { usage_ledgers: ledgers } : {}), file };
+}
+
+/** The routes and worker groups of a file: `routing` (the current form) or `roles` (the earlier one), never both. */
+export function routingOf(raw: Record<string, unknown>, file: string): { roles?: Roles; worker_groups?: WorkerGroups; routing_avoid?: string[]; uses_routing?: true } {
+  if (raw.routing !== undefined && raw.roles !== undefined) fail('{file}: "roles" and "routing" are both set; routing replaces roles, keep one (alba routing migrate prints the routing for the roles you have).', { file });
+  if (raw.routing !== undefined) { const r = validateRouting(raw.routing, file); return { roles: r.roles, uses_routing: true, ...(Object.keys(r.groups).length ? { worker_groups: r.groups } : {}), ...(r.avoid.length ? { routing_avoid: r.avoid } : {}) }; }
+  return raw.roles !== undefined ? { roles: validateRoles(raw.roles, file) } : {};
 }
 
 function validateWorker(raw: unknown, where: string): WorkerConfig {

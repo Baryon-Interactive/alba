@@ -47,7 +47,7 @@ export function RoutePanel({ project, tag }: { project: string; tag: string }) {
           <p className="text-sm text-muted-foreground">{r.routing.why}</p>
           {r.role?.definition && <div className="grid gap-1 text-sm text-muted-foreground">
             <p>{t('Requires')}: {r.role.definition.requires?.join(', ') || '—'}</p>
-            <p>{t('Role skills')}: {r.role.definition.skills?.join(', ') || '—'}</p>
+            <p>{t('Route skills')}: {r.role.definition.skills?.join(', ') || '—'}</p>
             <p>{t('MCP servers')}: {Object.keys(r.role.definition.mcp ?? {}).join(', ') || '—'}</p>
             <p>{t('Rules file')}: {r.role.definition.rules || '—'}</p>
             <p>{t('Prefer')}: {r.role.definition.workers?.prefer?.join(', ') || '—'} · {t('Avoid')}: {r.role.definition.workers?.avoid?.join(', ') || '—'}</p>
