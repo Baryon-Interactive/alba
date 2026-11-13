@@ -14,6 +14,7 @@ import { ago, duration, tokens } from '@/lib/format';
 import { stageLabel } from '@/lib/stages';
 import { attentionLabel, orderPath, projectPath, STAGE_ORDER } from '@/lib/overview';
 import { t } from '@/i18n';
+import { CountUp, nth } from '@/components/motion';
 
 const panel = 'rounded-xl border bg-card overflow-hidden';
 
@@ -33,17 +34,16 @@ function Brief({ o }: { o: ProjectOverview }) {
     { label: t('Merged in 7 days'), value: merged, to: `${base}/board?stage=merged`, color: 'var(--success)' },
     { label: t('Tokens today'), value: tokens(o.usage?.today.total.tokens), to: `${base}/usage`, color: 'var(--muted-foreground)' },
   ];
-  return <section className="relative overflow-hidden rounded-2xl border bg-card">
-    <div aria-hidden className="pointer-events-none absolute -top-24 right-[-6rem] size-72 rounded-full bg-[radial-gradient(circle,color-mix(in_oklab,var(--brand)_30%,transparent),transparent_65%)]" />
+  return <section className="sky rise rounded-2xl border bg-card">
     <div className="relative px-6 pt-5 pb-1">
       <div className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">{o.name}</div>
-      <h1 className="mt-1 text-[26px] leading-tight font-semibold tracking-[-0.02em]">{greeting(o.at)}</h1>
+      <h1 className="dawn-text mt-1 w-fit text-[26px] leading-tight font-semibold tracking-[-0.02em]">{greeting(o.at)}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{o.needsCount ? t('{n} things are waiting for you; everything else is moving on its own.', { n: o.needsCount }) : t('Nothing is waiting for you. The workers carry on.')} <span className="whitespace-nowrap">{t('{n} orders', { n: o.total })} · {t('read {when}', { when: ago(o.at) })}</span></p>
     </div>
-    <div className="relative grid grid-cols-2 gap-px p-4 sm:grid-cols-3 lg:grid-cols-5">
-      {tiles.map(tile => <Link key={tile.label} to={tile.to} className="group rounded-xl px-3 py-2.5 transition-colors hover:bg-accent/60">
+    <div className="stagger relative grid grid-cols-2 gap-px p-4 sm:grid-cols-3 lg:grid-cols-5">
+      {tiles.map(tile => <Link key={tile.label} to={tile.to} className="group rounded-xl px-3 py-2.5 transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-accent/60">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><span aria-hidden className="size-1.5 rounded-full" style={{ background: tile.color }} />{tile.label}</div>
-        <div className={`mt-1 text-[28px] leading-none font-semibold tabular-nums tracking-[-0.02em] ${tile.strong ? 'text-primary' : ''}`}>{tile.value}</div>
+        <div className={`mt-1 text-[28px] leading-none font-semibold tabular-nums tracking-[-0.02em] ${tile.strong ? 'text-primary' : ''}`}><CountUp value={tile.value} /></div>
       </Link>)}
     </div>
   </section>;
@@ -57,7 +57,7 @@ function Attention({ o }: { o: ProjectOverview }) {
   const actionable = o.needsYou.items.filter(item => item.stage === 'awaiting-review' || item.stage === 'awaiting-user');
   const cards = o.next.moves.filter(item => item.mode === 'card');
   const count = o.needsYou.items.length + picks.length + quotes.length + cards.length;
-  return <section className={`${panel} ${count ? 'border-brand/45' : ''}`}>
+  return <section className={`${panel} rise ${count ? 'border-brand/45' : ''}`} style={nth(1)}>
     <div className={`flex items-center justify-between border-b px-5 py-3 ${count ? 'bg-brand/8' : ''}`}><h2 className="flex items-center gap-2 text-[13px] font-semibold">{t('Needs you')} {count > 0 && <span className="rounded-full bg-brand px-2 py-0.5 text-[11px] text-brand-foreground tabular-nums">{count}</span>}</h2><Link className="text-xs text-muted-foreground hover:underline" to={`${base}/needs`}>{t('View all')}</Link></div>
     {!count && <div className="px-4"><Empty>{t('Nothing is waiting for you.')}</Empty></div>}
     <div className="max-h-72 overflow-y-auto divide-y">
@@ -77,9 +77,9 @@ function Attention({ o }: { o: ProjectOverview }) {
 }
 
 function Live({ o }: { o: ProjectOverview }) {
-  return <section className={panel}><div className="flex items-center justify-between border-b px-5 py-3"><h2 className="flex items-center gap-2 text-[13px] font-semibold">{o.live.items.length > 0 && <span aria-hidden className="live-dot size-1.5 rounded-full bg-info" />}{t('Live work')} <span className="rounded-full bg-info/15 px-2 py-0.5 text-[11px] text-info tabular-nums">{o.live.items.length}</span></h2><Link className="text-xs text-muted-foreground hover:underline" to={`${projectPath(o.project)}/runs`}>{t('All runs')}</Link></div>
+  return <section className={`${panel} rise`} style={nth(2)}><div className="flex items-center justify-between border-b px-5 py-3"><h2 className="flex items-center gap-2 text-[13px] font-semibold">{o.live.items.length > 0 && <span aria-hidden className="ping size-1.5 rounded-full bg-info" />}{t('Live work')} <span className="rounded-full bg-info/15 px-2 py-0.5 text-[11px] text-info tabular-nums">{o.live.items.length}</span></h2><Link className="text-xs text-muted-foreground hover:underline" to={`${projectPath(o.project)}/runs`}>{t('All runs')}</Link></div>
     {!o.live.items.length && <div className="px-4"><Empty>{t('Nothing is running')}</Empty></div>}
-    <div className="max-h-80 overflow-y-auto divide-y">{o.live.items.map(r => <Link key={r.tag} to={r.run ? `${orderPath(o.project, r.tag)}/runs/${encodeURIComponent(r.run.id)}` : orderPath(o.project, r.tag)} className={`block border-l-[3px] px-4 py-2 hover:bg-accent/30 ${(r.commitMinutes ?? 0) > 60 ? 'border-l-destructive bg-destructive/5' : (r.commitMinutes ?? 0) > 45 ? 'border-l-warning bg-warning/5' : 'border-l-info'}`}>
+    <div className="max-h-80 overflow-y-auto divide-y">{o.live.items.map(r => <Link key={r.tag} to={r.run ? `${orderPath(o.project, r.tag)}/runs/${encodeURIComponent(r.run.id)}` : orderPath(o.project, r.tag)} className={`block border-l-[3px] px-4 py-2 hover:bg-accent/30 ${(r.commitMinutes ?? 0) > 60 ? 'border-l-destructive bg-destructive/5' : (r.commitMinutes ?? 0) > 45 ? 'border-l-warning bg-warning/5' : 'scanline border-l-info'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="font-mono text-xs text-info">{r.tag}</span><span className="min-w-52 flex-1 text-sm font-medium">{r.title}</span><span className="text-xs">{r.run?.worker ?? r.worker ?? '—'}</span><span className="text-xs text-muted-foreground">{t('Elapsed {time}', { time: duration(r.run?.started ?? r.monitor?.started ?? r.updated, o.at) })}</span></div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs"><span className="min-w-52 flex-1 text-muted-foreground">{stepText(r.progress)}{r.progress?.current ? ` · ${r.progress.current}` : t('No step reported')}</span><span className={`font-medium ${commitAgeClass(r.commitMinutes)}`}>{r.commitMinutes === undefined ? t('Commit time unknown') : t('{n} min without a commit', { n: r.commitMinutes })}</span><span className="tabular-nums text-muted-foreground">{tokens(r.spend?.total_tokens)} {t('tokens')}</span></div>
     </Link>)}</div>

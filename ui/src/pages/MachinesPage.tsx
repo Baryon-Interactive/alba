@@ -10,7 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/misc';
 import { EmptyState, ErrorBox, PageHeader } from '@/components/common';
-import { useMachineChanges, useMachines, useProjectId } from '@/lib/queries';
+import { useMachineChanges, useMachines, useOverview, useProjectId, useWorkers } from '@/lib/queries';
+import { FleetMap } from '@/components/FleetMap';
+import { nth } from '@/components/motion';
 import { ago, dateTime } from '@/lib/format';
 import { t } from '@/i18n';
 
@@ -29,14 +31,14 @@ function MemoryHistory({ history }: { history: MachineReading[] }) {
     <div className="flex justify-between text-[11px] text-muted-foreground"><span>{t('24 hours ago')}</span><span>{t('Now')}</span></div>
   </figure>;
 }
-function MachineCard({ machine: m, project }: { machine: MachineView; project: string }) {
+function MachineCard({ machine: m, project, index }: { machine: MachineView; project: string; index: number }) {
   const r = m.latest;
   const { check, remove, roles } = useMachineChanges(project);
   const [installing, setInstalling] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const jobs = m.jobs ?? [];
   const suggested = m.suggestions.roles.map(s => s.role).filter(r => !m.roles.includes(r));
-  return <Card data-machine={m.id}><CardContent className="grid gap-4">
+  return <Card id={`machine-${m.id}`} data-machine={m.id} className="rise lift scroll-mt-20" style={nth(index)}><CardContent className="grid gap-4">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="min-w-0"><h2 className="font-semibold break-words">{m.name}</h2><p className="text-xs text-muted-foreground">{m.id} · {m.os}</p></div>
       <Badge tone={!r ? 'neutral' : r.reachable ? 'success' : 'danger'}>{!r ? t('Not probed yet') : r.reachable ? t('Reachable') : t('Unreachable')}</Badge>
@@ -75,10 +77,12 @@ function MachineCard({ machine: m, project }: { machine: MachineView; project: s
 export function MachinesPage() {
   const project = useProjectId();
   const query = useMachines(project);
+  const workers = useWorkers(project);
+  const overview = useOverview(project);
   const [adding, setAdding] = useState(false);
   const addButton = <Button onClick={() => setAdding(true)}><Plus className="size-4" />{t('Add a machine')}</Button>;
   return <><PageHeader title={t('Machines')} count={query.data?.machines.length} actions={addButton}>{t('Machine health and services. Readings refresh with each probe.')}</PageHeader>
-    {query.isError ? <ErrorBox error={query.error} /> : !query.data ? <Skeleton className="h-64" /> : query.data.machines.length ? <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">{query.data.machines.map(m => <MachineCard key={m.id} machine={m} project={project} />)}</div> : <EmptyState icon={<Server />} title={t('No machines yet')} action={addButton}>{t('No machines yet. Add one with the guide: it sets up SSH, tests the connection and writes the registry.')}</EmptyState>}
+    {query.isError ? <ErrorBox error={query.error} /> : !query.data ? <Skeleton className="h-64" /> : query.data.machines.length ? <div className="grid gap-4"><FleetMap machines={query.data.machines} workers={workers.data?.workers ?? []} running={overview.data?.running.items ?? []} /><div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">{query.data.machines.map((m, i) => <MachineCard key={m.id} machine={m} project={project} index={i + 1} />)}</div></div> : <EmptyState icon={<Server />} title={t('No machines yet')} action={addButton}>{t('No machines yet. Add one with the guide: it sets up SSH, tests the connection and writes the registry.')}</EmptyState>}
     <AddMachineDialog project={project} taken={query.data?.machines.map(m => m.id) ?? []} open={adding} onOpenChange={setAdding} />
   </>;
 }

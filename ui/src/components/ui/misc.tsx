@@ -55,4 +55,4 @@ export function Progress({ value, className, tone }: { value: number; className?
   );
 }
 
-export const Skeleton = ({ className }: { className?: string }) => <div className={cn('animate-pulse rounded-md bg-muted', className)} />;
+export const Skeleton = ({ className }: { className?: string }) => <div className={cn('shimmer rounded-md', className)} />;

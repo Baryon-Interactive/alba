@@ -654,6 +654,8 @@ export interface Worker {
   onLimit: 'wait' | 'rotate';
   /** With `onLimit: rotate`, a capacity or quota ending may hand the order to a worker whose cost is paid. */
   rotatePaid: boolean;
+  /** The registry machine it runs on (`host` in the workers file); absent for a worker on the machine running alba. */
+  host?: string;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- editing the workers file ()

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpen, Bell, Factory, Coins, Eraser, Images, Palette, Menu as MenuIcon, Scale, ChevronsUpDown, Command, Cpu, KanbanSquare, Languages, Moon, Play, Plus, Puzzle, Sun, Timer, Check, Files } from 'lucide-react';
+import { Activity, BookOpen, Bell, Factory, Coins, Eraser, Images, Palette, Menu as MenuIcon, Scale, ChevronsUpDown, Command, Cpu, KanbanSquare, Languages, Moon, Play, Plus, Puzzle, Sparkles, Sun, Timer, Check, Files } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle, DrawerContent } from '@/components/ui/dialog';
@@ -12,6 +12,7 @@ import { groupNeedsYou, needsTotal } from '@/lib/needs';
 import { useOverview, useProjectId, useProjects, useSession } from '@/lib/queries';
 import { openStream, type StreamState } from '@/lib/stream';
 import { setTheme, useTheme } from '@/lib/theme';
+import { setMotion, useReducedMotion } from '@/components/motion';
 import { getLang, setLang, t, useLang } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { AlbaLogo, AlbaMark } from '@/components/brand/Logo';
@@ -29,6 +30,7 @@ export function Shell() {
   const session = useSession();
   const overview = useOverview(project);
   const theme = useTheme();
+  const still = useReducedMotion();
   const [stream, setStream] = useState<StreamState>('connecting');
   const [palette, setPalette] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -92,7 +94,7 @@ export function Shell() {
   const sidebar = (
     <>
       <NavLink to="/" className="flex items-center px-4 pt-4 pb-3" aria-label="Alba">
-        <AlbaLogo />
+        <AlbaLogo rise />
       </NavLink>
       <div className="px-2 pb-2">
         <Menu>
@@ -143,7 +145,7 @@ export function Shell() {
       </nav>
       {project && <div className="space-y-1 border-t px-3 py-2.5 text-xs text-muted-foreground">
         {running > 0 ? (
-          <div className="flex items-center gap-1.5 font-medium text-info"><span className="live-dot size-1.5 rounded-full bg-info" /><Play className="size-3" />{t('{n} running', { n: running })}</div>
+          <div className="flex items-center gap-1.5 font-medium text-info"><span className="ping size-1.5 rounded-full bg-info" /><Play className="size-3" />{t('{n} running', { n: running })}</div>
         ) : (
           <div>{t('Nothing is running')}</div>
         )}
@@ -168,7 +170,8 @@ export function Shell() {
         ) : <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar">{sidebar}</aside>}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-13 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur sm:px-6">
+          <header className="relative flex h-13 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur sm:px-6">
+            <div aria-hidden className="dawn-line pointer-events-none absolute inset-x-0 -bottom-px" />
             {narrow && <Button variant="ghost" size="icon" onClick={() => setDrawer(true)} aria-label={t('Menu')}><MenuIcon /></Button>}
             {narrow && <NavLink to="/" aria-label="Alba" className="shrink-0"><AlbaMark className="size-7" /></NavLink>}
             <button onClick={() => setPalette(true)} className="flex h-9 min-w-0 flex-1 items-center sm:w-80 sm:flex-none gap-2 rounded-lg border bg-card px-3 text-sm text-muted-foreground shadow-xs hover:border-primary/40">
@@ -186,12 +189,15 @@ export function Shell() {
             <Tip text={t('Switch language')}>
               <Button variant="ghost" size="icon" onClick={() => setLang(getLang() === 'zh' ? 'en' : 'zh')} aria-label={t('Switch language')}><Languages /></Button>
             </Tip>
+            <Tip text={still ? t('Turn animations on') : t('Turn animations off')}>
+              <Button variant="ghost" size="icon" onClick={() => setMotion(still ? 'full' : 'reduced')} aria-label={still ? t('Turn animations on') : t('Turn animations off')} aria-pressed={!still}><Sparkles className={still ? 'opacity-45' : 'text-primary'} /></Button>
+            </Tip>
             <Tip text={t('Switch light or dark')}>
               <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={t('Switch light or dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
             </Tip>
           </header>
           <main className={`min-h-0 flex-1 ${producerWorkspace ? 'overflow-hidden' : 'overflow-auto'}`}>
-            <div key={location.pathname.split('/').slice(0, 5).join('/')} className={`mx-auto w-full ${fullWidth ? '' : 'max-w-[2200px]'} px-3 py-4 sm:px-8 sm:py-6 ${producerWorkspace ? 'h-full' : ''}`}>
+            <div key={location.pathname.split('/').slice(0, 5).join('/')} className={`page-enter mx-auto w-full ${fullWidth ? '' : 'max-w-[2200px]'} px-3 py-4 sm:px-8 sm:py-6 ${producerWorkspace ? 'h-full' : ''}`}>
               <Outlet />
             </div>
           </main>

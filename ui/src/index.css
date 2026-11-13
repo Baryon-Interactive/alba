@@ -250,3 +250,145 @@
 .producer-conversation .doc-body { font-size: .875rem; overflow-wrap: anywhere; }
 .producer-conversation .doc-body > :first-child { margin-top: 0; }
 .producer-conversation .doc-body > :last-child { margin-bottom: 0; }
+
+/*
+ * Motion. Alba's look is a night that turns to dawn: panels rise into place, live work glows, links between machines carry
+ * light, and the sun in the mark comes up once when the console opens. Everything here stops under prefers-reduced-motion.
+ */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+@keyframes dawn-slide {
+  from { background-position: 0% 50%; }
+  to { background-position: 200% 50%; }
+}
+@keyframes drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-8%, 10%) scale(1.12); }
+}
+@keyframes drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1.05); }
+  50% { transform: translate(10%, -6%) scale(0.92); }
+}
+@keyframes live-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--info) 0%, transparent); }
+  50% { box-shadow: 0 0 20px -4px color-mix(in oklab, var(--info) 55%, transparent); }
+}
+@keyframes ping-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  80%, 100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes scan {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@keyframes sun-rise {
+  0% { transform: translateY(9px); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes flow {
+  to { stroke-dashoffset: -28; }
+}
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.85; }
+}
+@keyframes count-pop {
+  0% { transform: translateY(4px); opacity: 0.2; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* A page or panel that rises into place; `--i` staggers siblings (set it inline, or use .stagger on the parent). */
+.rise { animation: rise-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 55ms); }
+.page-enter { animation: fade-in 260ms ease-out both; }
+.stagger > * { animation: rise-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.stagger > :nth-child(2) { animation-delay: 50ms; }
+.stagger > :nth-child(3) { animation-delay: 100ms; }
+.stagger > :nth-child(4) { animation-delay: 150ms; }
+.stagger > :nth-child(5) { animation-delay: 200ms; }
+.stagger > :nth-child(6) { animation-delay: 250ms; }
+.stagger > :nth-child(7) { animation-delay: 300ms; }
+.stagger > :nth-child(8) { animation-delay: 350ms; }
+.stagger > :nth-child(n + 9) { animation-delay: 400ms; }
+
+/* Cards that lift a little under the pointer. */
+.lift { transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms, border-color 220ms; }
+.lift:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--primary) 35%, var(--border)); box-shadow: 0 12px 28px -14px color-mix(in oklab, var(--primary) 45%, transparent); }
+
+/* Loading placeholders: a band of light passes over them. */
+.shimmer {
+  background: linear-gradient(100deg, var(--muted) 30%, color-mix(in oklab, var(--muted) 55%, var(--card)) 50%, var(--muted) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* The dawn gradient: night blue to gold to ember. Used for the header line, headings and the sky panels. */
+.dawn-line {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--review), var(--brand), var(--ember), var(--review), transparent);
+  background-size: 200% 100%;
+  animation: dawn-slide 9s linear infinite;
+  opacity: 0.8;
+}
+.dawn-text {
+  background: linear-gradient(90deg, var(--foreground) 0%, var(--primary) 45%, var(--ember) 70%, var(--foreground) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: dawn-slide 12s ease-in-out infinite alternate;
+}
+
+/* A sky behind a hero panel: two slow glows, gold and violet. */
+.sky { position: relative; isolation: isolate; overflow: hidden; }
+.sky::before, .sky::after { content: ''; position: absolute; z-index: -1; border-radius: 999px; pointer-events: none; filter: blur(8px); }
+.sky::before { top: -45%; right: -12%; width: 26rem; height: 26rem; background: radial-gradient(circle, color-mix(in oklab, var(--brand) 32%, transparent), transparent 62%); animation: drift-a 16s ease-in-out infinite; }
+.sky::after { bottom: -60%; left: -10%; width: 30rem; height: 30rem; background: radial-gradient(circle, color-mix(in oklab, var(--review) 22%, transparent), transparent 62%); animation: drift-b 21s ease-in-out infinite; }
+.dark .sky::before { background: radial-gradient(circle, color-mix(in oklab, var(--brand) 26%, transparent), transparent 62%); }
+
+/* Running work: a soft breathing glow and a light that runs along the row's bottom edge. */
+.live-glow { animation: live-glow 2.8s ease-in-out infinite; }
+.scanline { position: relative; overflow: hidden; }
+.scanline::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 40%; background: linear-gradient(90deg, transparent, var(--info), transparent); animation: scan 2.6s ease-in-out infinite; pointer-events: none; }
+
+/* A status dot with a ring that spreads out of it. */
+.ping { position: relative; }
+.ping::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: inherit; animation: ping-ring 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+
+.count-pop { display: inline-block; animation: count-pop 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* The fleet map. */
+.fleet-link { fill: none; stroke-linecap: round; }
+.fleet-link-live { stroke-dasharray: 2 12; animation: flow 1.1s linear infinite; }
+.fleet-orbit { transform-box: fill-box; transform-origin: center; animation: spin-slow 28s linear infinite; }
+.fleet-star { animation: twinkle 4s ease-in-out infinite; }
+.mark-sun { animation: sun-rise 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) 200ms both; }
+
+/* The system's "reduce motion" stops it, unless the console's motion switch says otherwise (html[data-motion]). */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion='full']) *, html:not([data-motion='full']) ::before, html:not([data-motion='full']) ::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+html[data-motion='reduced'] *, html[data-motion='reduced'] ::before, html[data-motion='reduced'] ::after {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}

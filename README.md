@@ -7,11 +7,107 @@
 
 # Alba
 
-Alba is a local control room for coordinating coding agents and scripts through work orders, isolated Git worktrees and evidence-based review.
+Alba is a local control room for a team of coding agents. It turns work orders into isolated Git worktrees, sends each one to the
+right worker on the right machine, watches the run live and accepts nothing without evidence.
 
 ![Alba work-order board with running work, questions, review and merged deliveries](docs/img/board.png)
 
 **Status: pre-1.0 (0.1.0).** Public contracts and migration expectations are documented in [compatibility](docs/compatibility.md).
+
+## What it does
+
+- **Work orders, not chat.** Each task is an order with intent, dependencies and acceptance criteria. Its stage is worked out from
+  facts (commits, reports, decisions), so the board cannot drift from what happened. [Orders and stages](docs/workflow/002-orders-and-stages.md)
+- **One worktree per run.** Every run gets its own branch and worktree, so parallel workers never step on each other, and a review
+  looks at exactly what the worker committed. [Runs and resume](docs/workflow/005-run-and-resume.md)
+- **Scheduling across workers and machines.** A tick picks the next orders and the worker for each: by role, capability, quota left,
+  daily spend, concurrency, shared resources and caps. A worker can live on another machine; Alba ships the work there over SSH and
+  brings the commits back. [Scheduling across machines](#scheduling-across-machines)
+- **Quota-aware hand-over.** When a worker's usage window runs out or its service is at capacity, the order waits for it or goes to the
+  next suitable worker with a hand-over brief; a paid worker is used only when allowed. [Hand-over](docs/workers/014-monitor-leases-loops.md#4-handing-an-order-over-when-a-worker-runs-out)
+- **Long jobs and stuck runs.** A cook or package step can be handed to a monitor so it does not hold a worker slot. Runs that stop
+  committing, loop on the same error or never write a start receipt are flagged. [Monitors, leases and loops](docs/workers/014-monitor-leases-loops.md)
+- **Live runs.** The console shows each run's current command, plan, tokens and messages as they happen, and you can leave a note the
+  worker reads after its next commit. [Live runs](docs/workers/019-live-runs-and-messages.md)
+- **Review by evidence.** A worker's exit code approves nothing. A delivery shows its report, diff, acceptance evidence and merge
+  readiness; an optional pipeline checks, verifies independently and merges, and nightly gates run the expensive suites once per
+  batch. [Review](docs/workflow/006-review.md), [acceptance pipeline](docs/workflow/026-acceptance-pipeline.md), [nightly gates](docs/operations/029-nightly-gates.md)
+- **Roles, skills and lessons.** Roles map kinds of work to requirements, preferred workers, skills and MCP servers. A run sees only the
+  skills Alba chose for it, and the prompt carries the lessons that share a tag with the order. [Routing and skills](docs/workers/012-routing-and-skills.md)
+- **Tool plugins and spend.** Image, 3D and other paid services come in as plugins with their MCP server, skill and resources; a paid
+  call is quoted first and waits for approval. [Tool plugins](docs/workers/031-tool-plugins.md), [usage and cost](docs/console/020-usage-and-cost.md)
+- **An optional producer.** A policy-gated assistant turns facts into cases and proposed actions, and acts by itself only where your
+  policy says `auto`. [Producer](docs/producer/021-producer.md)
+
+## Scheduling across machines
+
+Alba runs on one computer, the controller. A **machine registry** lists the others, and a **worker** with a `host` runs on that
+machine. The controller decides what runs where; a worker host needs SSH, Git, Node and the worker's own CLI, and no Alba agent.
+
+```mermaid
+flowchart LR
+  subgraph controller["Controller: alba serve and the tick"]
+    board["Orders, leases, review"]
+  end
+  board -- "branch, prompt, skills, LFS objects over SSH" --> gpu["gpu-box: worker codex-gpu, editor on port 8201"]
+  board -- "branch, prompt, skills, LFS objects over SSH" --> build["build-box: worker opencode-build"]
+  gpu -. "commits, files, LFS objects every few minutes" .-> board
+  build -. "commits, files, LFS objects every few minutes" .-> board
+  board -. "probes: memory, disks, load, services" .-> sim["sim-linux: services only"]
+```
+
+```yaml
+# machines.yaml
+machines:
+  - id: gpu-box
+    name: GPU box
+    os: windows
+    connect: { ssh: gpu-box }          # an alias in your SSH config; keys stay there
+    workspace: <absolute folder>       # where its worktrees and bare repositories go
+    min_free_mem_gb: 6
+    services:
+      - id: compile-agent
+        check: { process: compile-agent.exe }
+
+# workers.yaml
+workers:
+  - id: codex-gpu
+    engine: codex
+    host: gpu-box                       # this worker runs on gpu-box
+    tunnel: 8000                        # optional: a reverse tunnel to a model gateway on the controller
+```
+
+When an order goes to `codex-gpu`:
+
+1. The tick chooses the order and the worker as for any run, and takes the leases and cap slots the order needs.
+2. Alba pushes the clean worktree's branch to a bare repository on the host, checks out a host worktree, copies the Git LFS objects
+   the host lacks, and stages the prompt, skills, role configuration and inbox there.
+3. The worker starts over SSH. On a Windows host a run can still open windows on the logged-on desktop, for example a game capture
+   or the editor, although an SSH session has none.
+4. About every three minutes, and at the end, Alba fetches the commits back, copies new LFS objects and fast-forwards the local branch
+   only when that is safe. Divergent work is kept as refs, never overwritten.
+5. Review, merge and approval happen on the controller, as for a local run.
+
+Around that:
+
+- **Health at a glance.** Probes read memory, disks, load and service checks of every machine, keep 24 hours of history, and raise a
+  problem when a machine is down or short of memory or disk.
+- **Capability scan.** A read-only scan finds the CPU, GPU, memory and tools (Git, LFS, Python, CMake, compilers, Node, Docker) and,
+  when you select an engine, its Unreal, Unity or Godot install. It suggests roles for the machine and names what is missing.
+- **Add and set up from the board.** A guide prepares the SSH server and key, writes the SSH config, tests the connection and appends
+  the machine. Missing tools are installed from a plan you approve first (winget, apt or dnf, Homebrew); the Unreal module can also
+  copy the engine over in eight parallel compressed streams.
+- **An editor per run, on the right machine.** An editor pool gives a run its own game editor with an MCP server on a port of the run's
+  machine, prepares the worktree first (for example, compiles the game module) and stops the editor when the run ends.
+  [Run editors](docs/workers/032-run-editors.md)
+- **Shared resources and caps.** Build lanes, packaging slots and exclusive performance machines are leases; a run that needs one
+  waits for it, and a lease that outlives its run is flagged. [Resources and leases](docs/workers/014-monitor-leases-loops.md#2-resources-and-leases)
+- **The fleet map.** The console's Machines page draws the controller and every machine, which workers live where and which runs are
+  out on them right now.
+
+Remote worker hosts are Windows today. Linux and macOS machines can be probed, scanned and given installs, and the controller runs on
+Windows, Linux or macOS. Placement is explicit: a worker's `host` decides where it runs; machine roles and slots are information for
+people. Details: [Machines](docs/operations/028-machines.md#workers-on-another-machine).
 
 ## Who it is for
 

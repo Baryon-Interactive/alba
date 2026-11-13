@@ -9,6 +9,7 @@ import type {
 import { handleExtras } from './extras.ts';
 import { handleLibrary } from './library.ts';
 import { handleDesign } from './design.ts';
+import { handleMachines } from './machines.ts';
 import { mockNightlyGates } from '../src/mocks/nightly-data.ts';
 import { actionsFor, createWorld, editsOf, iso, makeHistory, makeOverview, makeResources, makeWorkers, seedLog, summarize, whyFor, type MockOrder, type MockProject } from '../src/mocks/data.ts';
 
@@ -294,11 +295,12 @@ export function mockApi(): Plugin {
           if (overviewMatch) {
             const p = byId.get(decodeURIComponent(overviewMatch[1]));
             if (!p) return fail(res, 404, 'not_found', 'Unknown project');
-            const o = makeOverview(p);
-            return send(res, 200, { ...o, total: p.orders.size, needsCount: o.needsYou.count, capacity: {}, attention: [],
-              live: { count: o.running.count, items: o.running.items.map(r => ({ ...r, leases: [] })) },
-              nextUp: [], dependencies: [], throughput: { days: [], byKind: [] }, mergesPerDay: [], recent: { decisions: [], approvals: [] }, recentDecisions: [], recentApprovals: [],
-              producer: { openCases: 1, wouldDoToday: 0, paused: false }, nightlyGates: mockNightlyGates() });
+            return send(res, 200, projectOverview(p));
+          }
+          if (path === 'overview/all') return send(res, 200, overviewAll());
+          if (path === 'machines' || path.startsWith('machines/')) {
+            const mp = project(url) ?? byId.get(body.project ?? '') ?? projects[0];
+            if (handleMachines({ path, method: req.method ?? 'GET', url, body, project: mp.info.id, res, send, fail })) return;
           }
           if (path === 'design' || path.startsWith('design/')) {
             const dp = project(url) ?? byId.get(body.project ?? '');
@@ -412,6 +414,53 @@ export function mockApi(): Plugin {
           return fail(res, 500, 'internal', e instanceof Error ? e.message : String(e));
         }
       });
+
+      /** What `/api/p/<id>/overview` answers: the project's overview with fourteen days of made-up merges. */
+      function projectOverview(p: MockProject) {
+        const o = makeOverview(p);
+        const merges = mergesPerDay(p);
+        return { ...o, total: p.orders.size, needsCount: o.needsYou.count, capacity: {}, attention: [],
+          live: { count: o.running.count, items: o.running.items.map(r => ({ ...r, leases: [] })) },
+          nextUp: [], dependencies: [], throughput: { days: [], byKind: [] }, mergesPerDay: merges, recent: { decisions: [], approvals: [] }, recentDecisions: [], recentApprovals: [],
+          producer: { openCases: 1, wouldDoToday: 0, paused: false }, nightlyGates: mockNightlyGates() };
+      }
+      function mergesPerDay(p: MockProject): number[] {
+        let h = 0;
+        for (const ch of p.info.id) h = (h * 31 + ch.charCodeAt(0)) % 997;
+        return Array.from({ length: 14 }, (_, i) => Math.max(0, Math.round(2.4 + Math.sin(i / 2 + h) * 2 + (i > 9 ? 1.4 : 0) - (h % 2))));
+      }
+      /** The all-projects overview (`/api/overview/all`) put together from every mock project. */
+      function overviewAll() {
+        const now = Date.now(), DAY = 86400_000;
+        const views = projects.map(projectOverview);
+        const workers = makeWorkers(projects[0]!);
+        const sources = [...new Set(workers.map(w => w.quota?.source).filter((s): s is string => !!s))];
+        const days = Array.from({ length: 14 }, (_, i) => {
+          const day = new Date(now - (13 - i) * DAY).toISOString().slice(0, 10);
+          const merges = Object.fromEntries(views.map(v => [v.project, v.mergesPerDay[i] ?? 0]));
+          const total = Object.values(merges).reduce((a, b) => a + b, 0);
+          return { day, merges, reworks: i % 4 === 1 ? 1 : 0, endings: { completed: total + (i % 3), ...(i % 5 === 2 ? { capacity: 1 } : {}), ...(i % 6 === 4 ? { failed: 1 } : {}) } };
+        });
+        const merged = projects.flatMap(p => [...p.orders.values()].filter(o => o.stage === 'merged').map(o => ({ p, o })));
+        const recent = merged.slice(0, 12).map(({ p, o }, i) => ({ project: p.info.id, tag: o.def.tag, title: o.def.title, at: new Date(now - (i * 3.3 + 0.6) * 3600_000).toISOString(), runs: 1 + (i % 3 === 0 ? 1 : 0), reworks: i % 4 === 0 ? 1 : 0, worker: o.def.worker, leadHours: 2.5 + (i % 5) * 1.7 }));
+        const problems = views.flatMap(v => v.problems.items.map(item => ({ ...item, project: v.project })));
+        const kinds = [...new Set(problems.map(item => item.kind))];
+        const attention = [
+          ...(views.some(v => v.needsCount) ? [{ kind: 'needs-you', problem: false, count: views.reduce((n, v) => n + v.needsCount, 0), items: views.flatMap(v => v.needsYou.items.map(i => ({ project: v.project, tag: i.tag, text: i.title }))) }] : []),
+          ...kinds.map(kind => { const items = problems.filter(i => i.kind === kind); return { kind, problem: true, count: items.length, items: items.map(i => ({ project: i.project, tag: i.tag, text: i.text })) }; }),
+        ];
+        return {
+          at: new Date(now).toISOString(), readingsAt: new Date(now - 40_000).toISOString(), projects: views, attention,
+          live: { count: views.reduce((n, v) => n + v.live.count, 0), items: views.flatMap(v => v.live.items) },
+          workers: { count: workers.length, items: workers.map((w, i) => ({ ...w, ...(w.quota?.balance ? { balanceChange24h: -3.2 - i } : {}) })) },
+          quotas: sources.map(source => ({ source, workers: workers.filter(w => w.quota?.source === source).map(w => w.id), reading: workers.find(w => w.quota?.source === source)?.quota })),
+          machine: { freeRamGb: 23.4, minFreeRamGb: 8 }, days,
+          metrics: { merges7d: days.slice(-7).reduce((n, d) => n + Object.values(d.merges).reduce((a, b) => a + b, 0), 0), runSuccessRate: 0.87, reworksPerMerge: 0.21, medianLeadHours: 3.8, p95LeadHours: 11.2 },
+          recentMerges: { count: merged.length, items: recent },
+          resources: projects.flatMap(p => makeResources(p).map(r => ({ ...r, project: p.info.id }))),
+          next: { moves: views.flatMap(v => v.next.moves.map(m => ({ ...m, project: v.project }))), heldBack: views.flatMap(v => v.next.heldBack.map(h => ({ ...h, project: v.project }))), lastTickAt: lastTick?.at ?? iso(9 * 60_000) },
+        };
+      }
 
       function pi(p: MockProject) {
         const stages: Partial<Record<Stage, number>> = {};

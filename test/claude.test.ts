@@ -109,6 +109,10 @@ test('detached Claude: launch, isolated settings and skills, inherited env remov
     applyFinish(ctx.orders, finish, ctx.project);
     const snapshot = { at: new Date().toISOString(), projects: [{ config: ctx.project, orders: ctx.orders, rows: [], workers: [{ config: ctx.workers.workers[0], available: true, reasons: [], running: 0, runsToday: 1 }] }] };
     assert.equal(workerViews(snapshot, { probes: systemProbes, workers: ctx.workers })[0].canResume, true);
+    // The board draws a worker on the machine named by its `host`; a worker without one runs where alba runs.
+    snapshot.projects[0].workers.push({ config: { ...ctx.workers.workers[0], id: 'remote', host: 'gpu-box' }, available: true, reasons: [], running: 0, runsToday: 0 });
+    const views = workerViews(snapshot, { probes: systemProbes, workers: ctx.workers });
+    assert.equal(views[0].host, undefined); assert.equal(views.find(v => v.id === 'remote')?.host, 'gpu-box');
     assert.match(readFileSync(run.last_file!, 'utf8'), /Fake worker finished/);
     const publicData = JSON.stringify(ctx.orders.get('T1')) + readFileSync(run.events_file!, 'utf8') + readFileSync(run.log!, 'utf8');
     assert.equal(publicData.includes(process.env.ALBA_TEST_AUTH!), false);

@@ -223,6 +223,7 @@ export function workerViews(snap: Snapshot, env: ViewEnv, only?: ProjectView): A
       sameModelAs: w.config.model_family ? (env.workers?.workers ?? []).filter(o => o.id !== w.config.id && o.model_family === w.config.model_family).map(o => o.id) : [],
       disabledWhen: w.config.disabled_when.map(r => ('window_full' in r ? { window: r.window_full, at: r.at } : { balanceDrop: r.balance_drop })),
       hasLaunch: !!w.config.launch, onLimit: w.config.on_limit ?? 'wait', rotatePaid: w.config.rotate_paid === true,
+      ...(w.config.host ? { host: w.config.host } : {}),
     };
     merged.set(w.config.id, view);
   }

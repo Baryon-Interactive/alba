@@ -1,6 +1,10 @@
 export const machinesZh: Record<string, string> = {
   'Python': 'Python 解释器',
   'Configured requirements met: {tools}; {threads} threads, {ram} GB of memory.': '满足配置的要求：{tools}；{threads} 线程，{ram} GB 内存。',
+  'Fleet': '机群',
+  'Orders run where their worker lives. A worker with a host runs on that machine over SSH: Alba pushes the branch there, copies Git LFS objects both ways and fetches the commits back.': '工单在它的工人所在的机器上运行。设了 host 的工人经 SSH 在那台机器上运行：Alba 把分支推过去，双向复制 Git LFS 对象，再把提交取回来。',
+  'Remote runs': '远程运行', 'Local runs': '本机运行', 'Memory': '内存', 'CPU': 'CPU', 'No workers here': '这里没有工人', 'This computer': '本机',
+  '{n} workers': '{n} 个工人', 'Out: branch, prompt and LFS objects': '去：分支、提示词和 LFS 对象', 'Back: commits and LFS objects, every few minutes': '回：提交和 LFS 对象，每隔几分钟',
   'Machines': '机器', 'Reachable': '可连接', 'Unreachable': '无法连接', 'Not probed yet': '尚未探测',
   'Free memory over 24 hours': '24 小时可用内存', 'No memory readings yet.': '暂无内存读数。',
   '24 hours ago': '24 小时前', 'Now': '现在', '{n} slots': '{n} 个槽位', 'Timing allowed': '允许计时测试',

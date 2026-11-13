@@ -291,6 +291,20 @@ function worlds(): MockProject[] {
     reports: [report(3, 'failed', 'The test server is not reachable from the sandbox', 25 * 3600_000)], decisions: [],
   });
   add({
+    def: def('LT1', 'Lighting: bake the clock tower', 'level', { worker: 'codex-gpu', branch: 'order/lt1', base_ref: 'main' }),
+    stage: 'running', why: WHY.running, quietMinutes: 4,
+    runs: [run('LT1', 1, 'codex-gpu', 36 * MIN, undefined, { pid: 7716, alive: true, attempt: 1 })],
+    progress: { plan: ['Sync the worktree to gpu-box', 'Open the level in the editor', 'Bake lighting', 'Capture the four views', 'Report'].map((step, i) => ({ step, status: i < 2 ? 'done' : i === 2 ? 'doing' : 'todo' })), done: 2, total: 5, current: 'Bake lighting', note: 'editor on gpu-box:8201', at: iso(3 * MIN) },
+    uses: ['ue-editor'], reports: [], decisions: [{ seq: 1, at: iso(40 * MIN), kind: 'queue' }],
+  });
+  add({
+    def: def('CK2', 'Cook the Windows client', 'tools', { worker: 'opencode-build', branch: 'order/ck2', base_ref: 'main' }),
+    stage: 'running', why: WHY.running, quietMinutes: 2,
+    runs: [run('CK2', 1, 'opencode-build', 18 * MIN, undefined, { pid: 9132, alive: true, attempt: 1 })],
+    progress: { plan: ['Copy the LFS objects to build-box', 'Build the editor targets', 'Cook', 'Report'].map((step, i) => ({ step, status: i < 1 ? 'done' : i === 1 ? 'doing' : 'todo' })), done: 1, total: 4, current: 'Build the editor targets', at: iso(2 * MIN) },
+    uses: ['build-box'], reports: [], decisions: [{ seq: 1, at: iso(20 * MIN), kind: 'queue' }],
+  });
+  add({
     def: def('MV4', 'Player movement: wall slide and wall jump', 'gameplay', { worker: 'codex', needs: ['MV3'], branch: 'order/mv4', base_ref: 'main', mandate: { spend_cap: 8 } }),
     stage: 'running', why: WHY.running, quietMinutes: 7,
     runs: [run('MV4', 1, 'codex', 48 * MIN, undefined, { pid: 18232, alive: true, attempt: 1, usage: { source: 'unknown' } })],
@@ -377,6 +391,8 @@ export function makeWorkers(project: MockProject): Worker[] {
     { ...base, id: 'opencode', engine: 'opencode', cost: 'paid' as const, notes: 'Daily spend is capped at five dollars.', route: 'gateway', paid: true, runsToday: 2, running: running.get('opencode') ?? 0, spendTodayUsd: 0.62, dailyCapUsd: 5, quota: q('gateway', [], 41.7), price: { per_mtok: 2 } },
     { ...base, id: 'grok', engine: 'grok-cli', quotaSource: 'gateway-grok', modelFamily: 'example-family', cost: 'paid' as const, capabilities: ['shell', 'edit', 'fast'], notes: 'Shares its daily quota with opencode-heavy.', route: 'direct', paid: true, concurrency: 1, runsToday: 1, running: 0, spendTodayUsd: 0.19, available: false, reasons: ['quota: window "daily" at 96% (limit 90%)', 'quota shared with opencode-heavy'], quota: q('gateway-grok', [['daily', 96, 380]]) },
     { ...base, id: 'opencode-heavy', engine: 'opencode', cost: 'paid' as const, capabilities: ['shell', 'edit', 'git', 'long-context'], notes: 'Shares its daily quota with grok.', route: 'gateway-grok', paid: true, runsToday: 0, running: 0, quotaSource: 'gateway-grok', modelFamily: 'example-family', available: false, reasons: ['quota: window "daily" at 96% (limit 90%)', 'quota shared with grok'], quota: q('gateway-grok', [['daily', 96, 380]]) },
+    { ...base, id: 'codex-gpu', engine: 'codex', host: 'gpu-box', notes: 'Runs on the GPU box over SSH; editors open on its desktop.', model: 'example-coder', route: 'subscription', capabilities: ['shell', 'edit', 'git', 'gpu'], concurrency: 2, runsToday: 3, running: running.get('codex-gpu') ?? 0, quotaSource: 'codex-sub', quota: q('codex-sub', [['5h', 38, 142], ['weekly', 71, 3600]]) },
+    { ...base, id: 'opencode-build', engine: 'opencode', host: 'build-box', cost: 'paid' as const, notes: 'Builds and cooks on the build box.', route: 'gateway', paid: true, capabilities: ['shell', 'edit', 'git', 'build'], concurrency: 3, runsToday: 4, running: running.get('opencode-build') ?? 0, spendTodayUsd: 1.4, dailyCapUsd: 10 },
     { ...base, id: 'claude-card', engine: 'claude', notes: 'Start a session manually from its card.', capabilities: ['vision', 'long-context'], cardOnly: true, canResume: false, concurrency: 1, runsToday: 0, running: 0 },
     { ...base, id: 'spare', engine: 'codex', route: 'subscription', enabled: false, runsToday: 0, running: 0 },
   ];

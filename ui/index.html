@@ -11,6 +11,8 @@
       try {
         var th = localStorage.getItem('alba-theme');
         if (th === 'dark' || (th !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
+        var mo = localStorage.getItem('alba-motion');
+        if (mo === 'full' || mo === 'reduced') document.documentElement.setAttribute('data-motion', mo);
       } catch (e) {}
     </script>
   </head>

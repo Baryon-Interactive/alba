@@ -9,10 +9,12 @@ import { CapabilitySummary } from '@/components/MachineCapabilities';
 
 const query = vi.hoisted(() => ({ data: undefined as { machines: MachineView[] } | undefined, isError: false, error: undefined as unknown }));
 const idle = { mutate: () => undefined, reset: () => undefined, isPending: false, isError: false };
-vi.mock('@/lib/queries', () => ({ useProjectId: () => 'demo', useMachines: () => query, useMachineChanges: () => ({ add: idle, remove: idle, check: idle, roles: idle, install: idle, cancelJob: idle }),
+const fleet = vi.hoisted(() => ({ workers: [] as { id: string; host?: string }[], running: [] as { tag: string; title: string; worker?: string }[] }));
+vi.mock('@/lib/queries', () => ({ useProjectId: () => 'demo', useMachines: () => query,
+  useWorkers: () => ({ data: { workers: fleet.workers } }), useOverview: () => ({ data: { running: { items: fleet.running } } }), useMachineChanges: () => ({ add: idle, remove: idle, check: idle, roles: idle, install: idle, cancelJob: idle }),
   useMachineGuide: () => ({ data: undefined }), useMachineInstallPlan: () => ({ data: undefined }), machineCalls: {}, errorText: String }));
 const render = () => renderToStaticMarkup(createElement(MachinesPage));
-afterEach(() => { setLang('en'); query.data = undefined; query.isError = false; });
+afterEach(() => { setLang('en'); query.data = undefined; query.isError = false; fleet.workers = []; fleet.running = []; });
 function machine(): MachineView {
   const latest = { id: 'build-box', at: new Date().toISOString(), reachable: true, free_mem_gb: 8, total_mem_gb: 32, load: 0.25, uptime_seconds: 7200,
     disks: [{ mount: 'system', free_gb: 20, total_gb: 100 }], services: [{ id: 'compile-agent', up: false }] };
@@ -34,6 +36,26 @@ it('shows unreachable, unprobed and empty registry states', () => {
   query.data = { machines: [m] }; expect(render()).toContain('Unreachable');
   m.latest = null; m.history = []; expect(render()).toContain('Not probed yet'); expect(render()).toContain('No memory readings yet.');
   query.data = { machines: [] }; { const html = render(); expect(html).toContain('No machines yet.'); expect(html).toContain('Add a machine'); }
+});
+
+it('draws the fleet: this computer, the machines around it and the runs out on them', () => {
+  const local: MachineView = { ...machine(), id: 'studio-pc', name: 'Studio PC', connect: { local: true } };
+  const off: MachineView = { ...machine(), id: 'art-mac', name: 'Art Mac', latest: { ...machine().latest!, id: 'art-mac', reachable: false } };
+  query.data = { machines: [local, machine(), off] };
+  fleet.workers = [{ id: 'codex' }, { id: 'remote-build', host: 'build-box' }];
+  fleet.running = [{ tag: 'CK2', title: 'Cook the client', worker: 'remote-build' }, { tag: 'MV4', title: 'Wall jump', worker: 'codex' }];
+  for (const lang of ['en', 'zh'] as const) {
+    setLang(lang);
+    const html = render();
+    expect(html).toContain(lang === 'en' ? 'Fleet' : translated['Fleet']);
+    expect(html).toContain('href="#machine-build-box"');
+    expect(html).toContain('id="machine-build-box"');
+    expect(html).toContain('remote-build');
+    expect(html).toContain('CK2');
+    expect(html).toContain(lang === 'en' ? 'Unreachable' : translated['Unreachable']);
+    expect(html).toContain('fleet-link-live');
+    expect((html.match(/fleet-link-live/g) ?? []).length).toBe(1);
+  }
 });
 
 it('renders generic capabilities without engine details, then selected module results and install actions', () => {

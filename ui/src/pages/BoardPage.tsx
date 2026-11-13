@@ -50,7 +50,7 @@ function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; o
   return (
     <Link
       to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}`}
-      className="relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]"
+      className={`${o.stage === 'running' ? 'scanline live-glow ' : ''}relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]`}
       style={{ '--stage': statusColor(o.stage) } as React.CSSProperties}
     >
       <div className="flex items-center justify-between gap-2">
@@ -129,7 +129,7 @@ export function BoardPage() {
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={hideEmpty} onChange={e => set('empty', e.target.checked ? 'hide' : '')} />{t('Hide empty columns')}</label>
         {active && <button onClick={() => setParams({}, { replace: true })} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><X className="size-3" />{t('Clear filters')}</button>}
       </div>
-      <div className="flex min-h-[60vh] items-start gap-3 overflow-x-auto pb-4">
+      <div className="stagger flex min-h-[60vh] items-start gap-3 overflow-x-auto pb-4">
         {BOARD_COLUMNS.filter(col => !hideEmpty || filtered.some(o => col.stages.includes(o.stage))).map(col => {
           const all = filtered.filter(o => col.stages.includes(o.stage));
           const rows = col.id === 'done' && !showAllDone ? [...all].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, DONE_LIMIT) : all;

@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { t } from '@/i18n';
 import { LiveCommand } from '@/components/LivePanel';
 import { SERIES_COLORS } from '@/lib/palette';
+import { CountUp } from '@/components/motion';
 
 const COLORS = SERIES_COLORS;
 const outcomeLabels = () => ({ completed: t('Completed'), failed: t('Failed'), stalled: t('Stalled runs'), capacity: t('Capacity'), cancelled: t('Cancelled') });
@@ -28,7 +29,7 @@ function Panel({ title, to, count, className, children }: { title: string; to: s
   return <section className={cn('overview-panel', className)}><div className="overview-panel-heading"><Link to={to}>{title}</Link>{count !== undefined && <Link className="text-xs text-muted-foreground tabular-nums" to={to}>{count}</Link>}</div><div className="overview-panel-body">{children}</div></section>;
 }
 function LiveRows({ o, cap }: { o: OverviewAll; cap: number }) {
-  return <>{o.live.items.slice(0, cap).map(r => <div className="overview-row" key={`${r.project}:${r.tag}`}>
+  return <>{o.live.items.slice(0, cap).map(r => <div className="overview-row scanline" key={`${r.project}:${r.tag}`}>
     <div className="flex min-w-0 items-center gap-2"><Link className="overview-tag" to={orderPath(r.project, r.tag)}>{r.project}·{r.tag}</Link><Link className="truncate" to={r.run ? `${orderPath(r.project, r.tag)}/runs/${encodeURIComponent(r.run.id)}` : orderPath(r.project, r.tag)}>{r.title}</Link></div>
     {r.live && <div className="mt-1 truncate text-xs"><LiveCommand live={r.live} /></div>}
     <div className="overview-meta"><span>{r.run?.worker ?? r.worker}</span><span>{ago(r.run?.started ?? r.monitor?.started ?? r.updated)}</span>{stepText(r.progress) && <span className="text-foreground" title={r.progress?.current}>{stepText(r.progress)}</span>}
@@ -51,7 +52,7 @@ function ProjectRows({ o, cap }: { o: OverviewAll; cap: number }) {
 }
 function WorkerRow({ w, project }: { w: Worker & { balanceChange24h?: number }; project?: string }) {
   return <Link className="overview-row block" to={project ? `${projectPath(project)}/workers` : '/'}>
-    <div className="flex items-center gap-2"><span className={cn('size-2 shrink-0 rounded-full', w.available ? 'bg-success' : 'bg-destructive')} /><span className="font-medium">{w.id}</span><span className="ml-auto text-[11px] tabular-nums">{w.running}/{w.concurrency} · {w.runsToday}/{w.dailyRuns ?? '∞'}</span></div>
+    <div className="flex items-center gap-2"><span className={cn('size-2 shrink-0 rounded-full', w.available ? 'bg-success' : 'bg-destructive')} /><span className="font-medium">{w.id}</span>{w.host && <span className="rounded-full border px-1.5 text-[10px] text-muted-foreground" title={t('Runs on {host} over SSH', { host: w.host })}>@{w.host}</span>}<span className="ml-auto text-[11px] tabular-nums">{w.running}/{w.concurrency} · {w.runsToday}/{w.dailyRuns ?? '∞'}</span></div>
     {!w.available && w.reasons[0] && <div className="mt-0.5 truncate text-[11px] text-destructive" title={w.reasons[0]}>{w.reasons[0]}</div>}
     <div className="overview-meta"><span>{w.quota?.balance?.raw ?? '—'}{w.balanceChange24h !== undefined ? ` (${w.balanceChange24h > 0 ? '+' : ''}${Number(w.balanceChange24h.toFixed(2))})` : ''}</span><span>{t('today ${spent} / {cap}', { spent: w.spendTodayUsd.toFixed(2), cap: w.dailyCapUsd === undefined ? '∞' : `$${w.dailyCapUsd}` })}</span></div>
   </Link>;
@@ -82,7 +83,7 @@ function Charts({ o }: { o: OverviewAll }) {
   const series = o.projects.filter(p => o.days.some(d => d.merges[p.project]));
   const endings = outcomeLabels();
   const barTitle = (d: OverviewDay) => `${d.day} · ${series.map(p => `${p.name}: ${d.merges[p.project] ?? 0}`).join(' · ')}`;
-  return <><div className="grid grid-cols-2 gap-x-5 gap-y-3 pb-3"><div><strong className="text-2xl font-semibold tabular-nums">{o.metrics.merges7d}</strong><p className="text-[11px] text-muted-foreground">{t('Merges in 7 days')}</p></div><div><strong className="text-2xl font-semibold tabular-nums">{o.metrics.runSuccessRate === undefined ? '—' : `${Math.round(o.metrics.runSuccessRate * 100)}%`}</strong><p className="text-[11px] text-muted-foreground">{t('Run success rate')}</p></div><div><strong className="text-lg tabular-nums">{o.metrics.reworksPerMerge?.toFixed(2) ?? '—'}</strong><p className="text-[11px] text-muted-foreground">{t('Reworks per merge')}</p></div><div><strong className="text-lg tabular-nums">{hours(o.metrics.medianLeadHours)}</strong><span className="ml-2 text-[11px] text-muted-foreground">{t('p95 {time}', { time: hours(o.metrics.p95LeadHours) })}</span><p className="text-[11px] text-muted-foreground">{t('Median queue → merge')}</p></div></div>
+  return <><div className="grid grid-cols-2 gap-x-5 gap-y-3 pb-3"><div><strong className="text-2xl font-semibold tabular-nums"><CountUp value={o.metrics.merges7d} /></strong><p className="text-[11px] text-muted-foreground">{t('Merges in 7 days')}</p></div><div><strong className="text-2xl font-semibold tabular-nums">{o.metrics.runSuccessRate === undefined ? '—' : <><CountUp value={Math.round(o.metrics.runSuccessRate * 100)} />%</>}</strong><p className="text-[11px] text-muted-foreground">{t('Run success rate')}</p></div><div><strong className="text-lg tabular-nums">{o.metrics.reworksPerMerge?.toFixed(2) ?? '—'}</strong><p className="text-[11px] text-muted-foreground">{t('Reworks per merge')}</p></div><div><strong className="text-lg tabular-nums">{hours(o.metrics.medianLeadHours)}</strong><span className="ml-2 text-[11px] text-muted-foreground">{t('p95 {time}', { time: hours(o.metrics.p95LeadHours) })}</span><p className="text-[11px] text-muted-foreground">{t('Median queue → merge')}</p></div></div>
     <div className="flex h-24 items-end gap-1.5" role="img" aria-label={t('Merges per day')}>{o.days.map((d, i) => <Link key={d.day} to={full('merges')} title={barTitle(d)} className="flex h-full min-w-0 flex-1 flex-col justify-end"><div className="flex flex-col-reverse overflow-hidden rounded-t" style={{ height: `${100 * totals[i] / top}%`, minHeight: 2 }}>{series.map((p, j) => <span key={p.project} style={{ background: COLORS[j % COLORS.length], flex: d.merges[p.project] ?? 0 }} />)}</div></Link>)}</div>
     <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{o.days[0]?.day.slice(5)}</span><span>{t('Today')} · UTC</span></div>
     <div className="mt-2 flex h-5 items-end gap-1.5" role="img" aria-label={t('Run endings by outcome')}>{o.days.map(d => <div key={d.day} className="flex min-h-px flex-1 flex-col-reverse" title={`${d.day} · ${Object.entries(d.endings).map(([k, n]) => `${endings[k as keyof typeof endings]}: ${n}`).join(' · ')}`}>{Object.entries(d.endings).map(([k, n]) => <div key={k} style={{ height: `${20 * n / endingTop}px`, background: k === 'completed' ? '#22a58c' : k === 'capacity' ? '#f5bb57' : '#ed6b73' }} />)}</div>)}</div>
@@ -103,8 +104,8 @@ export function OverviewPage() {
   if (!q.data) return <Skeleton className="h-96" />;
   const o = q.data;
   const selected = o.attention.find(g => g.kind === params.get('attention'));
-  return <div><div className="mb-5 flex flex-wrap items-end justify-between gap-2"><div><div className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">{t('All projects')}</div><h1 className="mt-1 text-[26px] leading-tight font-semibold tracking-[-0.02em]">{greeting(o.at)}</h1></div><span className="text-xs text-muted-foreground">{t('read {when}', { when: ago(o.readingsAt ?? o.at) })}</span></div>
-    <div className="overview-grid">
+  return <div><div className="mb-5 flex flex-wrap items-end justify-between gap-2"><div><div className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">{t('All projects')}</div><h1 className="dawn-text mt-1 w-fit text-[26px] leading-tight font-semibold tracking-[-0.02em]">{greeting(o.at)}</h1></div><span className="text-xs text-muted-foreground">{t('read {when}', { when: ago(o.readingsAt ?? o.at) })}</span></div>
+    <div className="overview-grid stagger">
       <div className="overview-attention">{o.attention.length ? o.attention.map(g => {
         const projects = attentionProjects(g);
         return <Link key={g.kind} className={cn('overview-chip', g.problem ? 'bg-destructive/10 text-destructive' : 'bg-warning/12 text-warning')} to={projects.length === 1 ? projectPath(projects[0]) : `/?attention=${encodeURIComponent(g.kind)}`}>{attentionLabel(g.kind)} <strong>{g.count}</strong></Link>;

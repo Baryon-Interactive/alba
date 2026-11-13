@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowRightLeft, Ban, CircleCheck, CircleDollarSign, Copy, CreditCard, Link2, Pencil, Plus } from 'lucide-react';
+import { ArrowRightLeft, Ban, CircleCheck, CircleDollarSign, Copy, CreditCard, Link2, Pencil, Plus, Server } from 'lucide-react';
 import type { QuotaPoint, Worker } from '@api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,6 +85,7 @@ function WorkerCard({ project, w, onEdit, onCopy }: { project: string; w: Worker
             <div className="flex items-center gap-2"><span className="text-[15px] font-semibold">{w.id}</span>{state}<Button variant="ghost" size="icon" className="size-7" aria-label={t('Edit {id}', { id: w.id })} title={t('Edit')} onClick={() => onEdit(w)}><Pencil className="size-3.5" /></Button><Button variant="ghost" size="icon" className="size-7" aria-label={t('Copy {id}', { id: w.id })} title={t('Copy as a new worker')} onClick={() => onCopy(w)}><Copy className="size-3.5" /></Button></div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <span>{w.engine}</span>{w.route && <span>· {w.route}</span>}
+              {w.host && <Badge tone="primary" title={t('Runs on {host} over SSH', { host: w.host })}><Server />{w.host}</Badge>}
               {w.paid && <Badge tone="warning"><CreditCard />{t('paid')}</Badge>}
               {w.cost === 'included' && <Badge tone="success">{t('included in a plan')}</Badge>}
               {w.cardOnly && <Badge tone="outline">{t('cards only')}</Badge>}
