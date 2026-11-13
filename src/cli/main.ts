@@ -27,6 +27,7 @@ function editorLines(rows: (EditorSlot & { up?: boolean; pids?: number[]; projec
 import { UserError, fail, t } from '../i18n.ts';
 import { RUN_OUTCOMES, STAGES, type ActionKind, type OrderDoc, type RunOutcome, type Stage } from '../orders/model.ts';
 import { parseReportFile } from '../orders/report.ts';
+import { reportInRunLog } from '../run/lingering.ts';
 import { Orders, STAGE_PRIORITY } from '../orders/service.ts';
 import { stateStore } from '../orders/backend.ts';
 import { importTable } from '../table/import.ts';
@@ -610,7 +611,15 @@ ${editorLines(editors, projects.length > 1)}` : body;
       case 'run-end': {
         need(1, 'alba orders run-end <TAG> [--outcome o]');
         const outcome = (values.outcome ?? 'completed') as RunOutcome;
-        const ended = orders.runEnd(rest[0], outcome).doc;
+        const { doc: ended, run: closed } = orders.runEnd(rest[0], outcome);
+        // A run a person ends as completed whose log already ends with its report (a worker whose process stayed after its last
+        // message): that report is recorded, as the end of the process would have done.
+        const found = outcome === 'completed' && !ended.reports.some(r => r.run === closed.id) ? reportInRunLog(systemProbes, closed) : undefined;
+        if (found) {
+          orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
+          lintDelivery(cfg, orders, rest[0]);
+          return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
+        }
         // A person who ends a run as cancelled does not want the next tick to start it again at once (on whatever worker routing picks).
         if (outcome !== 'cancelled' || orders.stage(ended).stage !== 'queued' && orders.stage(ended).stage !== 'waiting-needs') return tagLine(ended);
         orders.act(rest[0], 'hold', { note: t('run ended as cancelled by a person') });

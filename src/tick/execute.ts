@@ -58,7 +58,8 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
       continue;
     }
     // `dispatch.on_lingering: stop`: a run that has handed in its report but whose process stays is stopped (that process only), and its end is recorded as usual.
-    const lingerers = ctx.project.dispatch.on_lingering === 'stop' ? result.report.problems.filter(p => p.kind === 'lingering' && p.tag && !stopped.has(p.tag)) : [];
+    // A run whose engine has ended its turn (`ended`) is stopped whatever the setting: the worker is done and nothing else would end the run.
+    const lingerers = result.report.problems.filter(p => p.kind === 'lingering' && p.tag && !stopped.has(p.tag) && (p.ended || ctx.project.dispatch.on_lingering === 'stop'));
     if (lingerers.length) {
       for (const p of lingerers) { stopped.add(p.tag!); done.push(stopLingeringRun(ctx.orders, ctx.probes, p.tag!)); }
       recordFinishes();

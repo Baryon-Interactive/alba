@@ -7,6 +7,8 @@ import { tempOrders } from './helpers.ts';
 import { alba, projectDir } from './cli-helper.ts';
 import { Orders } from '../src/orders/service.ts';
 import { validateProject } from '../src/config.ts';
+import { loadProject } from './state-helper.ts';
+import { stateStore } from '../src/orders/backend.ts';
 import { startRun } from '../src/run/launch.ts';
 import { humanAction, stopRun } from '../src/service/actions.ts';
 import { actionsFor } from '../src/api/views.ts';
@@ -113,6 +115,22 @@ test('a held order that ended failed is queued again when started; one under rev
   orders.report('T1', { status: 'ready', summary: 'done', evidence: [], commits: [] });
   orders.act('T1', 'hold');
   assert.throws(() => startRun(ctx, 'T1', 'paid', { explicitWorker: true }), /held over a awaiting-review order/);
+});
+
+test('orders run-end of a run whose log already ends with its report records that report', () => {
+  const dir = tempOrders().dir, project = projectDir(dir);
+  writeFileSync(path.join(dir, 'orders', 'A1-sample.md'), '# A1\n');
+  assert.equal(alba(project, ['orders', 'add', 'A1', '--title', 'Sample', '--kind', 'code', '--queue']).code, 0);
+  assert.equal(alba(project, ['orders', 'run-start', 'A1', '--worker', 'codex']).code, 0);
+  const events = path.join(dir, 'A1-r1.events.jsonl');
+  writeFileSync(events, [{ type: 'item.completed', item: { type: 'agent_message', text: 'Done.\n--- alba-report ---\n{"status":"ready","summary":"the sample works","evidence":[],"commits":["abc1234"]}\n--- end ---' } }, { type: 'turn.completed', usage: {} }].map(e => JSON.stringify(e)).join('\n') + '\n');
+  const orders = new Orders(stateStore(loadProject(project)));
+  orders.patchRun('A1', orders.get('A1').runs[0].id, { log: path.join(dir, 'A1-r1.log'), events_file: events });
+  const ended = alba(project, ['orders', 'run-end', 'A1']);
+  assert.equal(ended.code, 0, ended.err);
+  assert.match(ended.out, /^A1: awaiting-review\nRecorded the report at the end of its log \(ready: the sample works\)\./);
+  const doc = new Orders(stateStore(loadProject(project))).get('A1');
+  assert.deepEqual([doc.reports.at(-1)!.status, doc.reports.at(-1)!.commits, doc.reports.at(-1)!.run], ['ready', ['abc1234'], doc.runs[0].id]);
 });
 
 test('orders run-end --outcome cancelled holds the order instead of handing it back to the next tick', () => {

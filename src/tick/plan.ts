@@ -84,7 +84,7 @@ export interface TickInput {
   occupants?: Occupant[];                         // orders running or monitored, with their kinds
   loops?: Record<string, LoopFinding[]>;          // what the loop check found in the logs of running orders, by tag
   loopEvidence?: (f: LoopFinding) => string[];
-  lingering?: Record<string, { status: string; summary: string; quietMinutes: number }>;   // running orders whose log already ends with their report block, by tag
+  lingering?: Record<string, { status: string; summary: string; quietMinutes: number; ended?: boolean }>;   // running orders whose log already ends with their report block, by tag
   /** Workers whose last run ended unreachable and whose endpoint still refuses a connection. */
   endpointDown?: { worker: string; endpoint: string }[];
   /** Editor pools by machine: the ports there and the ones taken now (by order tag). */
@@ -101,7 +101,7 @@ function editorPortWhy(ports: NonNullable<TickInput['editorPorts']>, pool: strin
 }
 
 export type Move = { tag: string; mode: 'dispatch' | 'resume' | 'card'; worker: string; rework: boolean; /** Slots above a kind cap this start may use (the rework reserve); the start checks the cap again with it. */ capReserve?: number; rotated?: { from: string; reason: string }; why?: string; rejected?: { worker: string; reason: string }[] };
-export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer'; tag?: string; text: string }
+export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer'; tag?: string; text: string }
 
 export interface TickReport {
   dispatched?: number;                              // successful real starts/resumes; absent on a preview
@@ -174,7 +174,10 @@ export function planTick(input: TickInput): TickReport {
     const newest = [a?.lastCommitAt, o.runStartedAt, a?.logAt].filter((x): x is string => !!x).sort().pop();
     const late = input.lingering?.[o.tag];
     if (late) {
-      report.problems.push({ kind: 'lingering', tag: o.tag, text: t('{tag}: the run has already handed in its report ({status}: {summary}) but its process is still there; the log has been quiet for {min} min.', { tag: o.tag, status: late.status, summary: late.summary.slice(0, 120), min: late.quietMinutes }) });
+      const words = { tag: o.tag, status: late.status, summary: late.summary.slice(0, 120), min: late.quietMinutes };
+      report.problems.push(late.ended
+        ? { kind: 'lingering', tag: o.tag, ended: true, text: t('{tag}: the worker ended its turn and handed in its report ({status}: {summary}) but its process is still there after {min} min; it is stopped and the report read.', words) }
+        : { kind: 'lingering', tag: o.tag, text: t('{tag}: the run has already handed in its report ({status}: {summary}) but its process is still there; the log has been quiet for {min} min.', words) });
       continue;
     }
     if (a?.finalFileAt && (!newest || a.finalFileAt > newest)) {

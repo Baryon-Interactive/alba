@@ -82,19 +82,50 @@ export function earlierReport(eventsText: string): EarlierReport | undefined {
 const TAIL_BYTES = 65536;
 
 /**
- * A run of ours whose process is alive, whose log already ends with its report block, and whose log has been quiet for
- * `dispatch.lingering_minutes`: it has delivered, and only its process is still there.
+ * How long a run whose engine has ended its turn (see `StreamLog.ended`) and handed in its report may keep its process before it is
+ * stopped. `codex exec` sometimes stays after its last event (an MCP server that does not let go), and then nothing else ends the run.
  */
-export function lingeringOf(project: ProjectConfig, probes: Probes, run: Run): { status: string; summary: string; quietMinutes: number } | undefined {
-  if (!run.pid || run.imported || !run.log || !probes.isAlive(run.pid)) return undefined;
+export const ENDED_GRACE_MINUTES = 2;
+
+/** The report block at the end of a run's log (its events file when it has one), with the text it came in and that file; alive or not. */
+export function reportInRunLog(probes: Probes, run: Run): { report: ReportInput; text: string; file: string } | undefined {
+  const file = run.events_file ?? run.log;
+  if (!file || run.imported) return undefined;
+  const tail = probes.tail(file, TAIL_BYTES);
+  if (!tail) return undefined;
+  const cut = Buffer.byteLength(tail) >= TAIL_BYTES;
+  const report = deliveredReport(tail, { cut });
+  if (!report) return undefined;
+  const stream = parseStreamLog(tail, { cut });
+  return { report, text: stream.events ? stream.finalText : tail, file };
+}
+
+/** A run that has handed in its report while its process is still alive. `ended`: the engine's own end event is the last one in the log; `quietMinutes`: since the log last changed. */
+export interface HandedIn { status: string; summary: string; quietMinutes: number; ended: boolean }
+
+/** Has this open run of ours, whose process is alive, already handed in its report at the end of its log? Whatever the time. */
+export function handedIn(probes: Probes, run: Run): HandedIn | undefined {
+  if (!run.pid || run.imported || !run.log || run.ended !== undefined || !probes.isAlive(run.pid)) return undefined;
   const file = run.events_file ?? run.log;
   const at = probes.fileTime(file);
   if (!at) return undefined;
-  const quiet = (probes.now().getTime() - Date.parse(at)) / 60000;
-  if (quiet < project.dispatch.lingering_minutes) return undefined;
   const tail = probes.tail(file, TAIL_BYTES);
-  const report = deliveredReport(tail, { cut: Buffer.byteLength(tail) >= TAIL_BYTES });
-  return report ? { status: report.status, summary: report.summary, quietMinutes: Math.round(quiet) } : undefined;
+  const cut = Buffer.byteLength(tail) >= TAIL_BYTES;
+  const report = deliveredReport(tail, { cut });
+  if (!report) return undefined;
+  return { status: report.status, summary: report.summary, quietMinutes: (probes.now().getTime() - Date.parse(at)) / 60000, ended: parseStreamLog(tail, { cut }).ended === true };
+}
+
+/**
+ * A run of ours whose process is alive, whose log already ends with its report block, and whose log has been quiet for
+ * `dispatch.lingering_minutes`: it has delivered, and only its process is still there. When the engine's end event is the last
+ * one (`ended`), `ENDED_GRACE_MINUTES` is enough, and the tick stops the process whatever `dispatch.on_lingering` says.
+ */
+export function lingeringOf(project: ProjectConfig, probes: Probes, run: Run): HandedIn | undefined {
+  const late = handedIn(probes, run);
+  if (!late) return undefined;
+  const wait = late.ended ? Math.min(ENDED_GRACE_MINUTES, project.dispatch.lingering_minutes) : project.dispatch.lingering_minutes;
+  return late.quietMinutes >= wait ? { ...late, quietMinutes: Math.round(late.quietMinutes) } : undefined;
 }
 
 /**

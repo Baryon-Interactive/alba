@@ -366,7 +366,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
   const list = probes.worktrees(project.root);
   const activity: Record<string, OrderActivity> = {};
   const loops: Record<string, LoopFinding[]> = {};
-  const lingering: Record<string, { status: string; summary: string; quietMinutes: number }> = {};
+  const lingering: Record<string, { status: string; summary: string; quietMinutes: number; ended?: boolean }> = {};
   const pinProblems: TickReport['problems'] = [];
   const tickOrders: TickOrder[] = docs.map((d, index) => {
     const o = d.order;

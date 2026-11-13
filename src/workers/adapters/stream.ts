@@ -17,6 +17,11 @@ export interface StreamLog {
   usage?: { input?: number; output?: number; cached?: number };
   /** What the agent said after its last tool call: its final message. */
   finalText: string;
+  /**
+   * The last event is the engine's own end of the run: Codex `turn.completed` (`codex exec` runs one turn) or the `end` event.
+   * Claude's `result` does not count: `claude -p` can start another turn for a background command's notification.
+   */
+  ended?: boolean;
   /** The command (or "Edit <file>") the run was not allowed to do: the engine refuses it, and the whole run stops there. */
   blockedCommand?: string;
   /** Messages of `error` events and plain (non-JSON) lines other than the permission note, oldest first. */
@@ -42,6 +47,7 @@ export function parseStreamLog(text: string, options: { cut?: boolean } = {}): S
       continue;
     }
     log.events++;
+    log.ended = event.type === 'turn.completed' || event.type === 'end';
     if (typeof event.session_id === 'string') log.sessionId = event.session_id;
     if (event.type === 'assistant' && (event.message as { model?: string } | undefined)?.model !== '<synthetic>') {
       if (claudeContent(event).some(c => c.type === 'tool_use')) log.finalText = '';

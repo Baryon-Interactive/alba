@@ -12,7 +12,7 @@
    - **no report**: the last run ended as completed and no report followed;
    - **quota**: a quota cannot be read, or a paid balance is falling;
    - **no-fit**: no role resolves or no supply qualifies (fix the role mapping, requirements or worker capabilities);
-   - **lingering**: a run's log ends with its report block and its process is still there (`dispatch.on_lingering`);
+   - **lingering**: a run's log ends with its report block and its process is still there (`dispatch.on_lingering`; stopped regardless after 2 minutes when the engine's own end event came last);
    - **looping**, **start-failed**, **lease-expired**, **monitor**, **commit-nudge** (document 014): a run going round in circles, a run with no start receipt and no commit, a lease held longer than its time, a monitor that could not be run, a run reminded twice to commit changed files;
    - **no-worker**: workers take it but every one is switched off, out of quota or at a limit (it waits; this is not a problem for a person);
 4. Chooses what can be started. An order is a candidate if its stage is `queued` (so all `needs` are merged). Candidates are sorted with orders that continue after a monitor first, then reworked orders, then by table order. An order that needs a resource waits while the resource is full or exclusive-held (the reason is in `heldBack`); an order whose worker ran out and is set to `on_limit: rotate` is handed to the next worker at once, or waits when that worker is busy (document 014). A rework note, answer, monitor result or message stays on the order until a later run really follows it, so the next prompt still carries it. For each one:

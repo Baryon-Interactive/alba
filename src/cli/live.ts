@@ -7,6 +7,7 @@ import type { Orders } from '../orders/service.ts';
 import type { Probes } from '../tick/gather.ts';
 import { liveRuns, type LiveState } from '../run/live.ts';
 import { parseOutbox, unanswered } from '../run/messages.ts';
+import { handedIn } from '../run/lingering.ts';
 
 export const phaseText = (phase: LiveState['phase']): string => ({ thinking: t('Thinking'), running_command: t('Running a command'), editing_files: t('Editing files'), waiting_long_command: t('Waiting on a long command'), idle: t('Idle') })[phase];
 export interface StatusRow {
@@ -14,6 +15,8 @@ export interface StatusRow {
   plan?: { step: number; total: number; current?: string }; event_minutes?: number; commit_minutes?: number;
   /** `tokens_reported: false`: the engine has not reported any usage yet (Codex `exec --json` reports it only when its turn ends, at the end of the run), so `tokens` is 0 but not known. */
   tokens: number; tokens_reported: boolean; usage: LiveState['usage']; unanswered: { id: string; kind: string; text: string }[];
+  /** The log already ends with the run's report while its process is still alive; `ended`: the engine's own end event came last. */
+  delivered?: { status: string; ended: boolean };
 }
 
 /** Read-only and quota-free. Commit probes run concurrently and have a small deadline. */
@@ -30,12 +33,14 @@ export async function statusRows(projects: { project: ProjectConfig; orders: Ord
       const found = parseOutbox(readFileSync(path.join(doc.order.worktree, '.alba', 'outbox.jsonl'), 'utf8'));
       pending = [...pending, ...found.filter(e => ['question', 'blocker'].includes(e.kind) && !doc.outbox?.some(o => o.id === e.id))];
     } catch { /* no mailbox */ }
+    const delivered = handedIn(probes, run);
     return {
       project: project.id, tag: doc.order.tag, run: run.id, worker: run.worker, phase: live.phase, ...(live.current ? { current: live.current } : {}),
       ...(live.plan ? { plan: { step: live.plan.current ? Math.min(live.plan.total, live.plan.done + 1) : live.plan.done, total: live.plan.total, current: live.plan.current } } : {}),
       ...(live.last_event_at ? { event_minutes: Math.max(0, (now - Date.parse(live.last_event_at)) / 60000) } : {}),
       ...(commit ? { commit_minutes: Math.max(0, (now - Date.parse(commit)) / 60000) } : {}),
       tokens: live.usage.input_tokens + live.usage.output_tokens, tokens_reported: live.usage.turns > 0, usage: live.usage, unanswered: pending.map(e => ({ id: e.id, kind: e.kind, text: e.text })),
+      ...(delivered ? { delivered: { status: delivered.status, ended: delivered.ended } } : {}),
     };
   }));
 }
@@ -56,7 +61,7 @@ export function unreachableStatusLines(projects: { project: ProjectConfig; order
 
 export function formatStatus(rows: StatusRow[]): string {
   if (!rows.length) return t('No open runs.');
-  return rows.map(r => `${r.project}/${r.tag} ${r.run} ${r.worker} | ${phaseText(r.phase)}${r.current ? `: ${r.current.command.replace(/\s+/g, ' ')} (${t('{n} s', { n: Math.floor(r.current.elapsed_seconds) })})` : ''} | ${t('step {n}/{m}', { n: r.plan?.step ?? 0, m: r.plan?.total ?? 0 })} | ${t('event {event} min, commit {commit} min ago', { event: r.event_minutes === undefined ? '?' : Math.floor(r.event_minutes), commit: r.commit_minutes === undefined ? '?' : Math.floor(r.commit_minutes) })} | ${r.tokens_reported ? t('{n} tokens', { n: r.tokens }) : t('tokens not reported yet')} | ${t('{n} unanswered', { n: r.unanswered.length })}${r.unanswered.length ? `: ${r.unanswered.map(q => `${q.id} ${q.text}`).join(' / ')}` : ''}`).join('\n');
+  return rows.map(r => `${r.project}/${r.tag} ${r.run} ${r.worker} | ${r.delivered ? (r.delivered.ended ? t('turn ended, report handed in ({status}); process still running', { status: r.delivered.status }) : t('report handed in ({status}); process still running', { status: r.delivered.status })) : phaseText(r.phase)}${!r.delivered && r.current ? `: ${r.current.command.replace(/\s+/g, ' ')} (${t('{n} s', { n: Math.floor(r.current.elapsed_seconds) })})` : ''} | ${t('step {n}/{m}', { n: r.plan?.step ?? 0, m: r.plan?.total ?? 0 })} | ${t('event {event} min, commit {commit} min ago', { event: r.event_minutes === undefined ? '?' : Math.floor(r.event_minutes), commit: r.commit_minutes === undefined ? '?' : Math.floor(r.commit_minutes) })} | ${r.tokens_reported ? t('{n} tokens', { n: r.tokens }) : t('tokens not reported yet')} | ${t('{n} unanswered', { n: r.unanswered.length })}${r.unanswered.length ? `: ${r.unanswered.map(q => `${q.id} ${q.text}`).join(' / ')}` : ''}`).join('\n');
 }
 
 export function watchOrder(project: ProjectConfig, orders: Orders, tag: string, probes: Probes, print: (line: string) => void = console.log): Promise<string> {
