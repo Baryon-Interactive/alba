@@ -1,0 +1,19 @@
+name: Feature request
+description: Describe a problem Alba should solve.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended user
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior and acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs

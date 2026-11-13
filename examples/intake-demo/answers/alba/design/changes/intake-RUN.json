@@ -1,0 +1,15 @@
+{
+  "title": "Import the run loop",
+  "decision": "D150",
+  "changes": [
+    { "op": "create", "kind": "system", "id": "RUN", "fields": { "name": "Run loop", "summary": "Short encounter runs", "source_refs": ["v2@1#b772402adfeed"], "code_globs": [], "data_globs": [] } },
+    { "op": "create", "kind": "rule", "id": "RUN-R01", "fields": { "system": "RUN", "text": "A run ends after three encounters or when the player retreats.", "sources": [{ "kind": "doc", "ref": "base@1#b2c8ddc41fde8" }, { "kind": "decision", "ref": "D150" }] } },
+    { "op": "create", "kind": "target", "id": "RUN-T01", "fields": { "system": "RUN", "metric": "Encounter count at normal completion", "min": 3, "max": 3, "unit": "encounters", "command": "node tools/measure-run.mjs" } },
+    { "op": "create", "kind": "target", "id": "RUN-T02", "fields": { "system": "RUN", "metric": "Run summary visibility", "min": 1, "max": 1, "unit": "boolean", "command": "node tools/measure-run-summary.mjs" } },
+    { "op": "create", "kind": "target", "id": "RUN-T03", "fields": { "system": "RUN", "metric": "Tutorial route count", "min": 1, "max": 1, "unit": "routes", "command": "node tools/measure-content.mjs" } },
+    { "op": "create", "kind": "milestone", "id": "M-CORE", "fields": { "name": "Core loop", "position": 1, "status": "active", "criteria": [{ "target": "RUN-T01" }] } },
+    { "op": "create", "kind": "milestone", "id": "M-SLICE", "fields": { "name": "Vertical slice", "position": 2, "status": "not-started", "criteria": [{ "target": "RUN-T02" }] } },
+    { "op": "create", "kind": "milestone", "id": "M-CONTENT", "fields": { "name": "Content", "position": 3, "status": "not-started", "criteria": [{ "target": "RUN-T03" }] } },
+    { "op": "create", "kind": "milestone", "id": "M-RELEASE", "fields": { "name": "Release", "position": 4, "status": "not-started", "criteria": [{ "text": "A person signs off the release." }] } }
+  ]
+}

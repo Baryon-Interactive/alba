@@ -1,0 +1,13 @@
+id: godot-demo
+name: Godot project
+root: .
+work_orders: orders
+state_dir: .alba
+engine: godot
+skills: { engine: godot }
+dispatch:
+  caps: { godot: 1 }
+  long_commands: [godot, dotnet]
+resources:
+  editor-build: { slots: 1, exclusive: true, blocks: [godot] }
+lessons: { dir: lessons, kind_tags: { godot: [engine, build] } }

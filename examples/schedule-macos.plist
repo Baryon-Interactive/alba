@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.baryon-interactive.alba.tick</string>
+  <key>ProgramArguments</key>
+  <array><string>NODE_EXECUTABLE</string><string>ALBA_CHECKOUT/bin/alba.mjs</string><string>--project</string><string>PROJECT_DIRECTORY/alba.yaml</string><string>tick</string></array>
+  <key>WorkingDirectory</key><string>ALBA_CHECKOUT</string>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>

@@ -1,0 +1,43 @@
+Reading additional input from stdin...
+2026-11-03T13:25:18.774978Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: Data at line 1 column 7417 (body: 7417 bytes)
+OpenAI Codex v0.166.0
+--------
+workdir: workspace/work\demo
+model: some-model
+provider: some-provider
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 00000000-0000-0000-0000-000000000000
+--------
+user
+Read the UTF-8 file workspace/work/runs/T1-r1.prompt.md in full and follow it exactly.
+warning: Codex is ignoring 4 unrecognized configuration settings. Check for typos or deprecated settings.
+  user (workspace/config\config.toml): `features.plan_tool` is ignored.
+codex
+I will read the order first.
+exec
+"workspace/WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -LiteralPath 'workspace/work/orders/T1.md' -Raw -Encoding UTF8" in workspace/work\demo
+ succeeded in 3ms:
+# T1 order text
+2026-11-03T13:25:36.920467Z ERROR codex_core::util: OutputTextDelta without active item
+exec
+"workspace/WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"memory\" 'workspace/notes/MEMORY.md'" in workspace/work\demo
+ exited 1 in 0ms:
+2026-11-03T13:25:55.220854Z ERROR codex_core::util: OutputTextDelta without active item
+exec
+"workspace/WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'git status --short --branch' in workspace/work\demo
+exec
+"workspace/WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -LiteralPath 'AGENTS.md' -Raw -Encoding UTF8" in workspace/work\demo
+ succeeded in 443ms:
+## demo
+ succeeded in 0ms:
+# AGENTS.md
+2026-11-03T13:26:08.190553Z ERROR codex_core::util: OutputTextDelta without active item
+codex
+The change is in place; now the long check on the remote machine.
+exec
+"workspace/WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'bash tools/remote/run.sh t1 "scenario long --days 365 --seed 120"' in workspace/work\demo
+2026-11-03T13:27:00.014081Z ERROR codex_core::util: OutputTextDelta without active item
+2026-11-03T13:27:21.067365Z ERROR codex_core::util: OutputTextDelta without active item

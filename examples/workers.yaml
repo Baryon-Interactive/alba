@@ -1,0 +1,100 @@
+# Workers of one person or machine. Path: --workers <file> or ALBA_WORKERS. No keys here.
+quota_sources:
+  # Runs a command that prints JSON like
+  #   [{"provider":"a","windows":[{"name":"7 days","used":42,"resetsAt":"2026-01-08T00:00:00Z"}],"balance":"900 credits"}]
+  # The command name below is made up; use whatever your gateway offers. Not used by the demo.
+  gateway-a:
+    type: command-json
+    command: [example-quota, --json]
+    select: { field: provider, equals: a }
+    balance: balance
+  # Nothing to read: a local model, or a gateway without a quota query.
+  local:
+    type: static
+    unlimited: true
+  # A fixed window, useful for trying the rules out.
+  demo-subscription:
+    type: static
+    windows:
+      - { name: 7 days, used_percent: 100, resets_at: "2099-01-01T00:00:00Z" }
+    balance: "500 credits"
+
+workers:
+  - id: coder-local
+    engine: opencode
+    route: "a local model"
+    concurrency: 2
+    notes: A local model for simple, cheap chores.
+    cost: included
+    aliases: [Codex]
+    quota: local
+
+  - id: coder-subscription
+    engine: codex-cli
+    route: "a subscription; when the window is used up, requests would spend credits"
+    paid: true
+    concurrency: 2
+    daily_runs: 10
+    notes: Long unattended work: builds, merges, anything that needs care.
+    cost: paid
+    aliases: [Codex]
+    quota: demo-subscription
+    price: { per_mtok: 8 }          # dollars per million tokens, only to estimate a run's cost (engines that print none)
+    daily_cap_usd: 25               # nothing more is started on it once today's runs cost this much
+    disabled_when:
+      - { window_full: "7 days" }
+      - { balance_drop: 5 }
+
+  - id: editor-session
+    engine: claude-session
+    route: "a desktop session that a person starts from a card"
+    concurrency: 3
+    aliases: ["Claude session"]
+
+  # An engine that can continue a conversation: the tool picks the session id, and a resume after a drop uses -r.
+  # Edits are accepted, only the listed commands may run; a command that is not listed stops the run and shows up in the tick.
+  - id: grok
+    engine: grok-cli
+    route: "the Grok command line program, signed in on this machine"
+    concurrency: 2
+    aliases: [Grok]
+    quota: local
+    launch:
+      template: grok-v1
+      program: grok
+      model: grok-4.7
+      args:
+        - --prompt-file
+        - "{prompt_file}"
+        - --cwd
+        - "{cwd}"
+        - -m
+        - "{model}"
+        - --reasoning-effort
+        - high
+        - --output-format
+        - streaming-json
+        - --max-turns
+        - "400"
+        - --permission-mode
+        - acceptEdits
+        - --allow
+        - "Bash(git status:*)"
+        - --allow
+        - "Bash(git diff:*)"
+        - --allow
+        - "Bash(git log:*)"
+        - --allow
+        - "Bash(git add:*)"
+        - --allow
+        - "Bash(git commit:*)"
+        - "{session_args}"
+      session:
+        new: [-s, "{session_id}"]
+        resume: [-r, "{session_id}"]
+
+roles:
+  build:
+    kinds: [sim, level]
+    workers: { prefer: [coder-subscription, coder-local] }
+  default: {}

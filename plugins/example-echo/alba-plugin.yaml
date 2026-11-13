@@ -1,0 +1,32 @@
+# A complete tool plugin to copy. It has no code inside Alba: the MCP server is an outside process (server.mjs, Node only).
+# Enable it in a project with   plugins: { enable: [example-echo] }   and give an order   tools: [example-echo].
+id: example-echo
+version: 1.0.0
+apiVersion: 1
+kinds: [tool]
+description: Repeats the text it is given; an example of a tool plugin.
+
+agent:
+  mcp:
+    echo:
+      command: node
+      args: ["${plugin}/server.mjs"]
+      tools: [echo]
+  skill: skills/example-echo
+
+machines:
+  probe: [node, --version]
+
+# What Alba itself can run, without a worker: `alba tools run example-echo echo --arg text=hi`, or the producer's tool-call.
+operations:
+  echo:
+    description: Repeats a text and keeps it as echo.txt in the job folder.
+    input: { type: object, required: [text], additionalProperties: false, properties: { text: { type: string, maxLength: 2000 } } }
+    run: { mcp: echo, tool: echo }
+    output: { text: echo.txt }
+  echo-paid:
+    description: The same, as a paid operation - priced by the server's echo_price tool at one credit per started 100 characters.
+    input: { type: object, required: [text], additionalProperties: false, properties: { text: { type: string, maxLength: 2000 } } }
+    run: { mcp: echo, tool: echo }
+    quote: { unit: credits, tool: echo_price }
+    output: { text: echo.txt }

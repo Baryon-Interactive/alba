@@ -1,0 +1,12 @@
+{
+  "title": "Import the interface contract",
+  "decision": "D150",
+  "changes": [
+    { "op": "create", "kind": "system", "id": "UI", "fields": { "name": "Interface", "summary": "Readable encounter presentation", "source_refs": ["content@1#b57d55e9611b5"], "code_globs": [], "data_globs": [] } },
+    { "op": "create", "kind": "rule", "id": "UI-R01", "fields": { "system": "UI", "text": "The encounter summary is visible in a readable panel after each encounter.", "sources": [{ "kind": "doc", "ref": "content@1#b57d55e9611b5" }, { "kind": "decision", "ref": "D150" }] } },
+    { "op": "create", "kind": "target", "id": "UI-T01", "fields": { "system": "UI", "metric": "Summary panel visibility", "min": 1, "max": 1, "unit": "boolean", "command": "node tools/measure-summary-panel.mjs" } },
+    { "op": "create", "kind": "target", "id": "UI-T02", "fields": { "system": "UI", "metric": "Summary text readability", "min": 1, "max": 1, "unit": "score", "command": "node tools/measure-summary-text.mjs" } },
+    { "op": "create", "kind": "target", "id": "UI-T03", "fields": { "system": "UI", "metric": "Summary route coverage", "min": 1, "max": 1, "unit": "routes", "command": "node tools/measure-summary-routes.mjs" } },
+    { "op": "create", "kind": "gap", "id": "UI-G01", "fields": { "system": "UI", "text": "The final visual treatment of the summary panel needs product review.", "refs": [], "status": "open" } }
+  ]
+}

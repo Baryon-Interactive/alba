@@ -1,0 +1,11 @@
+workers:
+  - id: local
+    engine: script
+    cost: paid
+    model: demo-model
+    # Fictional rates for the screenshot fixtures; the local script makes no paid calls.
+    pricing: { input_per_mtok: 2, cached_input_per_mtok: 0.5, output_per_mtok: 8, currency: USD }
+    price: { input_per_mtok: 2, output_per_mtok: 8 }
+    launch:
+      program: node
+      args: [worker.mjs]

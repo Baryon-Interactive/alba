@@ -1,0 +1,49 @@
+# Invented aliases: define them in your own SSH config before probing.
+# Put this registry next to workers.yaml, or set machines: / ALBA_MACHINES.
+probe_minutes: 5
+machines:
+  - id: build-box
+    name: Build box
+    os: windows
+    connect: { ssh: build-box }
+    hardware: { cpu: Example 16-core CPU, ram_gb: 64, gpu: Example GPU }
+    roles: [compile-helper, package]
+    slots: 2 # Informational; no jobs are dispatched here.
+    min_free_mem_gb: 8
+    timing_allowed: false
+    notes: Packaging helper maintained by the studio.
+    services:
+      - id: compile-agent
+        check: { process: compile-agent.exe }
+        start_hint: Open the compile helper application.
+      - id: cache
+        check: { tcp: 'build-box:8123' }
+        start_hint: Start the studio cache service.
+  - id: sim-linux
+    name: Simulation box
+    os: linux
+    connect: { ssh: sim-linux }
+    hardware: { cpu: Example 32-core CPU, ram_gb: 128 }
+    roles: [sim, timing-baseline]
+    role_requirements:
+      sim: { tools: [compiler, cmake, python], min_threads: 8, min_ram_gb: 15 }
+    slots: 4
+    min_free_mem_gb: 16
+    timing_allowed: true
+    services:
+      - id: gateway
+        check: { http: 'http://sim-linux:8080/health' }
+        start_hint: Start the model gateway using its service manager.
+      - id: simulation-status
+        check: { command: [simulation-status, --check] }
+        start_hint: Check the simulation service configuration.
+  - id: control-room
+    name: Control room
+    os: macos
+    connect: { local: true }
+    hardware: { cpu: Example CPU, ram_gb: 32 }
+    roles: [control]
+    slots: 1
+    min_free_mem_gb: 4
+    timing_allowed: false
+    services: []

@@ -1,0 +1,28 @@
+{
+  "source": "examples/demo",
+  "scenario": "Real DEMO1 dispatch plus examples/demo/showcase.ts synthetic running, decision and review records; fictional usage and prices",
+  "stages": [
+    "running",
+    "awaiting-user",
+    "awaiting-review",
+    "merged"
+  ],
+  "method": "Chromium DevTools Page.captureScreenshot",
+  "width": 1440,
+  "height": 900,
+  "language": "en",
+  "theme": "dark",
+  "generatedImages": 0,
+  "captures": [
+    {
+      "file": "console.png",
+      "route": "/",
+      "sha256": "dbdd7268cd1d6f525ae041d9d5059c25d1cf02edfb7b1d06512ab11d9dd35c11"
+    },
+    {
+      "file": "board.png",
+      "route": "/p/demo/board?empty=hide",
+      "sha256": "ac07e7e328956aa5179df388d3a521e5df3c940bbe7971fb2cac0bfd313e2cba"
+    }
+  ]
+}

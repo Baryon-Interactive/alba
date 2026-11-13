@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "blocks": [
+    { "ref": "base@1#b9ea28f9c726a", "superseded": "v2@1#b772402adfeed" },
+    { "ref": "base@1#b2c8ddc41fde8", "mapped": ["RUN-R01"] },
+    { "ref": "v2@1#b772402adfeed", "mapped": ["RUN", "RUN-R01", "UI-R01", "D150"] },
+    { "ref": "content@1#baa6d8c128eb4", "out-of-scope": "The encounter count is covered by the run system." },
+    { "ref": "content@1#b57d55e9611b5", "unclear": "UI-G01" }
+  ]
+}

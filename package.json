@@ -1,0 +1,57 @@
+{
+  "name": "@baryon-interactive/alba",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A local control room for making games with AI coding agents.",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "alba": "bin/alba.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "plugins/",
+    "templates/",
+    "schema/",
+    "docs/",
+    "examples/",
+    "ui/dist/",
+    "CHANGELOG.md",
+    "NOTICE"
+  ],
+  "scripts": {
+    "alba": "node --disable-warning=ExperimentalWarning src/cli/main.ts",
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:release": "node scripts/audit-source.mjs",
+    "check:changelog": "node scripts/check-changelog.mjs",
+    "licenses:report": "node scripts/licenses.mjs",
+    "test:ablation": "node scripts/ablation.mjs",
+    "docs:screenshots": "node scripts/demo-screenshots.ts",
+    "ui:dev": "pnpm -C ui dev",
+    "ui:build": "pnpm -C ui build",
+    "ui:test": "pnpm -C ui test"
+  },
+  "dependencies": {
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.20.1"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Baryon-Interactive/alba.git"
+  },
+  "homepage": "https://github.com/Baryon-Interactive/alba#readme",
+  "bugs": {
+    "url": "https://github.com/Baryon-Interactive/alba/issues"
+  }
+}

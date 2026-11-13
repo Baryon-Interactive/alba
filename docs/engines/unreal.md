@@ -1,0 +1,9 @@
+# Unreal machine module
+
+Select engine: unreal in alba.yaml or a machines.yaml entry. Other projects never run these probes or offer these installation items. Windows scans registry/default Epic Games installations for versions and UBA, vswhere and drive toolset folders for MSVC, and Windows Kits Include for SDKs. Linux/macOS scan common Build.version files; Windows-only functionality is explicitly marked unsupported there.
+
+The module can install MSVC Build Tools with the C++ workload and recommended SDK, or the Windows SDK, through the shared winget job runner. Epic launcher installs need an interactive sign-in, so the remote engine operation copies the host's existing licensed Windows installation instead. It requires a Windows host and Windows SSH target, an administrator login, and a selected host Unreal scan. Local installation is left to the Epic Games Launcher.
+
+The source registry/default installation is measured, cached for one hour, and partitioned by file count into up to eight balanced groups. Each group streams tar -czf through its own SSH connection, in parallel. Many small engine files spend time in per-file overhead on both machines; concurrent streams reduce that overhead, and gzip reduces transferred bytes. Each file is covered once. The target uses the fixed drive with the most room, requiring source size plus 20 GB, extracts under Epic Games/UE_<version>, registers InstalledDirectory and runs engine prerequisites. The Launcher does not list this copied installation; registry-based project/build discovery does.
+
+The copy-unreal lock is independent of installer jobs. The plan exposes size, destination, commands, own-licence requirements and overwrite behavior before a person starts it. Copy jobs report streamed compressed bytes; completed destination files are overwritten on retry. Tests verify partition coverage, gzip streams, destination choice and lock behavior without copying an installed engine or installing tools.

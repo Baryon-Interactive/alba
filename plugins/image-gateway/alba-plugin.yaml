@@ -1,0 +1,52 @@
+# Pictures from an OpenAI-compatible images endpoint: OpenAI itself, or a local gateway that speaks the same API.
+# Enable it with   plugins: { enable: [image-gateway], settings: { image-gateway: { base_url: ..., model: ..., key_env: ... } } }
+id: image-gateway
+version: 1.0.0
+apiVersion: 1
+kinds: [tool]
+description: Generates pictures from a prompt, or edits them from reference pictures, through an OpenAI-compatible images endpoint.
+
+settings:
+  base_url:
+    description: The endpoint, without /v1 (https://api.openai.com, or a local gateway such as http://127.0.0.1:3425).
+    default: https://api.openai.com
+  model:
+    description: The image model a call uses when it names none.
+    default: gpt-image-1
+  key_env:
+    description: The name of the environment variable that holds the API key; empty for a gateway that needs no key. The value is never written anywhere.
+    default: OPENAI_API_KEY
+
+agent:
+  mcp:
+    image:
+      command: node
+      args: ["${plugin}/server.mjs", --base-url, "${setting.base_url}", --model, "${setting.model}", --key-env, "${setting.key_env}"]
+      env_from: ["${setting.key_env}"]
+      tools: [image_generate]
+  skill: skills/image-gateway
+
+machines:
+  probe: [node, --version]
+
+operations:
+  generate:
+    description: Pictures from a prompt, guided by reference pictures when refs are given; PNG files with their real size.
+    input:
+      type: object
+      required: [prompt]
+      additionalProperties: false
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 32000 }
+        size: { type: string, description: "WxH, e.g. 1024x1024 or 1536x1024; the model may return another size" }
+        quality: { type: string, enum: [low, medium, high, auto] }
+        background: { type: string, enum: [opaque, transparent, auto] }
+        n: { type: integer, minimum: 1, maximum: 8 }
+        model: { type: string }
+        refs: { type: array, maxItems: 16, items: { type: string }, description: "absolute paths of reference pictures" }
+        name: { type: string, description: "file name without extension (default: image)" }
+    run: { mcp: image, tool: image_generate, out_arg: out_dir }
+    # Every call may be paid: one "images" per picture asked. A person approves the quote, or Alba within plugins.auto_approve.images.
+    quote: { unit: images, tool: image_price }
+    output: { files: ["*.png", "*.webp", "*.jpg"] }
+    timeout_minutes: 15

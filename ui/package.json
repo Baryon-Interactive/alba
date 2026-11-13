@@ -1,0 +1,47 @@
+{
+  "name": "@baryon-interactive/alba-console",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "The web console of Alba (React, served by `alba serve` from ui/dist).",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@git-diff-view/react": "0.1.8",
+    "@tanstack/react-query": "5.105.3",
+    "@tanstack/react-virtual": "3.14.25",
+    "anser": "2.3.5",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "cmdk": "1.1.1",
+    "highlight.js": "11.11.2",
+    "lowlight": "3.3.0",
+    "lucide-react": "1.67.0",
+    "radix-ui": "1.8.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "react-router": "7.18.5",
+    "recharts": "3.10.1",
+    "remark-gfm": "4.0.1",
+    "sonner": "2.0.8",
+    "tailwind-merge": "3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.4",
+    "@types/node": "22.20.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "tailwindcss": "4.3.4",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,14 @@
+id: demo
+name: Alba Demo
+root: .
+work_orders: orders
+state_dir: .alba
+workers: workers.yaml
+roles:
+  local:
+    default: true
+    workers: { only: [local] }
+dispatch:
+  caps: { task: 1 }
+  worktree_parent: ../worktrees
+  base_ref: main

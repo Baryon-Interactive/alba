@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible Alba failure.
+body:
+  - type: markdown
+    attributes:
+      value: Remove credentials, personal paths, project data and usernames. Report vulnerabilities privately through Security > Advisories > Report a vulnerability.
+  - type: input
+    id: version
+    attributes:
+      label: Alba version or commit
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS, Node and pnpm versions
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Prefer examples/demo and anonymized configuration.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs and screenshots

@@ -1,0 +1,15 @@
+node_modules/
+.pnpm-store/
+dist/
+.state/
+.alba/
+*.log
+.env
+
+# ui
+ui/dist/
+ui/node_modules/
+ui/*.tsbuildinfo
+
+# Test fixtures are real (anonymized) run logs that the tests read.
+!test/fixtures/*.log

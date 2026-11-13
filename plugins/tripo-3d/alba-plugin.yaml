@@ -1,0 +1,68 @@
+# 3D models through Tripo Studio with the member account logged in on the machine (no API key). The MCP server is the MIT package
+# tripo-studio-plugin; this plugin starts it, gives workers its tools, and gives Alba one paid operation that goes through it end to end.
+# Enable it with   plugins: { enable: [tripo-3d], settings: { tripo-3d: { server: <path>/mcp/bootstrap.mjs, ceiling: 60 } } }
+id: tripo-3d
+version: 1.0.0
+apiVersion: 1
+kinds: [tool]
+description: Generates 3D models from pictures or text with Tripo Studio (the member account logged in on this machine) and downloads them.
+
+settings:
+  server:
+    description: Absolute path of a local Tripo Studio plugin's mcp/bootstrap.mjs (for example in the Codex plugin cache); empty to start the npm package with npx.
+    default: ""
+  package:
+    description: The npm package of the Tripo Studio MCP server, used when server is empty.
+    default: tripo-studio-plugin@0.3.13
+  ceiling:
+    description: Credits a quote asks for when Tripo cannot price an operation (its quote says unknown). A person approves it; what the wallet shows was spent is booked.
+    default: "60"
+
+agent:
+  mcp:
+    tripo:
+      command: node
+      args: ["${plugin}/start-tripo.mjs", --server, "${setting.server}", --package, "${setting.package}"]
+      tools: [tripo_auth_status, tripo_get_payment, tripo_list_models, tripo_get_model, tripo_list_operations, tripo_quote_operation,
+              tripo_generate_model, tripo_generate_texture, tripo_generate_pbr, tripo_export_model, tripo_download,
+              tripo_get_configuration_review, tripo_task_sync, tripo_task_wait, tripo_task_cancel, tripo_get_task, tripo_list_tasks,
+              tripo_task_reconcile, tripo_render_model]
+    tripo-ops:
+      command: node
+      args: ["${plugin}/ops.mjs", --server, "${setting.server}", --package, "${setting.package}", --ceiling, "${setting.ceiling}"]
+      workers: false
+  skill: skills/tripo-3d
+
+machines:
+  probe: [node, "${plugin}/start-tripo.mjs", --check, --server, "${setting.server}", --package, "${setting.package}"]
+
+resources:
+  tripo-wallet: { slots: 1 }   # one paid Tripo call at a time: the spend is read from the wallet before and after
+
+operations:
+  generate-model:
+    description: A model from a picture, from views of one object, or from text; waited for and downloaded (GLB, or exported to another format). Paid in Tripo credits.
+    input:
+      type: object
+      required: [mode, face_limit]
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [image, multiview, text] }
+        image_path: { type: string, description: "mode image: absolute path of the picture" }
+        front_image_path: { type: string }
+        back_image_path: { type: string }
+        left_image_path: { type: string }
+        right_image_path: { type: string }
+        prompt: { type: string, maxLength: 1000, description: "mode text" }
+        tier: { type: string, enum: [smart_mesh, high_detail], description: "default smart_mesh (an untextured mesh)" }
+        face_limit: { type: integer, minimum: 1 }
+        texture: { type: boolean, description: "high_detail only" }
+        pbr: { type: boolean, description: "high_detail only" }
+        texture_quality: { type: string, enum: [standard, detailed, ultra] }
+        format: { type: string, enum: [glb, fbx, obj, usdz, stl, 3mf] }
+        name: { type: string, description: "file name without extension (default: model)" }
+        character_name: { type: string }
+    run: { mcp: tripo-ops, tool: tripo_make_model, out_arg: out_dir }
+    quote: { unit: credits, tool: tripo_price }
+    output: { files: ["*.glb", "*.fbx", "*.obj", "*.usdz", "*.stl", "*.3mf", "*.zip"] }
+    timeout_minutes: 90

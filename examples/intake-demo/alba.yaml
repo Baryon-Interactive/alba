@@ -1,0 +1,19 @@
+id: intake-demo
+name: Intake demo
+root: .
+work_orders: orders
+state_dir: state
+state: { backend: sqlite }
+design: { enabled: true, data_roots: [] }
+design_docs:
+  files:
+    - { id: base, path: docs/base.md, order: 1, status: approved }
+    - { id: v2, path: docs/v2.md, order: 2, status: approved }
+    - { id: content, path: docs/content.md, order: 3, status: draft }
+  decisions:
+    file: decisions.md
+    all_tables: true
+    id_column: 1
+    text_column: 2
+    source_column: 3
+intake: { min_targets_per_system: 3 }

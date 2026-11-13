@@ -1,0 +1,6 @@
+{"type":"text","data":"res"}
+{"type":"text","data":"umed"}
+{"type":"text","data":" ok"}
+{"type":"text","data":"."}
+{"type":"usage","usage":{"input_tokens":17225,"output_tokens":236,"cache_read_input_tokens":1664,"cache_creation_input_tokens":0,"reasoning_tokens":223}}
+{"type":"end","stopReason":"end_turn","sessionId":"01a1a171-f0d5-7470-bed6-da9198952072","requestId":"ae6fba2c-ce8d-464a-8037-22fbbee05200","cwd":"workspace/work\\demo","usage":{"input_tokens":17225,"cache_read_input_tokens":1664,"cache_creation_input_tokens":0,"output_tokens":236,"reasoning_tokens":223,"total_tokens":19125},"num_turns":1,"total_cost_usd":0.036698,"total_cost_usd_ticks":366980000,"modelUsage":{"grok-4.7-build":{"inputTokens":17225,"outputTokens":236,"cacheReadInputTokens":1664,"cacheCreationInputTokens":0,"modelCalls":1,"costUSD":0.036698}}}
