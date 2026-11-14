@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readlinkSync } from 'node:fs';
-import type { Probes } from '../tick/gather.ts';
+import { startedAtForCheck, type Probes } from '../tick/gather.ts';
 
 export interface ExecutableProcess { pid: number; executable: string }
 
@@ -23,7 +23,7 @@ export function executableProcesses(): ExecutableProcess[] {
 export function runProcess(pid: number | undefined, started: string, recorded: string | undefined, probes: Probes): { active: boolean; reason?: string } {
   if (!pid) return { active: true }; // an open launch or detached monitor still protects its owner
   if (!probes.isAlive(pid)) return { active: false };
-  const actual = Date.parse(probes.processStartedAt?.(pid) ?? '');
+  const actual = Date.parse(startedAtForCheck(probes, pid) ?? '');
   const expected = Date.parse(recorded ?? started);
   if (!Number.isFinite(actual) || !Number.isFinite(expected)) return { active: true, reason: `Cannot verify the creation time of pid ${pid}.` };
   const matches = recorded ? Math.abs(actual - expected) <= 1000 : actual >= expected - 1000;

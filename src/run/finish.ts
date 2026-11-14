@@ -10,7 +10,7 @@ import type { Run, RunOutcome } from '../orders/model.ts';
 import { parseReportBlock, parseReportFile, REPORT_BEGIN, REPORT_END, type ReportInput } from '../orders/report.ts';
 import { REPORT_STATUSES } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
-import type { Probes } from '../tick/gather.ts';
+import { startedAtForCheck, type Probes } from '../tick/gather.ts';
 import { trailingTransientFailures } from './launch.ts';
 import { parseStreamLog } from '../workers/adapters/index.ts';
 import { parseUsage, type RunUsage } from '../usage/usage.ts';
@@ -78,7 +78,7 @@ function bouncePrompt(error: string | undefined, finalMessage: boolean): string 
 function stillOurs(run: { pid?: number; process_started_at?: string; started: string }, probes: Probes): boolean {
   if (!probes.isAlive(run.pid!)) return false;
   if (!probes.processStartedAt) return true;
-  const actual = probes.processStartedAt(run.pid!);
+  const actual = startedAtForCheck(probes, run.pid!);
   // Without a recorded creation time, a process created outside the run's launch window has only reused the pid.
   return !actual || runProcessMatches(actual, run.process_started_at, run.started);
 }

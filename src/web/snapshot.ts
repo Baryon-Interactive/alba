@@ -73,6 +73,9 @@ export function rowsOf(project: ProjectConfig, orders: Orders, activity: Record<
  * an answer is older than that, it is still given, and a fresh one is read in the background (when the probes can do that
  * without blocking): a page never waits for the slow command except the very first time. A command that failed is not kept.
  */
+/** How long a cached `git worktree list` is used. */
+const WORKTREES_MS = 10_000;
+
 export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(commands: readonly (readonly string[])[], timeoutSeconds?: number): Promise<void> } {
   const memo = new Map<string, { at: number; value: unknown }>();
   const refreshing = new Set<string>();
@@ -92,6 +95,7 @@ export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(comm
     return value;
   };
   const { runCommandAsync, freeRamGbAsync, gitActivityAsync } = base;
+  const worktreeMemo = new Map<string, { at: number; value: ReturnType<Probes['worktrees']> }>();
   /** Fills the memory in the background (a server calls this when it starts), so not even the first page waits for a slow command. */
   const prime = async (commands: readonly (readonly string[])[], timeoutSeconds = 60): Promise<void> => {
     const fill = async (key: string, read: () => Promise<unknown>) => {
@@ -112,6 +116,14 @@ export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(comm
     runCommand: (command, timeout) => once(`cmd:${command.join('\u0000')}`, () => base.runCommand(command, timeout), runCommandAsync ? () => runCommandAsync.call(base, command, timeout) : undefined),
     freeRamGb: () => once('ram', () => base.freeRamGb(), freeRamGbAsync ? () => freeRamGbAsync.call(base) : undefined),
     gitActivity: worktree => once(`git:${worktree}`, () => base.gitActivity(worktree), gitActivityAsync ? () => gitActivityAsync.call(base, worktree) : undefined),
+    // `git worktree list` (0.1-0.5 s) is read by every tick and every view; a few seconds old is good enough for both.
+    worktrees: root => {
+      const hit = worktreeMemo.get(root);
+      if (hit && base.now().getTime() - hit.at < WORKTREES_MS) return hit.value;
+      const value = base.worktrees(root);
+      worktreeMemo.set(root, { at: base.now().getTime(), value });
+      return value;
+    },
   };
 }
 

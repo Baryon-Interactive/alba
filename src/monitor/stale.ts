@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc, MonitorSpec } from '../orders/model.ts';
-import type { Probes } from '../tick/gather.ts';
+import { startedAtForCheck, type Probes } from '../tick/gather.ts';
 
 /** Observe output in full and named files, retaining only a digest and paths/times. */
 export function monitorObservation(spec: MonitorSpec, cwd: string, output: string, probes: Probes, status?: unknown): string {
@@ -20,7 +20,7 @@ export function staleMonitor(project: ProjectConfig, doc: OrderDoc, probes: Prob
   if (!spec) return;
   const pid = m.pid ?? spec.pid;
   if (pid) {
-    const actual = probes.processStartedAt?.(pid);
+    const actual = startedAtForCheck(probes, pid);
     const evidence = { pid, recordedStart: m.process_started_at ?? null, actualStart: actual ?? null, monitorStarted: m.started };
     if (!probes.isAlive(pid)) return { reason: `Monitor PID ${pid} no longer exists. Inspect the job output and repair the failed step before restarting.`, evidence };
     if (actual && (Date.parse(actual) > Date.parse(m.started) || (m.process_started_at && Date.parse(actual) !== Date.parse(m.process_started_at)))) return { reason: `Monitor PID ${pid} was reused by a different process. Find the original job result and repair or replace its check; do not wait on this PID.`, evidence };

@@ -39,6 +39,7 @@ import { collectUsage, budgetWarnings } from '../usage/accounting.ts';
 import { liveRuns } from '../run/live.ts';
 import { pickupOutbox } from '../run/messages.ts';
 import { lingeringOf } from '../run/lingering.ts';
+import { tableStartedAt } from '../monitor/process.ts';
 import { producerHeartbeatProblem } from '../producer/producer.ts';
 import { producerSessionHeartbeatProblem } from '../producer/session.ts';
 import { budgetProblem } from '../producer/session-usage.ts';
@@ -111,15 +112,8 @@ export const systemProbes: Probes = {
       execFile(command[0], command.slice(1), { encoding: 'utf8', timeout: timeoutSeconds * 1000, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
     });
   },
-  freeRamGbAsync() {
-    return new Promise(resolve => {
-      if (process.platform !== 'win32') return resolve(os.freemem() / 2 ** 30);
-      execFile('powershell', ['-NoProfile', '-Command', '(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory'], { encoding: 'utf8', timeout: 30000, windowsHide: true }, (error, stdout) => {
-        const kb = Number(String(stdout).trim());
-        resolve(!error && Number.isFinite(kb) && kb > 0 ? kb / 1048576 : os.freemem() / 2 ** 30);
-      });
-    });
-  },
+  // os.freemem() is the same reading as Win32_OperatingSystem.FreePhysicalMemory, without a 3 s PowerShell start.
+  freeRamGbAsync() { return Promise.resolve(os.freemem() / 2 ** 30); },
   gitActivityAsync(worktree) {
     const git = (...args: string[]) => new Promise<string>((resolve, reject) => {
       execFile('git', ['-C', worktree, ...args], { encoding: 'utf8', timeout: 30000, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
@@ -128,15 +122,7 @@ export const systemProbes: Probes = {
       .then(([last, status]) => ({ lastCommitAt: last.trim() ? new Date(last.trim()).toISOString() : undefined, dirtyFiles: status.split(/\r?\n/).filter(Boolean).length }))
       .catch(() => ({}));
   },
-  freeRamGb() {
-    if (process.platform === 'win32') {
-      try {
-        const kb = Number(execFileSync('powershell', ['-NoProfile', '-Command', '(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory'], { encoding: 'utf8', timeout: 30000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim());
-        if (Number.isFinite(kb) && kb > 0) return kb / 1048576;
-      } catch { /* fall back below */ }
-    }
-    return os.freemem() / 2 ** 30;
-  },
+  freeRamGb() { return os.freemem() / 2 ** 30; },
   worktrees(root) {
     try {
       const text = execFileSync('git', ['-C', root, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', timeout: 30000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -219,6 +205,18 @@ export const systemProbes: Probes = {
   },
   spawnDetached: spawnDetachedProgram,
 };
+
+/**
+ * A process's creation time for a check that repeats (is a run's pid still its process?). With the system's probes it comes
+ * from one process table read in the background (src/monitor/process.ts) and never waits: undefined when not known yet,
+ * which callers read as "cannot tell". `probes.processStartedAt` itself asks the system now; it is what records the identity
+ * of a process just started (a cached answer could belong to an earlier process with the same pid). Other probes (tests,
+ * replays) are asked directly.
+ */
+export function startedAtForCheck(probes: Probes, pid: number): string | undefined {
+  if (probes.processStartedAt === systemProbes.processStartedAt) return tableStartedAt(pid);
+  return probes.processStartedAt?.(pid);
+}
 
 /** The last run ended at a limit and its worker hands such orders over: who, why, and whether a paid worker may take it. */
 function rotateOf(d: OrderDoc, lastRun: OrderDoc['runs'][number] | undefined, lastActionSeq: number, file: WorkersFile): { rotate?: { from: string; reason: string; allowPaid: boolean } } {
