@@ -1,6 +1,10 @@
 import { Document, visit } from 'yaml';
 import { ANY, type Roles, type WorkerGroups } from './config.ts';
 
+/** Does a file have roles of its own to migrate? A file that names none still gets an empty `default` role from the loader. */
+export const hasLegacyRoles = (roles: Roles | undefined): roles is Roles =>
+  !!roles && Object.values(roles).some(r => Object.keys(r).some(k => k !== 'sources'));
+
 /**
  * The `routing` that replaces a file's `roles`, routing every order as before:
  * - each role becomes a route with a worker group: its `workers.only` in its preferred order, or its `workers.prefer` followed by
@@ -9,7 +13,7 @@ import { ANY, type Roles, type WorkerGroups } from './config.ts';
  * - what a route no longer carries (skills, MCP servers, rules, effort) is listed with where it goes instead.
  * Nothing is written.
  */
-export function migrateRoles(roles: Roles): { yaml: string; notes: string[] } {
+export function migrateRoles(roles: Roles): { yaml: string; notes: string[]; routing: Record<string, unknown> } {
   const groups: WorkerGroups = {};
   const routes: Record<string, Record<string, unknown>> = {};
   const notes: string[] = [];
@@ -53,5 +57,5 @@ export function migrateRoles(roles: Roles): { yaml: string; notes: string[] } {
   // Lists on one line (`[codex, claude-sonnet]`), mappings as blocks.
   const doc = new Document({ routing });
   visit(doc, { Seq(_, node) { node.flow = true; } });
-  return { yaml: doc.toString({ flowCollectionPadding: false, lineWidth: 0 }), notes };
+  return { yaml: doc.toString({ flowCollectionPadding: false, lineWidth: 0 }), notes, routing };
 }

@@ -1,5 +1,5 @@
 import { rolesView } from '../roles/view.ts';
-import { migrateRoles } from '../roles/migrate.ts';
+import { hasLegacyRoles, migrateRoles } from '../roles/migrate.ts';
 import { fail } from '../i18n.ts';
 import type { ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
@@ -42,7 +42,7 @@ export async function runRouting(group: string, rest: string[], values: RoutingV
     if (rest[0] === 'migrate' && rest.length === 1) {
       const out: string[] = [];
       for (const [label, roles, current] of [[cfg.file, cfg.roles, cfg.uses_routing], [file?.file, file?.roles, file?.uses_routing]] as const) {
-        if (!label || !roles || !Object.keys(roles).length) continue;
+        if (!label || !hasLegacyRoles(roles)) continue;
         if (current) { out.push(t('{file}: already uses routing.', { file: label })); continue; }
         const m = migrateRoles(roles);
         out.push(t('# {file}: replace "roles:" with', { file: label }), m.yaml.trimEnd(), ...(m.notes.length ? ['', t('# Moved out of the routes:'), ...m.notes.map(n => `#   ${n}`)] : []), '');

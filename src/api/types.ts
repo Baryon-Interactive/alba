@@ -480,7 +480,11 @@ export interface SkillMountInfo { worker: string; engine: string; mounts: string
 export interface SkillUseRequest { project?: string; name: string; use: boolean }
 
 /** The answer of a write to a project file. */
-export interface ConfigEditResult { ok: true; file: string; changed: string[]; backup?: string }
+export interface ConfigEditResult { ok: true; file: string; changed: string[]; backup?: string; dryRun?: boolean }
+/** GET /api/routing/migrate: for each file that still has legacy `roles`, the `routing` that routes every order the same way. */
+export interface RoutingMigration { project: string; files: { target: 'project' | 'workers'; file: string; routing: Record<string, unknown>; yaml: string; notes: string[] }[] }
+/** GET /api/config: the editable sections of the project file or the workers file, as written there. */
+export interface ConfigView { project: string; target: 'project' | 'workers'; file: string; values: Record<string, unknown>; editable: string[] }
 
 /** `GET /api/skills?project=` */
 export interface SkillsView {

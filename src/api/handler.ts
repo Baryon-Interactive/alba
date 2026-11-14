@@ -1,4 +1,7 @@
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
+import { hasLegacyRoles, migrateRoles } from '../roles/migrate.ts';
+import { editConfig, EDITABLE, readEditable, type ConfigEdit } from '../config-edit.ts';
+import { describeFields, editOrderBody, editOrderFields, ORDER_FIELD_NAMES, type OrderFields } from '../orders/edit-fields.ts';
 import { loadMachines, machinesFile } from '../machines/config.ts';
 import { machineInstallPlan, machinesView, probeCandidate, probeMachines, startInstall } from '../machines/probe.ts';
 import { cancelJob, machineJobs } from '../machines/jobs.ts';
@@ -38,7 +41,7 @@ import { formatReport } from '../tick/plan.ts';
 import { findFinishes } from '../run/finish.ts';
 import type { ProjectView, Snapshot } from '../web/snapshot.ts';
 import { loadWorkers, type WorkersFile } from '../workers/config.ts';
-import { addWorker, editWorker, editWorkerYaml, opsFromSet, recordWorkerEdit, workerYaml } from '../workers/edit.ts';
+import { addWorker, editWorker, editWorkerYaml, opsFromSet, recordWorkerEdit, workerYaml, removeWorker } from '../workers/edit.ts';
 import { EditRefused, type EditOutcome } from '../yamledit.ts';
 import { normalizeOptions } from '../orders/report.ts';
 import { planClean, systemClean } from '../clean/clean.ts';
@@ -479,6 +482,24 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const view = light(q('project'));
       return json(res, 200, orderSkillsView(view.config, ctx.workers, view.orders.get(parts[1])) satisfies A.OrderSkills);
     }
+    if (parts[0] === 'config' && parts.length === 1) {
+      const config = light(q('project')).config;
+      const target = q('target') === 'workers' ? 'workers' : 'project';
+      const file = target === 'workers' ? ctx.workers?.file : config.file;
+      if (!file) throw new ApiFailure(404, 'not_found', 'No workers file was given.');
+      return json(res, 200, { project: config.id, target, file, values: readEditable(file, target), editable: EDITABLE[target].map(p => p.join('.')) } satisfies A.ConfigView);
+    }
+    if (parts[0] === 'routing' && parts[1] === 'migrate' && parts.length === 2) {
+      // The routing that would replace each file's legacy roles (nothing is written; the console sends it back as a config edit).
+      const config = light(q('project')).config;
+      const files: A.RoutingMigration['files'] = [];
+      for (const [target, file, roles, uses] of [['project', config.file, config.roles, config.uses_routing], ['workers', ctx.workers?.file, ctx.workers?.roles, ctx.workers?.uses_routing]] as const) {
+        if (!file || uses || !hasLegacyRoles(roles)) continue;
+        const m = migrateRoles(roles);
+        files.push({ target, file, routing: m.routing, yaml: m.yaml, notes: m.notes });
+      }
+      return json(res, 200, { project: config.id, files } satisfies A.RoutingMigration);
+    }
     if (parts[0] === 'roles' && parts.length === 1) {
       const view = light(q('project'));
       const ledger = collectUsage(view.config, view.orders.all(), ctx.workers, ctx.probes);
@@ -842,6 +863,26 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const doc = planOrder(view.config, view.orders, { tag: str(body, 'tag', true)!, title: str(body, 'title', true)!, kind: str(body, 'kind', true)!, needs: strList(body, 'needs') ?? [], intent: str(body, 'intent', true)!, role: str(body, 'role') });
       return done(201, doc);
     }
+    if (parts[0] === 'orders' && parts[2] === 'fields' && parts.length === 3) {
+      // Any field of an order after it is made (src/orders/edit-fields.ts); null clears one.
+      const fields: Record<string, unknown> = {};
+      for (const key of ORDER_FIELD_NAMES) if (body[key] !== undefined) fields[key] = body[key];
+      if (!Object.keys(fields).length) throw new ApiFailure(400, 'bad_request', describeFields());
+      for (const key of ['title', 'kind', 'role', 'intent'] as const) if (fields[key] !== undefined && typeof fields[key] !== 'string') throw new ApiFailure(400, 'bad_request', `"${key}" must be text.`);
+      for (const key of ['worker', 'heavy', 'condition'] as const) if (fields[key] !== undefined && fields[key] !== null && typeof fields[key] !== 'string') throw new ApiFailure(400, 'bad_request', `"${key}" must be text or null.`);
+      for (const key of ['needs', 'tags', 'skills', 'uses', 'tools'] as const) if (fields[key] !== undefined && !(Array.isArray(fields[key]) && (fields[key] as unknown[]).every(x => typeof x === 'string'))) throw new ApiFailure(400, 'bad_request', `"${key}" must be a list of text.`);
+      if (fields.priority !== undefined && fields.priority !== null && !Number.isInteger(fields.priority)) throw new ApiFailure(400, 'bad_request', '"priority" must be a whole number or null.');
+      if (fields.check !== undefined && fields.check !== 'independent' && fields.check !== 'none') throw new ApiFailure(400, 'bad_request', '"check" is independent or none.');
+      if (fields.review !== undefined && fields.review !== 'manual' && fields.review !== 'auto') throw new ApiFailure(400, 'bad_request', '"review" is manual or auto.');
+      const doc = editOrderFields(view.config, view.orders, ctx.workers, parts[1], fields as OrderFields);
+      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env()));
+    }
+    if (parts[0] === 'orders' && parts[2] === 'body' && parts.length === 3) {
+      const text = str(body, 'text', true)!;
+      const expected = body.expected === undefined ? undefined : str(body, 'expected', true)!;
+      const file = editOrderBody(view.config, view.orders, parts[1], text, expected);
+      return done(200, { ok: true, file });
+    }
     if (parts[0] === 'orders' && parts[2] === 'plan' && parts.length === 3) {
       const patch: Parameters<typeof editPlan>[2] = {};
       for (const key of ['title', 'kind', 'intent', 'role'] as const) if (body[key] !== undefined) patch[key] = str(body, key, key !== 'role') ?? '';
@@ -877,6 +918,38 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       return workerWritten(view, id, out, file, out.dryRun ? 200 : 201);
     }
 
+    if (parts[0] === 'workers' && parts[2] === 'remove' && parts.length === 3) {
+      const file = workersFile();
+      const id = parts[1];
+      const busy: string[] = [];
+      for (const project of ctx.projects) {
+        const orders = light(project.id).orders;
+        for (const doc of orders.all()) {
+          if (doc.runs.some(r => r.ended === undefined && r.worker === id)) busy.push(`${project.id}/${doc.order.tag} runs on it`);
+          else if ((doc.order.worker === id || doc.order.next_worker === id) && !['merged', 'cancelled'].includes(orders.stage(doc).stage)) busy.push(`${project.id}/${doc.order.tag} is pinned to it`);
+        }
+        for (const [route, role] of Object.entries(effectiveRoles(project, ctx.workers))) if (role.workers?.prefer?.includes(id) || role.workers?.only?.includes(id)) busy.push(`route ${project.id}/${route} names it`);
+      }
+      const out = removeWorker(file, id, [...new Set(busy)], { dryRun: body.dryRun === true, now: ctx.probes.now() });
+      if (!out.dryRun && out.changed.length) { recordWorkerEdit(view.orders, id, out, file); ctx.workers = loadWorkers(file); }
+      return done<A.WorkerEditResult>(200, { ok: true, id, changed: out.changed, file, ...(out.backup ? { backup: out.backup } : {}), dryRun: out.dryRun });
+    }
+    if (parts[0] === 'config' && parts.length === 1) {
+      // Settings, routes and worker groups of the project file or the shared workers file (src/config-edit.ts).
+      const target = body.target === 'workers' ? 'workers' : body.target === undefined || body.target === 'project' ? 'project' : undefined;
+      if (!target) throw new ApiFailure(400, 'bad_request', '"target" is "project" or "workers".');
+      if (!Array.isArray(body.edits)) throw new ApiFailure(400, 'bad_request', '"edits" must be a list of { path, value }.');
+      if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') throw new ApiFailure(400, 'bad_request', '"dryRun" must be true or false.');
+      const file = target === 'workers' ? workersFile() : view.config.file;
+      const users = target === 'workers' ? ctx.projects : [];   // every project here shares the one workers file
+      const out = editConfig(file, target, body.edits as ConfigEdit[], { workers: ctx.workers, projects: users }, { dryRun: body.dryRun === true, now: ctx.probes.now() });
+      if (!out.dryRun && out.changed.length) {
+        view.orders.record('*', 'config.edited', { target, file, fields: out.changed, ...(out.backup ? { backup: out.backup } : {}) });
+        if (target === 'workers') ctx.workers = loadWorkers(file);
+        else { const at = ctx.projects.indexOf(view.config); if (at >= 0) ctx.projects[at] = loadProject(file); }
+      }
+      return done<A.ConfigEditResult>(200, { ok: true, file, changed: out.changed, ...(out.backup ? { backup: out.backup } : {}), ...(out.dryRun ? { dryRun: true } : {}) });
+    }
     if (parts[0] === 'skills' && parts[1] === 'use' && parts.length === 2) {
       const name = str(body, 'name', true)!;
       if (typeof body.use !== 'boolean') throw new ApiFailure(400, 'bad_request', '"use" must be true or false.');

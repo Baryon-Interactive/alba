@@ -128,6 +128,20 @@ export function addWorker(file: string, input: { id: string; copyFrom?: string; 
   }, text => validateWorkersText(text, file, input.id), options);
 }
 
+/**
+ * Takes a worker out of the workers file. Refused while `busy` names something that still uses it (an open run, an order pinned
+ * to it, a route or worker group naming it): those must be moved first, or the file would not load or a run would lose its worker.
+ */
+export function removeWorker(file: string, id: string, busy: readonly string[], options: { dryRun?: boolean; now?: Date } = {}): EditOutcome {
+  if (busy.length) throw new EditRefused(t('{id} is still in use: {what}.', { id, what: busy.join('; ') }));
+  return editYaml(file, doc => {
+    const found = findItem(doc, ['workers'], 'id', id);
+    if (!found) fail('No worker "{id}" in {file}.', { id, file });
+    (doc.get('workers', true) as { items: unknown[] }).items.splice(found!.index, 1);
+    return [`workers.${id}`];
+  }, text => validateWorkersText(text, file), options);
+}
+
 /** `capabilities=[shell,edit]` style arguments of `alba workers set`: the value is read as YAML (`3`, `false`, `[a, b]`, `{ build: 3 }`, `null` removes the key). */
 export function parseSetArgs(args: readonly string[]): WorkerOp[] {
   if (!args.length) fail('Usage: alba workers set <id> <key>=<value> ... (for example capabilities=[shell,edit] concurrency=4 enabled=false)');
