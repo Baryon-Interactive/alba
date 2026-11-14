@@ -253,7 +253,7 @@
 
 /*
  * Motion. Alba's look is a night that turns to dawn: panels rise into place, live work glows, links between machines carry
- * light, and the sun in the mark comes up once when the console opens. Everything here stops under prefers-reduced-motion.
+ * light, and the sun in the mark comes up once when the console opens. Everything here stops when the motion switch in the header turns it off.
  */
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
@@ -377,15 +377,7 @@
 .fleet-star { animation: twinkle 4s ease-in-out infinite; }
 .mark-sun { animation: sun-rise 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) 200ms both; }
 
-/* The system's "reduce motion" stops it, unless the console's motion switch says otherwise (html[data-motion]). */
-@media (prefers-reduced-motion: reduce) {
-  html:not([data-motion='full']) *, html:not([data-motion='full']) ::before, html:not([data-motion='full']) ::after {
-    animation-duration: 1ms !important;
-    animation-delay: 0ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
-  }
-}
+/* The console's motion switch stops it (html[data-motion='reduced']); see components/motion.tsx for why the system setting is not followed. */
 html[data-motion='reduced'] *, html[data-motion='reduced'] ::before, html[data-motion='reduced'] ::after {
   animation-duration: 1ms !important;
   animation-delay: 0ms !important;

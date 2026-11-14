@@ -406,8 +406,9 @@ export function createBoard(options: ServerOptions): Board {
       admit(req);
     }
     if (parts[0] === 'api') {
-      // Buffered aggregate/detail reads have their own loop and connection; streams retain the main event hub.
-      const buffered = req.method === 'GET' && !url.pathname.endsWith('/chat/stream') && (/^\/api\/(projects|orders|runs|producer|decisions|overview|workers|usage|needs)(\/|$)/.test(url.pathname) || /^\/api\/p\/[^/]+\/overview$/.test(url.pathname));
+      // Buffered aggregate/detail reads have their own loop and connection; streams retain the main event hub. A slow read here
+      // (routes with their results, the clean plan's git checks, skills) would otherwise stop every other request, pages included.
+      const buffered = req.method === 'GET' && !url.pathname.endsWith('/chat/stream') && (/^\/api\/(projects|orders|runs|producer|decisions|overview|workers|usage|needs|roles|skills|lessons|credits|resources|events|clean)(\/|$)/.test(url.pathname) || /^\/api\/p\/[^/]+\/overview$/.test(url.pathname));
       if (reader && buffered) {
         return void reader.call<{ status: number; headers: Record<string, string>; body?: Uint8Array }>('read', {
           url: url.href, headers: req.headers, port, projects: ctx.projects, workers: ctx.workers, token, extraOrigins: ctx.extraOrigins,

@@ -1,34 +1,26 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 
-const query = '(prefers-reduced-motion: reduce)';
-
 /** The place of an element in a staggered entrance (`.rise`): the `n`th rises `n` × 55 ms after the first. */
 export const nth = (n: number) => ({ '--i': n }) as CSSProperties;
 
-/** The console's motion switch: `system` follows the system's "reduce motion"; `full` and `reduced` override it. */
-export type Motion = 'system' | 'full' | 'reduced';
+/**
+ * The console's motion switch (the sparkle button in the header), kept in localStorage `alba-motion`. Animations are on
+ * unless it is turned off: the system's "reduce motion" is not followed, because Windows sets it whenever its animation
+ * effects are off (often for speed, on remote desktops), which would leave the console still for most people.
+ */
+export type Motion = 'full' | 'reduced';
 const listeners = new Set<() => void>();
-const setting = (): Motion => {
-  const v = typeof document === 'undefined' ? null : document.documentElement.getAttribute('data-motion');
-  return v === 'full' || v === 'reduced' ? v : 'system';
-};
-const systemReduced = () => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches;
-const reducedNow = () => { const s = setting(); return s === 'system' ? systemReduced() : s === 'reduced'; };
+const reducedNow = () => typeof document !== 'undefined' && document.documentElement.getAttribute('data-motion') === 'reduced';
 
 export function setMotion(m: Motion) {
-  if (m === 'system') document.documentElement.removeAttribute('data-motion'); else document.documentElement.setAttribute('data-motion', m);
-  try { if (m === 'system') localStorage.removeItem('alba-motion'); else localStorage.setItem('alba-motion', m); } catch { /* ignore */ }
+  if (m === 'reduced') document.documentElement.setAttribute('data-motion', 'reduced'); else document.documentElement.removeAttribute('data-motion');
+  try { if (m === 'reduced') localStorage.setItem('alba-motion', 'reduced'); else localStorage.removeItem('alba-motion'); } catch { /* ignore */ }
   listeners.forEach(l => l());
 }
 
-/** True when animations are off: the switch says so, or it follows the system and the system asks for less motion. */
+/** True when the motion switch has turned animations off. */
 export function useReducedMotion(): boolean {
-  return useSyncExternalStore(cb => {
-    listeners.add(cb);
-    const m = typeof window !== 'undefined' ? window.matchMedia?.(query) : undefined;
-    m?.addEventListener('change', cb);
-    return () => { listeners.delete(cb); m?.removeEventListener('change', cb); };
-  }, reducedNow, () => false);
+  return useSyncExternalStore(cb => { listeners.add(cb); return () => { listeners.delete(cb); }; }, reducedNow, () => false);
 }
 
 /**
