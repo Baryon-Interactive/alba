@@ -345,6 +345,19 @@ test('cancelled worktrees need a clean merged branch; junction targets survive a
   assert.ok(!existsSync(wt)); assert.equal(readFileSync(path.join(outside, 'precious.txt'), 'utf8'), 'keep');
 });
 
+test('a removable worktree raises the clean card even when its size was not counted in time', () => {
+  const f = fixture({ clean: { idle_hours: 0, min_gain_gb: 5, drives: [{ path: '.', min_free_gb: 1 }] } });
+  f.env.clean.probes = { ...f.probes, worktrees: systemProbes.worktrees }; f.env.clean.sizeBudgetMs = 0;
+  const wt = path.join(f.dir, 'done'); git(f.root, 'worktree', 'add', '-qb', 'done', wt, 'main');
+  f.add('DONE', { worktree: wt, branch: 'done' }); f.orders.act('DONE', 'cancel');
+  f.advance(525600);
+  const round = scheduledRound(f.project, f.orders, f.env)!;
+  const removal = round.plan.items.find(i => i.action === 'remove' && i.pathClass === 'worktrees')!;
+  assert.ok(removal); assert.equal(removal.bytes, undefined); assert.equal(round.plan.drives![0].low, false);
+  const card = round.cases.find(c => c.trigger === 'clean')!; assert.ok(card);
+  assert.match(card.card.summary, /unmeasured size/);
+});
+
 test('auto destructive worktrees still require allowlisting and fresh safety checks', () => {
   const f = fixture({ producer: { enabled: true, round: { enabled: true, every_minutes: 60 }, rules: [{ id: 'clean', action: 'clean', mode: 'auto', instruction: 'Remove eligible worktrees' }] },
     clean: { idle_hours: 0, min_gain_gb: 0, auto_destructive: true, auto_classes: ['worktrees'] } });

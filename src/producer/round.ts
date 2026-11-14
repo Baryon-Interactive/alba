@@ -64,7 +64,10 @@ export function scheduledRound(project: ProjectConfig, orders: Orders, env: Prod
   const gain = deletions.reduce((sum, i) => sum + (i.bytes ?? i.measuredBytes ?? 0), 0) / 2 ** 30;
   const unknown = deletions.some(i => i.bytes === undefined);
   const size = unknown ? gain > 0 ? `≥ ${gain.toFixed(3)} GB (partial)` : 'size unknown' : `${gain.toFixed(3)} GB`;
-  if (plan.drives?.some(d => d.low) || gain > (project.clean?.min_gain_gb ?? 1)) add('clean', undefined, `Cleanup dry-run: ${deletions.length} items, ${size}; ${plan.drives?.filter(d => d.low).map(d => `${d.path} below ${d.min_free_gb} GB`).join('; ') || 'gain threshold exceeded'}.`,
+  // Sizes are counted within a short budget (clean sizeBudgetMs), so a big removable worktree has no size and counted
+  // as 0 bytes: merged idle worktrees (tens of GB each in a UE project) were never cleaned unless a drive was low.
+  const unmeasured = deletions.some(i => i.bytes === undefined && (i.pathClass === 'worktrees' || i.pathClass === 'packages'));
+  if (plan.drives?.some(d => d.low) || gain > (project.clean?.min_gain_gb ?? 1) || unmeasured) add('clean', undefined, `Cleanup dry-run: ${deletions.length} items, ${size}; ${plan.drives?.filter(d => d.low).map(d => `${d.path} below ${d.min_free_gb} GB`).join('; ') || (unmeasured && gain <= (project.clean?.min_gain_gb ?? 1) ? 'removable worktrees or packages of unmeasured size' : 'gain threshold exceeded')}.`,
     { plan, signature: digest(deletions.map(i => [i.path, i.pathClass, i.action, i.targets, i.branch, i.signature])), lowDrives: plan.drives?.filter(d => d.low).map(d => d.path) ?? [] }, plan);
   const cases = syncRoundCases(project, inputs, now);
   for (const c of cases) {
