@@ -113,6 +113,18 @@ test('clean plan: build caches go from idle worktrees that must stay, approved-b
   assert.match(recent.reason, /cache folders changed 1 h ago \(idle_hours is 100\)/);
 });
 
+test('clean plan: a cache folder with more files than the snapshot budget is still pruned (top two levels are fingerprinted)', () => {
+  const s = setup({ snapshot_entries: 10 });
+  const wt = s.worktree('BIG', { commit: true });
+  const deep = path.join(wt, 'Library', 'ddc', 'aa', 'bb'); mkdirSync(deep, { recursive: true });
+  for (let i = 0; i < 50; i++) writeFileSync(path.join(deep, `${i}.udd`), 'x');
+  const plan = planClean(s.cfg, s.orders, s.env);
+  const item = plan.items.find(i => i.tag === 'BIG')!;
+  assert.equal(item.action, 'prune'); assert.ok(item.signature);
+  applyClean(s.cfg, s.orders, plan, s.env);
+  assert.ok(!existsSync(path.join(wt, 'Library'))); assert.ok(existsSync(path.join(wt, 'work.txt')));
+});
+
 test('clean plan: only the newest builds stay', () => {
   const s = setup();
   const builds = path.join(s.root, 'artifacts', 'builds');

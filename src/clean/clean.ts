@@ -265,7 +265,9 @@ export function planClean(project: ProjectConfig, orders: Orders, env: CleanEnv)
     const failed = (why: string) => { snapshotFailure = why; };
     it.signature = it.kind === 'worktree' && it.action === 'remove'
       ? worktreeSignature(it.path, (cwd, args) => env.runGit(cwd, args), failed)
-      : cleanSignature(targets, failed, { entries: cfg.snapshot_entries, seconds: cfg.snapshot_seconds });
+      // Cache folders are ignored engine output (a UE DerivedDataCache alone holds 100k+ files): like a worktree removal,
+      // only their top two levels are fingerprinted; the replan at apply still rechecks runs and idle time.
+      : cleanSignature(targets, failed, { entries: cfg.snapshot_entries, seconds: cfg.snapshot_seconds, ...(it.action === 'prune' ? { depth: 2 } : {}) });
     if (!it.signature) { it.action = 'skip'; it.reason = `Cannot safely snapshot the target: ${snapshotFailure}`; continue; }
     if (it.bytes === undefined) {
       const sizes = targets.map(dir => sizeOf(dir, deadline));
