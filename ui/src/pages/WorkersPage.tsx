@@ -15,6 +15,7 @@ import { useCredits, useProjectId, useQuotaHistory, useWorkers } from '@/lib/que
 import { totalsByUnit } from '@/lib/spend';
 import { dateTime, usd } from '@/lib/format';
 import { groupByQuota, sameModelNote } from '@/lib/workers';
+import { ConfigPanel, JsonSettings, ResourceSettings, configKey, useEditToggle } from '@/components/ConfigSections';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 
@@ -148,6 +149,7 @@ const spendUnknown = (w: { spendTodayUsd: number; runsToday: number; price?: unk
 
 export function WorkersPage() {
   const project = useProjectId();
+  const [editingConfig, editButton] = useEditToggle();
   const q = useWorkers(project);
   const [editing, setEditing] = useState<string | undefined>();
   const [copying, setCopying] = useState<string | undefined>();
@@ -161,7 +163,11 @@ export function WorkersPage() {
   const editingWorker = workers.find(w => w.id === editing);
   return (
     <div>
-      <PageHeader title={t('Workers')} count={workers.length} actions={<Button variant="outline" onClick={() => { setCopying(undefined); setAdding(true); }}><Plus />{t('New worker')}</Button>}>{t('{n} runs and {cost} today', { n: workers.reduce((n, w) => n + w.runsToday, 0), cost: totalSpend === 0 && workers.some(spendUnknown) ? t('unknown') : usd(totalSpend) })}</PageHeader>
+      <PageHeader title={t('Workers')} count={workers.length} actions={<><Button variant="outline" onClick={() => { setCopying(undefined); setAdding(true); }}><Plus />{t('New worker')}</Button>{editButton}</>}>{t('{n} runs and {cost} today', { n: workers.reduce((n, w) => n + w.runsToday, 0), cost: totalSpend === 0 && workers.some(spendUnknown) ? t('unknown') : usd(totalSpend) })}</PageHeader>
+      {editingConfig && <>
+        <ConfigPanel project={project}>{view => <ResourceSettings key={configKey(view, ['resources'])} project={project} values={view.values} />}</ConfigPanel>
+        <ConfigPanel project={project} target="workers">{view => <JsonSettings key={configKey(view, ['quota_sources'])} project={project} view={view} path={['quota_sources']} title={t('Quota sources')} description={t('Where the usage windows and balances of the workers are read from.')} />}</ConfigPanel>
+      </>}
       {workers.length === 0 ? <Empty>{t('No workers file was given (--workers or ALBA_WORKERS).')}</Empty> : (
         <Section title={t('Registry')}>
           {groupByQuota(workers).map(g => g.source ? (

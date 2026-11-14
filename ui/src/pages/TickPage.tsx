@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } f
 import { ErrorBox, PageHeader, Section, TagLink } from '@/components/common';
 import { errorText, useProjectId, useSession, useTick } from '@/lib/queries';
 import { ago, dateTime } from '@/lib/format';
+import { ConfigPanel, DispatchSettings, configKey, useEditToggle } from '@/components/ConfigSections';
 import { t } from '@/i18n';
 
 const MODE = (m: string) => (m === 'card' ? t('offer a card to start') : m === 'resume' ? t('resume') : t('start'));
@@ -56,6 +57,7 @@ function Result({ project, v }: { project: string; v: TickView }) {
 
 export function TickPage() {
   const project = useProjectId();
+  const [editing, editButton] = useEditToggle();
   const session = useSession();
   const tick = useTick(project);
   const [real, setReal] = useState(false);
@@ -76,11 +78,13 @@ export function TickPage() {
         actions={
           <>
             <Button variant="outline" size="sm" disabled={tick.isPending} onClick={() => tick.mutate({ real: false }, { onSuccess: setLast })}><RefreshCw className={tick.isPending ? 'animate-spin' : ''} />{t('Preview again')}</Button>
+            {editButton}
           </>
         }
       >
         {t('A tick decides what to start, resume or record. The preview below changes nothing.')}
       </PageHeader>
+      {editing && <ConfigPanel project={project}>{view => <DispatchSettings key={configKey(view, ['dispatch'])} project={project} values={view.values} />}</ConfigPanel>}
 
       <div className="mb-5 grid gap-3 md:grid-cols-2">
         <Card><CardContent>

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ConfigView, OrderDetail } from '@api';
 import { setLang } from '@/i18n';
 import { RolesPage } from './RolesPage';
-import { SettingsBody } from './SettingsPage';
+import { ConfigPanelBody, DispatchSettings, JsonSettings, ResourceSettings, SkillSettings } from '@/components/ConfigSections';
 import { WorkersPage } from './WorkersPage';
 import { OrderDefinitionEdit, orderFieldChanges, formOfOrder } from '@/components/OrderEdit';
 import { testTranslations as translated } from '../test-translations';
@@ -73,13 +73,21 @@ describe('the Routing page in edit mode', () => {
   });
 });
 
-describe('the Settings page', () => {
-  it('shows dispatch, resources, skills and the JSON sections with the values of the file, in English and Chinese', () => {
+describe('the settings editors on their pages', () => {
+  it('show dispatch, resources, skills and the JSON sections with the values of the file, in English and Chinese', () => {
     const own = projectView({ dispatch: { caps: { sim: 2 }, on_loop: 'stop', long_commands: ['cook'] }, resources: { gpu: { slots: 1, exclusive: true, note: 'one card' } }, skills: { always: ['review'], by_kind: { art: ['drawing'] }, max_per_order: 8 }, budget: { currency: 'EUR' } });
     const shared = workersView({ quota_sources: { grok: { command: ['grok', 'usage'] } } });
     for (const lang of ['en', 'zh'] as const) {
       setLang(lang);
-      const html = renderToStaticMarkup(createElement(SettingsBody, { project: 'demo', own, shared }));
+      // what the Tick, Workers, Skills, Usage and Clean pages put above their content in edit mode
+      const html = [
+        createElement(ConfigPanelBody, { view: own }, createElement(DispatchSettings, { project: 'demo', values: own.values })),
+        createElement(ConfigPanelBody, { view: own }, createElement(ResourceSettings, { project: 'demo', values: own.values })),
+        createElement(ConfigPanelBody, { view: own }, createElement(SkillSettings, { project: 'demo', values: own.values })),
+        createElement(JsonSettings, { project: 'demo', view: own, path: ['budget'], title: tr(lang, 'Budget'), description: '' }),
+        createElement(JsonSettings, { project: 'demo', view: own, path: ['clean'], title: tr(lang, 'Clean'), description: '' }),
+        createElement(ConfigPanelBody, { view: shared }, createElement(JsonSettings, { project: 'demo', view: shared, path: ['quota_sources'], title: tr(lang, 'Quota sources'), description: '' })),
+      ].map(e => renderToStaticMarkup(e)).join('');
       for (const text of ['Dispatch', 'Caps by kind', 'When a run loops', 'Long commands', 'Resources', 'Exclusive', 'Skills', 'Every order', 'By kind', 'Budget', 'Clean', 'Quota sources', 'Add a cap', 'Add a resource', 'Save', 'Cancel']) expect(html, text).toContain(esc(tr(lang, text)));
       for (const value of ['value="sim"', 'value="2"', 'cook', 'value="gpu"', 'value="one card"', 'review', 'drawing', 'value="8"', '&quot;currency&quot;: &quot;EUR&quot;', 'grok', 'alba.yaml', 'workers.yaml']) expect(html, value).toContain(value);
       expect(html).toMatch(/<option value="stop" selected="">/);

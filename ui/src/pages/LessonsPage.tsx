@@ -7,12 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Empty, EmptyState, ErrorBox, PageHeader, TagLink } from '@/components/common';
 import { filterLessons, tagCounts } from '@/lib/lessons';
 import { useLessons, useProjectId } from '@/lib/queries';
+import { ConfigPanel, JsonSettings, configKey, useEditToggle } from '@/components/ConfigSections';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 
 /** The lesson library, browsed by tag. A lesson that applies to the project and shares a tag with an order (or with its kind) goes into that order's prompt. */
 export function LessonsPage() {
   const project = useProjectId();
+  const [editing, editButton] = useEditToggle();
   const q = useLessons(project);
   const [tags, setTags] = useState<string[]>([]);
   const [query, setQuery] = useState('');
@@ -26,7 +28,8 @@ export function LessonsPage() {
   if (!q.data) return <div className="grid gap-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-48" /></div>;
   return (
     <div>
-      <PageHeader title={t('Lessons')} count={shown.length}>{t('Rules the studio learned. An order gets the lessons that apply to this project and share a tag with it or with its kind in its prompt.')}</PageHeader>
+      <PageHeader title={t('Lessons')} count={shown.length} actions={editButton}>{t('Rules the studio learned. An order gets the lessons that apply to this project and share a tag with it or with its kind in its prompt.')}</PageHeader>
+      {editing && <ConfigPanel project={project}>{view => <JsonSettings key={configKey(view, ['lessons', 'kind_tags'])} project={project} view={view} path={['lessons', 'kind_tags']} title={t('Tags by kind')} description={t('The lesson tags an order of each kind gets on top of its own tags, for example { "art": ["art", "image"] }.')} />}</ConfigPanel>}
       {all.length === 0 ? <EmptyState icon={<BookOpen />} title={t('No lessons yet')}>{t('The project has no lesson library (set one in the project file).')}</EmptyState> : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">

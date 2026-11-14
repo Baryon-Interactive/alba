@@ -10,6 +10,7 @@ import { Empty, ErrorBox, PageHeader, Section, TagLink } from '@/components/comm
 import { errorText, useProjectId, useSkills, useSkillUse } from '@/lib/queries';
 import { layerLabel, layerTone } from '@/lib/routing';
 import { skillColumns, skillMatches, useAction } from '@/lib/skills';
+import { ConfigPanel, SkillSettings, configKey, useEditToggle } from '@/components/ConfigSections';
 import { t } from '@/i18n';
 
 type Skill = SkillsView['skills'][number];
@@ -63,6 +64,7 @@ function Column({ project, title, hint, skills, empty }: { project: string; titl
 /** The registry of skills as this project sees it: the ones it can use, the ones of the machine it does not use here (with the reason), and its own. */
 export function SkillsPage() {
   const project = useProjectId();
+  const [editing, editButton] = useEditToggle();
   const q = useSkills(project);
   const [filter, setFilter] = useState('');
   const columns = useMemo(() => skillColumns((q.data?.skills ?? []).filter(s => skillMatches(s, filter))), [q.data, filter]);
@@ -72,9 +74,10 @@ export function SkillsPage() {
   const kinds = Object.entries(d.byKind);
   return (
     <div>
-      <PageHeader title={<><Puzzle className="size-5" />{t('Skills')}</>} count={d.skills.length}>
+      <PageHeader title={<><Puzzle className="size-5" />{t('Skills')}</>} count={d.skills.length} actions={editButton}>
         {t('One registry for every worker: core skills always, project skills by kind, order skills by tag. Only the skills this project can use are put into a worktree.')}
       </PageHeader>
+      {editing && <ConfigPanel project={project}>{view => <SkillSettings key={configKey(view, ['skills'])} project={project} values={view.values} />}</ConfigPanel>}
 
       {d.problems.length > 0 && (
         <div className="mb-6 grid gap-1 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-sm">

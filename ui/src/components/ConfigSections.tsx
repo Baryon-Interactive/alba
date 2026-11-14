@@ -1,14 +1,14 @@
-import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Check, Pencil, Plus, X } from 'lucide-react';
 import type { ConfigView } from '@api';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { Checkbox, Skeleton } from '@/components/ui/misc';
-import { ErrorBox, PageHeader, Section } from '@/components/common';
+import { ErrorBox } from '@/components/common';
 import { ChipsInput, EditCard, Field } from '@/components/EditFields';
 import { ApiFailure, type ConfigEdit } from '@/lib/api';
 import { numberField, parseSection, same, sectionEdit, valueAt } from '@/lib/config-edit';
-import { useConfig, useEditConfig, useProjectId, useSkills } from '@/lib/queries';
+import { useConfig, useEditConfig, useSkills } from '@/lib/queries';
 import { t } from '@/i18n';
 
 type Values = Record<string, unknown>;
@@ -218,43 +218,33 @@ export function JsonSettings({ project, view, path, title, description }: { proj
   );
 }
 
-/** Settings of the project file (and the quota sources of the workers file), each section saved on its own. */
-export function SettingsBody({ project, own, shared }: { project: string; own: ConfigView; shared?: ConfigView }) {
-  const k = (path: string[], view: ConfigView = own) => `${view.target}:${JSON.stringify(valueAt(view.values, path) ?? null)}`;
-  return (
-    <div className="grid gap-6">
-      <Section title={<>{t('Project file')} <span className="font-mono text-xs font-normal text-muted-foreground">{own.file}</span></>}>
-        <div className="grid gap-4">
-          <DispatchSettings key={k(['dispatch'])} project={project} values={own.values} />
-          <ResourceSettings key={k(['resources'])} project={project} values={own.values} />
-          <SkillSettings key={k(['skills'])} project={project} values={own.values} />
-          <JsonSettings key={k(['budget'])} project={project} view={own} path={['budget']} title={t('Budget')} description={t('Tokens and cost a day and per order: tokens_per_day, tokens_per_order, cost_per_day, currency.')} />
-          <JsonSettings key={k(['usage_warnings'])} project={project} view={own} path={['usage_warnings']} title={t('Usage warnings')} description={t('When a run’s use of tokens is reported as waste.')} />
-          <JsonSettings key={k(['clean'])} project={project} view={own} path={['clean']} title={t('Clean')} description={t('What alba clean may remove, and how much it keeps.')} />
-        </div>
-      </Section>
-      {shared && (
-        <Section title={<>{t('Workers file')} <span className="font-mono text-xs font-normal text-muted-foreground">{shared.file}</span></>}>
-          <JsonSettings key={k(['quota_sources'], shared)} project={project} view={shared} path={['quota_sources']} title={t('Quota sources')} description={t('Where the usage windows and balances of the workers are read from.')} />
-        </Section>
-      )}
-    </div>
-  );
+
+/** A key that changes when the section's saved value changes, so an editor starts again from what was written. */
+export const configKey = (view: ConfigView, path: string[]) => `${view.target}:${JSON.stringify(valueAt(view.values, path) ?? null)}`;
+
+/** The Edit / Done button of a page whose settings are edited on the page itself. */
+export function useEditToggle(): [boolean, ReactNode] {
+  const [editing, setEditing] = useState(false);
+  const button = <Button variant={editing ? 'default' : 'outline'} onClick={() => setEditing(e => !e)}>{editing ? <><Check />{t('Done')}</> : <><Pencil />{t('Edit')}</>}</Button>;
+  return [editing, button];
 }
 
-export function SettingsPage() {
-  const project = useProjectId();
-  const own = useConfig(project, 'project');
-  const shared = useConfig(project, 'workers');
+/**
+ * The settings of one file, shown on the page they belong to: loads the file's editable sections and hands them to the editors. Each
+ * editor saves on its own; a save is checked with the whole file before it is written, comments are kept and the old file is copied.
+ */
+export function ConfigPanel({ project, target = 'project', children }: { project: string; target?: 'project' | 'workers'; children: (view: ConfigView) => ReactNode }) {
+  const q = useConfig(project, target);
+  if (q.isError) return q.error instanceof ApiFailure && q.error.status === 404 && target === 'workers' ? null : <div className="mb-6"><ErrorBox error={q.error} /></div>;
+  if (!q.data) return <Skeleton className="mb-6 h-40" />;
+  return <ConfigPanelBody view={q.data}>{children(q.data)}</ConfigPanelBody>;
+}
+
+export function ConfigPanelBody({ view, children }: { view: ConfigView; children?: ReactNode }) {
   return (
-    <div>
-      <PageHeader title={t('Settings')}>{t('The settings of the project file. Each section is checked with the whole file before it is written; comments are kept and the old file is copied next to it.')}</PageHeader>
-      {own.isError ? <ErrorBox error={own.error} /> : !own.data ? <Skeleton className="h-64" /> : (
-        <>
-          {shared.isError && !(shared.error instanceof ApiFailure && shared.error.status === 404) && <div className="mb-4"><ErrorBox error={shared.error} /></div>}
-          <SettingsBody project={project} own={own.data} shared={shared.data} />
-        </>
-      )}
+    <div className="mb-6 grid gap-4">
+      <p className="text-xs text-muted-foreground">{t('Saved in {file}; each part is checked with the whole file before it is written.', { file: view.file })}</p>
+      {children}
     </div>
   );
 }

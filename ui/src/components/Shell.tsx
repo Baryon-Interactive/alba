@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpen, Bell, Factory, Coins, Eraser, Images, Palette, Menu as MenuIcon, Scale, ChevronsUpDown, Command, Cpu, KanbanSquare, Languages, Moon, Play, Plus, Puzzle, Route, SlidersHorizontal, Sparkles, Sun, Timer, Check, Files, Wrench } from 'lucide-react';
+import { Activity, BookOpen, Bell, Factory, Coins, Eraser, Images, Palette, Menu as MenuIcon, Scale, ChevronsUpDown, Command, Cpu, KanbanSquare, Languages, Moon, Play, Plus, Puzzle, Route, Sparkles, Sun, Timer, Check, Files, Wrench } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle, DrawerContent } from '@/components/ui/dialog';
@@ -77,7 +77,6 @@ export function Shell() {
     { to: `${base}/runs`, icon: Activity, group: 'work', label: t('Runs') },
     { to: `${base}/usage`, icon: Activity, group: 'resources', label: t('Usage') },
     { to: `${base}/roles`, icon: Route, group: 'resources', label: t('Routing') },
-    { to: `${base}/settings`, icon: SlidersHorizontal, group: 'resources', label: t('Settings') },
     { to: `${base}/tools`, icon: Wrench, group: 'resources', label: t('Tools') },
     { to: `${base}/workers`, icon: Cpu, group: 'resources', label: t('Workers') },
     { to: `${base}/machines`, icon: Cpu, group: 'resources', label: t('Machines') },

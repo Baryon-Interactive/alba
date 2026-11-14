@@ -13,6 +13,7 @@ import { summarizePlan } from '@/lib/clean';
 import { keys } from '@/lib/keys';
 import { useCleanEvents, useCleanPlan, useProjectId } from '@/lib/queries';
 import { ago, bytes, dateTime } from '@/lib/format';
+import { ConfigPanel, JsonSettings, configKey, useEditToggle } from '@/components/ConfigSections';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 
@@ -76,6 +77,7 @@ function ApplyDialog({ open, onOpenChange, count, size }: { open: boolean; onOpe
 /** What `alba clean` would do: read only. */
 export function CleanPage() {
   const project = useProjectId();
+  const [editing, editButton] = useEditToggle();
   const client = useQueryClient();
   const q = useCleanPlan(project);
   const events = useCleanEvents(project);
@@ -89,10 +91,11 @@ export function CleanPage() {
       <PageHeader
         title={t('Clean')} count={s.removing.length}
         actions={<>
-          <Button variant="outline" onClick={() => { void client.invalidateQueries({ queryKey: keys.clean(project) }); void client.invalidateQueries({ queryKey: keys.cleanEvents(project) }); }}><RefreshCw />{t('Read again')}</Button></>}
+          <Button variant="outline" onClick={() => { void client.invalidateQueries({ queryKey: keys.clean(project) }); void client.invalidateQueries({ queryKey: keys.cleanEvents(project) }); }}><RefreshCw />{t('Read again')}</Button>{editButton}</>}
       >
         {t('The plan of `alba clean`, read only. Worked out {when}.', { when: ago(q.data.at) })}
       </PageHeader>
+      {editing && <ConfigPanel project={project}>{view => <JsonSettings key={configKey(view, ['clean'])} project={project} view={view} path={['clean']} title={t('Clean')} description={t('What alba clean may remove, and how much it keeps.')} />}</ConfigPanel>}
 
       {q.data.errors.length > 0 && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-sm"><TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" /><div><div className="font-medium">{t('The plan is cautious because:')}</div><ul className="list-disc pl-4">{q.data.errors.map((e, i) => <li key={i}>{e}</li>)}</ul></div></div>
