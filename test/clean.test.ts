@@ -11,6 +11,7 @@ import { systemProbes } from '../src/tick/gather.ts';
 import { git } from './api-fixture.ts';
 import { tempOrders } from './helpers.ts';
 import { cleanSignature, worktreeSignature } from '../src/clean/safety.ts';
+import { scheduledClean } from '../src/clean/scheduled.ts';
 
 const directoryLink = process.platform === 'win32' ? 'junction' : 'dir';
 
@@ -241,6 +242,22 @@ test('clean plan: a package rule with a prefix only looks at folders with that p
   const plan = planClean(s.cfg, s.orders, s.env).items.filter(i => i.kind === 'package');
   assert.deepEqual(plan.map(i => [path.basename(i.path), i.tag, i.action]), [['Game-NEW', 'NEW', 'keep'], ['Game-OPEN', 'OPEN', 'keep'], ['Game-OLD', 'OLD', 'delete']]);
   assert.throws(() => validateProject({ id: 'x', name: 'x', root: s.root, work_orders: s.root, state_dir: path.join(s.dir, 'st'), clean: { packages: [{ dir: 'artifacts/packages', keep: 1, prefix: 'a/b' }] } }, path.join(s.dir, 'x.yaml')), /prefix/);
+});
+
+test('scheduled clean (no producer round): applies only the allowed classes, every 30 minutes, never while paused', () => {
+  const s = setup({ packages: [{ dir: 'artifacts/packages', keep: 0 }], auto_classes: ['logs', 'packages'], auto_destructive: true });
+  assert.ok(!(s.cfg.producer.enabled && s.cfg.producer.round?.enabled), 'fixture has no producer round');
+  const wt = s.worktree('M1'); s.orders.act('M1', 'approve', { force: true });                 // removable, but worktrees are not allowed
+  s.orders.add({ tag: 'OWNER', title: 'Owner', kind: 'task' }); s.orders.act('OWNER', 'approve', { force: true });
+  const pkg = path.join(s.root, 'artifacts/packages/OWNER-old'); mkdirSync(pkg, { recursive: true }); writeFileSync(path.join(pkg, 'game.exe'), 'x');
+  assert.equal(scheduledClean(s.cfg, s.orders, s.env, true), undefined, 'a paused producer stops it');
+  assert.ok(existsSync(pkg));
+  const done = scheduledClean(s.cfg, s.orders, s.env)!;
+  assert.deepEqual(done.items.map(i => [i.pathClass, i.result]), [['packages', 'deleted']]);
+  assert.ok(!existsSync(pkg)); assert.ok(existsSync(wt));
+  mkdirSync(pkg); assert.equal(scheduledClean(s.cfg, s.orders, s.env), undefined, 'not due again within 30 minutes'); assert.ok(existsSync(pkg));
+  const none = setup({ packages: [{ dir: 'artifacts/packages', keep: 0 }] });
+  assert.equal(scheduledClean(none.cfg, none.orders, none.env), undefined, 'nothing allowed, nothing done');
 });
 
 test('clean fixture dry-run: reused PID, unrelated live run and junction are eligible', t => {

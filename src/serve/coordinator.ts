@@ -14,12 +14,14 @@ import { executeTick } from '../tick/execute.ts';
 import { formatReport } from '../tick/plan.ts';
 import type { Board, ServerOptions } from '../web/server.ts';
 import { loadWorkers, type WorkersFile } from '../workers/config.ts';
-import { producerHeartbeat, producerPass } from '../producer/producer.ts';
+import { producerHeartbeat, producerPass, producerState } from '../producer/producer.ts';
 import { directorMessages, updateDirectorMessage } from '../producer/conversation-state.ts';
 import { producerSession, reconcileProducerSession, sessionEnabled, type ProducerSessionStatus } from '../producer/session.ts';
 import { scheduledBrief } from '../producer/briefs.ts';
 import { pollProducerWorks } from '../producer/work-sessions.ts';
 import { scheduledRound } from '../producer/round.ts';
+import { scheduledClean } from '../clean/scheduled.ts';
+import { systemClean } from '../clean/clean.ts';
 import { runMeasurements } from '../design/measure.ts';
 import { runNightlyGates } from '../gates/runner.ts';
 import { tick } from '../tick/gather.ts';
@@ -170,6 +172,11 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
         maintainSession(session, false);
         void session.onPass().catch(e => options.print(`Producer work reconciliation failed: ${String(e)}`));
       }
+      // A project without a producer round still cleans what its config allows without a click (src/clean/scheduled.ts).
+      try {
+        const cleaned = scheduledClean(project, ordersFor(project), systemClean(options.probes), producerState(project).paused);
+        if (cleaned) { board.invalidate(); options.print(`[${project.id}] cleanup: ${cleaned.items.map(i => `${i.path} ${i.result ?? 'not done'}`).join('; ')}`); }
+      } catch (e) { options.print(`[${project.id}] cleanup refused: ${String(e).split('\n')[0]}`); }
       const round = scheduledRound(project, ordersFor(project), { probes: options.probes, workers });
       if (!round) continue;
       board.invalidate();
