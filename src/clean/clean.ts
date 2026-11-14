@@ -180,7 +180,9 @@ export function planClean(project: ProjectConfig, orders: Orders, env: CleanEnv)
     if (open) { items.push(item('skip', runReason(open))); continue; }
     let baseRef: string;
     try { baseRef = doc ? planWorktree(project, doc.order).baseRef : baseRefOf(project); } catch { baseRef = baseRefOf(project); }
-    const facts = env.git.facts(w.path, baseRef);
+    // A stacked order's base_ref names its parent's branch, which goes once the parent is merged and cleaned:
+    // compare with the project base branch then, or the worktree could never be read (and cleaned) again.
+    const facts = env.git.facts(w.path, baseRef) ?? (baseRef !== baseRefOf(project) ? env.git.facts(w.path, baseRefOf(project)) : undefined);
     if (!facts) { items.push(item('skip', t('git could not read it.'))); continue; }
     if (facts.dirty) { items.push(item('skip', t('{n} uncommitted file(s).', { n: facts.dirty }))); continue; }
     const orderMerged = doc ? merged.has(doc.order.tag) || orders.stage(doc, merged).stage === 'cancelled' : true;

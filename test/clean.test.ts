@@ -113,6 +113,18 @@ test('clean plan: build caches go from idle worktrees that must stay, approved-b
   assert.match(recent.reason, /cache folders changed 1 h ago \(idle_hours is 100\)/);
 });
 
+test('clean plan: a merged stacked order whose parent branch is gone is compared with the base branch', () => {
+  const s = setup();
+  git(s.root, 'branch', 'parent', 'main');
+  const wt = path.join(s.dir, 'game-child');
+  git(s.root, 'worktree', 'add', '-q', '-b', 'game-child', wt, 'parent');
+  s.orders.add({ tag: 'CHILD', title: 'CHILD', kind: 'task', worktree: wt, branch: 'game-child', base_ref: 'parent' });
+  s.orders.act('CHILD', 'approve', { force: true });
+  git(s.root, 'branch', '-D', 'parent');
+  const item = planClean(s.cfg, s.orders, s.env).items.find(i => i.tag === 'CHILD')!;
+  assert.equal(item.action, 'remove', item.reason);
+});
+
 test('clean plan: a cache folder with more files than the snapshot budget is still pruned (top two levels are fingerprinted)', () => {
   const s = setup({ snapshot_entries: 10 });
   const wt = s.worktree('BIG', { commit: true });
