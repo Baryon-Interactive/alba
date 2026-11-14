@@ -4,7 +4,7 @@ import path from 'node:path';
 import { producerWorkConfig, type ProjectConfig } from '../config.ts';
 import type { Orders } from '../orders/service.ts';
 import { readStateJson, stateTransaction, writeStateFile } from '../orders/state-files.ts';
-import { systemProbes, type Probes } from '../tick/gather.ts';
+import { startedAtForCheck, systemProbes, type Probes } from '../tick/gather.ts';
 import { processStartMatches } from '../run/kill-tree.ts';
 import { producerActions as producerActionsOf, producerCases, producerState, type ProducerCase, type ProducerActionDetails } from './producer.ts';
 import { reserveDraftAllowance } from './drafting-budget.ts';
@@ -213,7 +213,7 @@ export function startProducerWork(project: ProjectConfig, orders: Orders, caseKe
 export function pollProducerWorks(project: ProjectConfig, probes: Probes = systemProbes): void {
   for (const run of producerWorks(project).filter(r => r.status === 'running')) {
     const now = probes.now(), live = run.pid && probes.isAlive(run.pid);
-    const actual = live ? probes.processStartedAt?.(run.pid!) : undefined;
+    const actual = live ? startedAtForCheck(probes, run.pid!) : undefined;
     if (live && (!actual || !run.process_started_at || !processStartMatches(actual, run.process_started_at))) {
       run.status = 'failed'; run.reason = 'Work process identity is missing or changed; result refused.';
     } else {

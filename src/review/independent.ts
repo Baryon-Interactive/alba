@@ -14,7 +14,7 @@ import { routingOf } from '../routing/classify.ts';
 import { parseStreamLog } from '../workers/adapters/index.ts';
 import { findOrderFile } from '../run/prompt.ts';
 import type { RunContext } from '../run/launch.ts';
-import type { Probes } from '../tick/gather.ts';
+import { startedAtForCheck, type Probes } from '../tick/gather.ts';
 import { tick } from '../tick/gather.ts';
 import type { WorkerConfig } from '../workers/config.ts';
 import { ownerOf } from '../usage/spend.ts';
@@ -171,7 +171,7 @@ export function pollIndependentChecks(ctx: Pick<RunContext, 'project' | 'orders'
   const { project, orders, probes } = ctx;
   for (const run of independentChecks(orders).filter(r => r.status === 'running')) {
     if (run.pid && probes.isAlive(run.pid)) {
-      const actual = probes.processStartedAt?.(run.pid);
+      const actual = startedAtForCheck(probes, run.pid);
       if (!actual || !run.process_started_at || processStartMatches(actual, run.process_started_at)) continue;
       run.status = 'failed'; run.ended = probes.now().toISOString(); run.reason = 'Verifier PID was reused; the result cannot be trusted.';
       record(orders, run); continue;

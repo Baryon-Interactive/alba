@@ -50,7 +50,7 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
   let starts = 0;
   let result: TickResult;
   for (;;) {
-    result = tick(ctx.project, ctx.orders, ctx.workers, ctx.probes, { record: true, nudge: true });
+    result = tick(ctx.project, ctx.orders, ctx.workers, ctx.probes, { record: true, nudge: true, peers: ctx.peers?.() });
     // `dispatch.on_loop: stop`: a run that goes round in circles is stopped (its process, then the record), and the pass is read again.
     const loopers = ctx.project.dispatch.on_loop === 'stop' ? result.report.problems.filter(p => p.kind === 'looping' && p.tag && !stopped.has(p.tag)) : [];
     if (loopers.length) {

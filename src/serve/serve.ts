@@ -7,6 +7,9 @@ import { startCoordinator, type ServeOptions, type Serve } from './coordinator.t
 import { WorkerChannel } from './channel.ts';
 import { currentLang } from '../i18n.ts';
 import type { TickResult } from '../tick/gather.ts';
+import type { ProjectConfig } from '../config.ts';
+import type * as A from '../api/types.ts';
+import { newFleetLock } from './fleet.ts';
 export type { ServeOptions, Serve } from './coordinator.ts';
 
 /** HTTP/SSE stay here; the persistent worker owns ticks, finish checks, file polling and the producer session. */
@@ -52,44 +55,75 @@ export function startServe(options: ServeOptions): Serve {
     return coordinator;
   }
   const { probes, print, ...data } = options;
-  let channel: WorkerChannel;
-  try { channel = new WorkerChannel(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url), { ...data, entry: process.argv[1] }); }
-  catch (error) { board.server.close(); unlock(); throw error; }
-  let stopped = false, tickPending = false;
-  let loopState: ReturnType<NonNullable<typeof board.ctx.loop>> = { everyMinutes: options.everyMinutes };
-  board.ctx.loop = () => loopState;
-  channel.worker.on('message', message => {
-    if (stopped) return;
-    if (message.event === 'readings') (board.ctx.tickResults ??= {})[message.project] = message.result;
-    if (message.event === 'publish') { board.hub.scan(); board.hub.publish(message.project, message.name, message.data); }
-    if (message.event === 'print') options.print(message.line);
-    if (message.event === 'state') {
-      options.projects.splice(0, options.projects.length, ...message.projects);
-      board.ctx.workers = message.workers;
-      loopState = message.loop;
-      board.ctx.extraProblems = id => message.problems[id] ?? [];
-      board.invalidate();
+  // One thread per project: its ticks, end checks, file polling and producer session. A slow step of one project (a provision
+  // command, git, a quota command) no longer holds up the others. The projects share the workers file, so each counts the
+  // others' open runs against a worker's concurrency and records a start under one lock (src/serve/fleet.ts).
+  const fleetLock = newFleetLock();
+  const channels = new Map<string, WorkerChannel>();
+  const workerFile = new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url);
+  try {
+    for (const project of options.projects) {
+      channels.set(project.id, new WorkerChannel(workerFile, { ...data, projects: [project], peerProjects: options.projects.filter(p => p.id !== project.id), fleetLock, entry: process.argv[1] }));
     }
-  });
-  channel.worker.on('error', error => { options.print(`serve worker failed: ${error.message}`); stop(); });
-  channel.worker.on('exit', code => { if (!stopped) { options.print(`serve worker exited (${code})`); stop(); } });
+  } catch (error) { for (const c of channels.values()) void c.close(); board.server.close(); unlock(); throw error; }
+  let stopped = false;
+  const tickPending = new Set<string>();
+  const loops = new Map<string, ReturnType<NonNullable<typeof board.ctx.loop>>>();
+  const problems = new Map<string, A.Problem[]>();
+  board.ctx.loop = () => {
+    const all = [...loops.values()];
+    const latest = all.filter(l => l?.lastTickAt).sort((a, b) => (b?.lastTickAt ?? '').localeCompare(a?.lastTickAt ?? ''))[0];
+    return { everyMinutes: options.everyMinutes, ...(latest ? { lastTickAt: latest.lastTickAt, lastExitCode: latest.lastExitCode } : {}) };
+  };
+  board.ctx.extraProblems = id => problems.get(id) ?? [];
   const report = (error: unknown) => { if (!stopped) options.print(`serve worker failed: ${(error as Error).message}`); };
-  board.ctx.runTick = (project, real, maxDispatch) => channel.call<TickResult>('manualTick', { project: project.id, real, maxDispatch, lang: currentLang() });
-  const sessionControl: Serve['sessionControl'] = (project, action) => channel.call('sessionControl', { project, action });
+  for (const [id, channel] of channels) {
+    channel.worker.on('message', message => {
+      if (stopped) return;
+      if (message.event === 'readings') { (board.ctx.tickResults ??= {})[message.project] = message.result; board.ctx.tickRevision = (board.ctx.tickRevision ?? 0) + 1; board.invalidate(); }
+      if (message.event === 'publish') { board.hub.scan(); board.hub.publish(message.project, message.name, message.data); }
+      if (message.event === 'print') options.print(message.line);
+      if (message.event === 'state') {
+        for (const project of message.projects as ProjectConfig[]) {
+          const at = options.projects.findIndex(p => p.id === project.id);
+          if (at >= 0) options.projects[at] = project;
+        }
+        board.ctx.workers = message.workers;
+        loops.set(id, message.loop);
+        problems.set(id, message.problems[id] ?? []);
+        board.invalidate();
+      }
+    });
+    channel.worker.on('error', error => { options.print(`serve worker of ${id} failed: ${error.message}`); stop(); });
+    channel.worker.on('exit', code => { if (!stopped) { options.print(`serve worker of ${id} exited (${code})`); stop(); } });
+  }
+  const channelOf = (id: string): WorkerChannel => {
+    const channel = channels.get(id);
+    if (!channel) throw new Error('No such project');
+    return channel;
+  };
+  board.ctx.runTick = (project, real, maxDispatch) => channelOf(project.id).call<TickResult>('manualTick', { project: project.id, real, maxDispatch, lang: currentLang() });
+  const sessionControl: Serve['sessionControl'] = (project, action) => channelOf(project).call('sessionControl', { project, action });
   board.ctx.sessionControl = (project, action) => sessionControl(project.id, action);
   const tickNow: Serve['tickNow'] = source => {
-    if (stopped || tickPending) return;
-    tickPending = true;
-    void channel.call('tick', source).catch(report).finally(() => { tickPending = false; });
+    if (stopped) return;
+    for (const [id, channel] of channels) {
+      if (tickPending.has(id)) continue;
+      tickPending.add(id);
+      void channel.call('tick', source).catch(report).finally(() => { tickPending.delete(id); });
+    }
   };
   const stop = () => {
     if (stopped) return;
     stopped = true;
     board.hub.stop(); board.server.closeAllConnections(); board.server.close();
     // Give in-flight state writes and session shutdown time to finish before releasing the serve lock.
-    const deadline = setTimeout(() => { void channel.close().finally(unlock); }, 30_000).unref();
-    void channel.call('stop', null).catch(() => {}).finally(() => { clearTimeout(deadline); void channel.close().finally(unlock); });
+    const closeAll = () => Promise.allSettled([...channels.values()].map(c => c.close())).then(unlock);
+    const deadline = setTimeout(() => { void closeAll(); }, 30_000).unref();
+    void Promise.allSettled([...channels.values()].map(c => c.call('stop', null))).finally(() => { clearTimeout(deadline); void closeAll(); });
   };
   board.server.once('error', stop);
-  return { board, server: board.server, tickNow, sessionControl, pollNow: () => { void channel.call('poll', null).catch(report); }, recordEnds: () => channel.call<number>('ends', null), stop };
+  const pollNow = () => { for (const c of channels.values()) void c.call('poll', null).catch(report); };
+  const recordEnds = () => Promise.all([...channels.values()].map(c => c.call<number>('ends', null))).then(counts => counts.reduce((a, b) => a + b, 0));
+  return { board, server: board.server, tickNow, sessionControl, pollNow, recordEnds, stop };
 }

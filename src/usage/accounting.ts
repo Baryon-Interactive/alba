@@ -8,6 +8,8 @@ import type { WorkersFile, WorkerConfig } from '../workers/config.ts';
 import type { Probes } from '../tick/gather.ts';
 import type { QuotaReading } from '../workers/quota.ts';
 import { readStateFile } from '../orders/state-files.ts';
+import { stateStore } from '../orders/backend.ts';
+import { SqliteStore } from '../orders/sqlite-store.ts';
 import { liveRuns } from '../run/live.ts';
 import { ownerOf } from './spend.ts';
 import { parseUsage } from './usage.ts';
@@ -96,7 +98,7 @@ export function rolloutTotal(log: string, codexHome = process.env.CODEX_HOME ?? 
   return result;
 }
 
-function quotaShare(run: Run, source: string | undefined, history: QuotaReading[], workers: WorkersFile | undefined, now: string): UsageRow['quota'] {
+function quotaShare(run: Run, source: string | undefined, history: readonly QuotaReading[], workers: WorkersFile | undefined, now: string): UsageRow['quota'] {
   if (!source) return;
   const readings = history.filter(q => q.ok && q.source === source).sort((a, b) => a.at.localeCompare(b.at));
   const before = readings.filter(q => q.at <= run.started).at(-1);
@@ -109,20 +111,54 @@ function quotaShare(run: Run, source: string | undefined, history: QuotaReading[
 }
 
 const stamps = new Map<string, string>();
+
+/**
+ * The quota history of a project, read once and then only what was added since (it grows by a reading per source per tick,
+ * tens of thousands of rows, and every usage view parsed all of it again). Kept per state folder in this thread.
+ */
+const histories = new Map<string, { firstId: number; lastId: number; size: number; readings: QuotaReading[] }>();
+export function quotaHistoryOf(project: ProjectConfig): readonly QuotaReading[] {
+  const key = path.resolve(project.state_dir);
+  const store = stateStore(project);
+  if (store instanceof SqliteStore) {
+    let cached = histories.get(key);
+    // The history replaced as a whole (`writeStateFile`) starts at another first id: read it again from the start.
+    const ends = store.db.prepare('SELECT COALESCE(MIN(id), 0) AS first, COALESCE(MAX(id), 0) AS last FROM quota_history').get() as { first: number; last: number };
+    const first = Number(ends.first), last = Number(ends.last);
+    if (!cached || last < cached.lastId || (cached.readings.length && first !== cached.firstId)) { cached = { firstId: first, lastId: 0, size: 0, readings: [] }; histories.set(key, cached); }
+    if (!cached.readings.length) cached.firstId = first;
+    while (cached.lastId < last) {
+      const rows = store.quotaRowsAfter(cached.lastId, 5000);
+      if (!rows.length) break;
+      for (const r of rows) cached.readings.push(r.reading);
+      cached.lastId = rows.at(-1)!.id;
+    }
+    return cached.readings;
+  }
+  const text = readStateFile(project, 'quota-history.jsonl') ?? '';
+  const cached = histories.get(key);
+  if (cached && cached.size === text.length) return cached.readings;
+  const readings = text.split('\n').filter(Boolean).map(line => JSON.parse(line) as QuotaReading);
+  histories.set(key, { firstId: 0, lastId: 0, size: text.length, readings });
+  return readings;
+}
 export function collectUsage(project: ProjectConfig, docs: readonly OrderDoc[], workers: WorkersFile | undefined, probes: Probes): { rows: UsageRow[]; signals: UsageSignal[] } {
   const signals: UsageSignal[] = [];
   const now = probes.now().toISOString();
   const stored = usageRows(project), byRun = new Map<string, UsageRow[]>();
   for (const r of stored) { const key = `${r.order}/${r.run}`, list = byRun.get(key) ?? []; list.push(r); byRun.set(key, list); }
   const replacements: { order: string; run: string; rows: UsageRow[] }[] = [];
-  const history = (readStateFile(project, 'quota-history.jsonl') ?? '').split('\n').filter(Boolean).map(s => JSON.parse(s) as QuotaReading);
+  const history = quotaHistoryOf(project);
+  const lastReading = history.at(-1)?.at;
   for (const doc of docs) for (const run of doc.runs) {
     if (run.imported) continue;
     const worker = ownerOf(workers?.workers ?? [], run.worker), kind = run.routing?.kind ?? doc.order.routing?.kind ?? doc.order.kind;
     const base = { project: project.id, order: doc.order.tag, run: run.id, worker: worker?.id ?? run.worker, engine: run.engine ?? worker?.engine ?? 'unknown', model: run.model ?? 'unknown', kind, rework: doc.actions.some(a => a.kind === 'rework' && a.seq < run.seq), resume: run.continuation === true || (run.attempt ?? 1) > 1 || !!run.resume_reason || !!run.rotated, open: !run.ended, subscription: worker?.cost === 'included', merged_at: doc.actions.find(a => a.kind === 'approve' && a.seq > run.seq)?.at, merged: doc.actions.some(a => a.kind === 'approve' && a.seq > run.seq) };
     const pricing = pricingOf(workers, worker, base.model);
     const key = `${project.state_dir}:${doc.order.tag}/${run.id}`;
-    const stamp = JSON.stringify([probes.fileTime(run.events_file ?? run.log ?? ''), run.usage, run.ended, base, pricing, project.usage_warnings, history.at(-1)?.at]);
+    // A run's quota share stops changing once a reading after its end exists: later readings leave it alone.
+    const quotaStamp = run.ended && lastReading && lastReading > run.ended ? 'settled' : lastReading;
+    const stamp = JSON.stringify([probes.fileTime(run.events_file ?? run.log ?? ''), run.usage, run.ended, base, pricing, project.usage_warnings, quotaStamp]);
     const previous = byRun.get(`${doc.order.tag}/${run.id}`);
     const durable = run.ended && previous?.some(r => r.source !== 'unknown') && previous.every(r => !r.open);
     const signalRules = JSON.stringify(project.usage_warnings ?? {});

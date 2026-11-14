@@ -11,7 +11,7 @@ import { t } from '@/i18n';
 
 export function DraftPanel({ project, order }: { project: string; order: OrderDefinition }) {
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ['order-draft', project, order.tag], queryFn: () => api.orderDraft(project, order.tag), refetchInterval: 5000 });
+  const query = useQuery({ queryKey: ['order-draft', project, order.tag], queryFn: () => api.orderDraft(project, order.tag), refetchInterval: 15_000 });
   const [editing, setEditing] = useState<string>();
   const [plan, setPlan] = useState<{ title: string; kind: string; needs: string; intent: string; role: string }>();
   const refresh = () => { void client.invalidateQueries(); };

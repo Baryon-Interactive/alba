@@ -1,3 +1,5 @@
+import { ownerOf } from '../usage/spend.ts';
+import { withFleetLock } from '../serve/fleet.ts';
 import { parseStreamLog, textSessionId, workerAdapter, remoteTarget, writeRemoteSpec } from '../workers/adapters/index.ts';
 import { chooseWorker, rolePolicy } from '../routing/choose.ts';
 import { previousAttempts } from './previous-attempts.ts';
@@ -41,7 +43,11 @@ function withEditor(role: ResolvedRole, name: string | undefined, url: string | 
 /** NO_PROXY with the loopback addresses added: a machine with HTTPS_PROXY set would send the editor's MCP calls to the proxy. */
 export const withLoopback = (value: string | undefined): string => [...new Set([...(value ?? '').split(',').map(x => x.trim()).filter(Boolean), '127.0.0.1', 'localhost'])].join(',');
 
-export interface RunContext { project: ProjectConfig; orders: Orders; workers: WorkersFile; probes: Probes }
+export interface RunContext {
+  project: ProjectConfig; orders: Orders; workers: WorkersFile; probes: Probes;
+  /** Open runs of the other projects that share the workers file, by worker id (src/serve/fleet.ts); read fresh on each call. */
+  peers?: () => Map<string, number>;
+}
 
 /** Why the tool chose this worker (what a run records); absent when a person named it. */
 export interface RouteNote { why: string; rejected: { worker: string; reason: string }[] }
@@ -283,8 +289,15 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const launch = worker.launch;
   let run: Run;
   try {
-    run = stateTransaction(project, () => {
+    run = withFleetLock(() => stateTransaction(project, () => {
       const fresh = orders.get(doc.order.tag);
+      // The worker's concurrency over every project that shares it: another project's thread may have started a run on it since
+      // this tick counted. A start a person asked for on a named worker is theirs to make.
+      if (ctx.peers && !options.explicitWorker) {
+        const own = orders.all().reduce((n, d) => n + d.runs.filter(r => r.ended === undefined && ownerOf(workers.workers, r.worker)?.id === worker.id).length, 0);
+        const elsewhere = ctx.peers().get(worker.id) ?? 0;
+        if (own + elsewhere >= worker.concurrency) fail('{tag} cannot start now: {worker} already has {n} run(s) open ({m} in other projects), its concurrency is {cap}.', { tag: fresh.order.tag, worker: worker.id, n: own + elsewhere, m: elsewhere, cap: worker.concurrency });
+      }
       if (project.resources) {
         const why = startBlocked(project.resources, activeLeases(project, orders), occupants(project, orders), { tag: fresh.order.tag, kind: kindOfOrder(project, fresh), uses: usesOf(project, fresh) });
         if (why) fail('{tag} cannot start now: {why}.', { tag: fresh.order.tag, why });
@@ -305,7 +318,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
       const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: worker.model ?? launch.model, template: launch.id, ...(launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}) } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
       if (project.resources) acquireLeases(project, orders, orders.get(doc.order.tag), opened.id, ctx.probes.now());
       return opened;
-    });
+    }));
   } catch (e) {
     if (editor) dropEditor(project, doc.order.tag, editor.slot.pool);
     throw e;

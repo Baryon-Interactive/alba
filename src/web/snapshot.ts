@@ -1,3 +1,4 @@
+import { ownerOf } from '../usage/spend.ts';
 import { existsSync } from 'node:fs';
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc, Report, Stage } from '../orders/model.ts';
@@ -73,6 +74,9 @@ export function rowsOf(project: ProjectConfig, orders: Orders, activity: Record<
  * an answer is older than that, it is still given, and a fresh one is read in the background (when the probes can do that
  * without blocking): a page never waits for the slow command except the very first time. A command that failed is not kept.
  */
+/** How long a cached `git worktree list` is used. */
+const WORKTREES_MS = 10_000;
+
 export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(commands: readonly (readonly string[])[], timeoutSeconds?: number): Promise<void> } {
   const memo = new Map<string, { at: number; value: unknown }>();
   const refreshing = new Set<string>();
@@ -92,6 +96,7 @@ export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(comm
     return value;
   };
   const { runCommandAsync, freeRamGbAsync, gitActivityAsync } = base;
+  const worktreeMemo = new Map<string, { at: number; value: ReturnType<Probes['worktrees']> }>();
   /** Fills the memory in the background (a server calls this when it starts), so not even the first page waits for a slow command. */
   const prime = async (commands: readonly (readonly string[])[], timeoutSeconds = 60): Promise<void> => {
     const fill = async (key: string, read: () => Promise<unknown>) => {
@@ -112,7 +117,45 @@ export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(comm
     runCommand: (command, timeout) => once(`cmd:${command.join('\u0000')}`, () => base.runCommand(command, timeout), runCommandAsync ? () => runCommandAsync.call(base, command, timeout) : undefined),
     freeRamGb: () => once('ram', () => base.freeRamGb(), freeRamGbAsync ? () => freeRamGbAsync.call(base) : undefined),
     gitActivity: worktree => once(`git:${worktree}`, () => base.gitActivity(worktree), gitActivityAsync ? () => gitActivityAsync.call(base, worktree) : undefined),
+    // `git worktree list` (0.1-0.5 s) is read by every tick and every view; a few seconds old is good enough for both.
+    worktrees: root => {
+      const hit = worktreeMemo.get(root);
+      if (hit && base.now().getTime() - hit.at < WORKTREES_MS) return hit.value;
+      const value = base.worktrees(root);
+      worktreeMemo.set(root, { at: base.now().getTime(), value });
+      return value;
+    },
   };
+}
+
+/**
+ * The board's view from the last real tick of each project (the serve's project threads send their results), instead of a dry-run
+ * tick of every project (seconds each). Orders and rows are read now; the workers' running counts are counted now over all the
+ * projects shown, so a run that started or ended since that tick shows at once. Quota, availability and problems are the tick's.
+ */
+export function snapshotFromTicks(configs: ProjectConfig[], workers: WorkersFile | undefined, results: Record<string, TickResult>, probes: Probes, actor = 'web'): Snapshot {
+  const snapshot: Snapshot = { at: probes.now().toISOString(), projects: [], workersFile: workers };
+  const open = new Map<string, number>();
+  for (const config of configs) {
+    const orders = new Orders(stateStore(config), () => probes.now().toISOString(), actor);
+    const result = results[config.id];
+    const view: ProjectView = { config, orders, rows: [] };
+    try {
+      view.rows = rowsOf(config, orders, result?.activity);
+      if (workers) for (const doc of orders.all()) for (const run of doc.runs) {
+        if (run.ended !== undefined) continue;
+        const id = ownerOf(workers.workers, run.worker)?.id;
+        if (id) open.set(id, (open.get(id) ?? 0) + 1);
+      }
+    } catch (e) { view.error = (e as Error).message.split('\n')[0]; }
+    if (result) { view.tick = result.report; view.workers = result.workers.map(w => ({ ...w })); view.quotas = result.quotas; view.history = result.history; }
+    snapshot.projects.push(view);
+    const min = config.dispatch.min_free_ram_gb;
+    if (min !== undefined) snapshot.minFreeRamGb = Math.max(snapshot.minFreeRamGb ?? 0, min);
+  }
+  for (const view of snapshot.projects) for (const w of view.workers ?? []) w.running = open.get(w.config.id) ?? 0;
+  if (workers) snapshot.freeRamGb = probes.freeRamGb();
+  return snapshot;
 }
 
 /** Reads everything the board shows. Quota and the machine are read through the tick, in dry-run form, without recording history. */

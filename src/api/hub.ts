@@ -40,6 +40,8 @@ export function streamName(type: string): StreamEventName {
 }
 
 export interface HubOptions {
+  /** How long after a file change the scan runs, so that a burst of writes is one scan (default 50 ms). */
+  watchDelayMs?: number;
   ringSize?: number;
   /** How often the files are looked at besides the file-system watchers. */
   checkMs?: number;
@@ -86,7 +88,7 @@ export class Hub {
     for (const p of this.projects) {
       if (!existsSync(p.stateDir)) continue;
       try {
-        const w = watch(p.stateDir, { persistent: false }, (_event, file) => { if (!file || /^(events\.jsonl|quota-history\.jsonl|state\.sqlite(?:-wal)?)$/.test(String(file))) this.scan(); });
+        const w = watch(p.stateDir, { persistent: false }, (_event, file) => { if (!file || /^(events\.jsonl|quota-history\.jsonl|state\.sqlite(?:-wal)?)$/.test(String(file))) this.scanSoon(); });
         w.on('error', () => { /* the slow check still runs */ });
         this.watchers.push(w);
       } catch { /* the slow check still runs */ }
@@ -95,7 +97,19 @@ export class Hub {
     this.timers.push(setInterval(() => { for (const c of this.clients) c.res.write(': ping\n\n'); }, this.options.pingMs ?? 20_000).unref());
   }
 
+  /**
+   * A scan shortly after a file change: every write to the SQLite log fires the watcher (a tick writes dozens of rows), and a
+   * burst of them becomes one scan.
+   */
+  private soon?: NodeJS.Timeout;
+  scanSoon(): void {
+    if (this.soon) return;
+    this.soon = setTimeout(() => { this.soon = undefined; this.scan(); }, this.options.watchDelayMs ?? 50);
+    this.soon.unref();
+  }
+
   stop(): void {
+    if (this.soon) { clearTimeout(this.soon); this.soon = undefined; }
     for (const w of this.watchers) w.close();
     for (const t of this.timers) clearInterval(t);
     this.watchers.length = 0;
