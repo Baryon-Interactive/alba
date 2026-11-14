@@ -852,6 +852,8 @@ export interface NewOrderResult {
   tableRow: boolean;
   /** The project asks for table rows but this one could not be added (the order and the file exist anyway). */
   tableWarning?: string;
+  /** The project's foundations apply to the new order and are not ready (`foundations:` in alba.yaml). */
+  foundationWarning?: string;
 }
 
 /** `POST /api/orders/:tag/actions` */

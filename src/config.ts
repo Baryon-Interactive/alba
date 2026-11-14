@@ -1,5 +1,6 @@
 import { validateDrafting, type DraftingConfig } from './producer/drafting-config.ts';
 import { gatesConfig } from './gates/config.ts';
+import { validateFoundations } from './foundations/config.ts';
 import { roundConfig, monitorConfig, type RoundConfig, type MonitorConfig } from './producer/round-config.ts';
 import { validateAccept, type AcceptConfig } from './review/accept-config.ts';
 import { safePackageRoot } from './clean/safety.ts';
@@ -205,6 +206,8 @@ export interface ProjectConfig {
   gates?: import('./gates/config.ts').GatesConfig;
   design?: DesignConfig;
   design_docs?: DesignDocsConfig;
+  /** Documents a kind of work needs before its content orders start (`foundations:`); absent, nothing is checked. */
+  foundations?: import('./foundations/config.ts').FoundationsConfig;
   intake?: IntakeConfig;
   accept?: AcceptConfig;
   roles?: Roles;
@@ -512,6 +515,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.design !== undefined) cfg.design = validateDesign(raw.design, file, cfg.state_dir);
   if (raw.design_docs !== undefined) cfg.design_docs = validateDesignDocs(raw.design_docs, file, base, cfg.state_dir);
   if (!cfg.decisions && cfg.design_docs?.decisions) { cfg.decisions = cfg.design_docs.decisions; cfg.decisions.stateProject = { state_dir: cfg.state_dir, state: cfg.state }; }
+  if (raw.foundations !== undefined) cfg.foundations = validateFoundations(raw.foundations, file);
   if (raw.intake !== undefined) cfg.intake = validateIntake(raw.intake, file);
   if (raw.clean !== undefined) cfg.clean = validateClean(raw.clean, file, cfg.root);
   if (raw.monitor !== undefined) cfg.monitor = monitorConfig(raw.monitor);
@@ -538,7 +542,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.art !== undefined) cfg.art = validateArt(raw.art, file, base, cfg.root, id);
   if (raw.credits !== undefined) cfg.credits = validateCredits(raw.credits, file, base, cfg.root, id);
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }

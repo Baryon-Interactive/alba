@@ -1,4 +1,5 @@
 import { ownerOf } from '../usage/spend.ts';
+import { foundationBlock } from '../foundations/foundations.ts';
 import { withFleetLock } from '../serve/fleet.ts';
 import { parseStreamLog, textSessionId, workerAdapter, remoteTarget, writeRemoteSpec } from '../workers/adapters/index.ts';
 import { chooseWorker, rolePolicy } from '../routing/choose.ts';
@@ -178,6 +179,9 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const remote = worker.host ? remoteTarget(project, worker, plan.path, workers.file) : undefined;
   const resumeFailures = trailingTransientFailures(doc.runs, worker.id);
   const base = { mode: 'start' as const, tag: doc.order.tag, worker: worker.id, cwd: plan.path, branch: plan.branch };
+  // Foundations in block mode: no start of a matching order (tick, producer, a person's `alba run`) until its documents are approved.
+  const foundationWhy = foundationBlock(project, doc);
+  if (foundationWhy) fail('{tag} cannot start now: {why}.', { tag: doc.order.tag, why: foundationWhy });
   // Resources the order uses: a free slot, and the exclusive ones, are checked here too (a person's `alba run` and the web's run go through this).
   if (project.resources) {
     const why = startBlocked(project.resources, activeLeases(project, orders), occupants(project, orders), { tag: doc.order.tag, kind: kindOfOrder(project, doc), uses: usesOf(project, doc) });

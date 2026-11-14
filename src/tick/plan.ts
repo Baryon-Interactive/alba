@@ -37,6 +37,8 @@ export interface TickOrder {
   question?: string;
   spendCapUsd?: number;         // the order's own ceiling
   spentUsd?: number;            // what its runs cost so far (engine-reported, or estimated from the worker's price)
+  /** Foundation sets (`foundations:`) that apply to this order and are not ready: `block` holds it back, `warn` only says so. */
+  foundations?: { set: string; mode: 'warn' | 'block'; missing: string }[];
 }
 
 export interface OrderActivity {
@@ -101,7 +103,7 @@ function editorPortWhy(ports: NonNullable<TickInput['editorPorts']>, pool: strin
 }
 
 export type Move = { tag: string; mode: 'dispatch' | 'resume' | 'card'; worker: string; rework: boolean; /** Slots above a kind cap this start may use (the rework reserve); the start checks the cap again with it. */ capReserve?: number; rotated?: { from: string; reason: string }; why?: string; rejected?: { worker: string; reason: string }[] };
-export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer'; tag?: string; text: string }
+export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer' | 'foundations'; tag?: string; text: string }
 
 export interface TickReport {
   dispatched?: number;                              // successful real starts/resumes; absent on a preview
@@ -205,6 +207,17 @@ export function planTick(input: TickInput): TickReport {
     report.problems.push({ kind: 'no-report', tag: o.tag, text: t('{tag}: the last run ended but no report was recorded.', { tag: o.tag }) });
   }
 
+  // Foundations not ready: one line per set, naming the orders it holds back (queued, block) or that go ahead without it.
+  const gapSets = new Map<string, { mode: 'warn' | 'block'; missing: string; tags: string[] }>();
+  for (const o of orders.filter(x => x.foundations?.length && (x.stage === 'queued' || x.stage === 'running'))) for (const f of o.foundations!) {
+    if (f.mode === 'block' && o.stage !== 'queued') continue;
+    const entry = gapSets.get(f.set) ?? { mode: f.mode, missing: f.missing, tags: [] };
+    entry.tags.push(o.tag); gapSets.set(f.set, entry);
+  }
+  for (const [set, g] of gapSets) report.problems.push({ kind: 'foundations', text: g.mode === 'block'
+    ? t('The "{set}" foundations are not ready ({missing}); held back until they are: {tags}.', { set, missing: g.missing, tags: g.tags.join(', ') })
+    : t('The "{set}" foundations are not ready ({missing}); going ahead without them: {tags}.', { set, missing: g.missing, tags: g.tags.join(', ') }) });
+
   // Resource use now, by kind and heavy class.
   const used: Record<string, number> = Object.fromEntries(Object.entries(capacityUsage(orders, caps)).map(([key, value]) => [key, value.used]));
   for (const lease of input.leases ?? []) if (lease.acceptance?.cap) used[lease.acceptance.cap] = (used[lease.acceptance.cap] ?? 0) + 1;
@@ -218,6 +231,8 @@ export function planTick(input: TickInput): TickReport {
   const ramShort = input.freeRamGb !== undefined && input.minFreeRamGb !== undefined && input.freeRamGb < input.minFreeRamGb;
 
   for (const o of candidates) {
+    const held = o.foundations?.find(f => f.mode === 'block');
+    if (held) { report.heldBack.push({ tag: o.tag, why: t('the "{set}" foundations are not ready ({missing})', { set: held.set, missing: held.missing }) }); continue; }
     // `on_limit: rotate`: the next qualifying supply for the same role, excluding exhausted supply and paid targets unless spending is allowed.
     let rotated: { from: string; reason: string } | undefined;
     let rotatedChoice: ReturnType<typeof chooseWorker> | undefined;

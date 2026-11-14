@@ -19,6 +19,35 @@ design_docs:
 
 Later documents have higher precedence. Retired documents are retained for history and excluded from intake coverage. Database documents are imported with `alba design-docs import`; file-backed documents are updated by editing their Markdown and configuration entry.
 
+## Foundations before content orders
+
+A game project's first content orders need a few documents to exist first: an art bible, a palette, a scale sheet, lighting presets, an asset acceptance list. A project that starts content without them ends up with contradictory style rules and every batch judged against a different idea. The optional `foundations` section names, per kind of work, the documents that must be ready before its orders start:
+
+```yaml
+foundations:
+  mode: warn                     # warn (default) or block
+  art:                           # a set: any name
+    kinds: [art, visual]         # orders of these kinds (after classification) ...
+    tags: [scene]                # ... or with one of these tags
+    docs: [art-bible, palette, design/scale.md]
+  ui:
+    tags: [hud]
+    docs: [ui-kit]
+    mode: block                  # a set may override the mode
+```
+
+A `docs` entry that names a `design_docs` id (a file entry above, or a database document) is ready when its status is `approved` and its file is not empty. An entry with a folder or an extension is a project file, ready when it exists and has text (it has no approval; list it under `design_docs` to require one). Anything else is missing.
+
+While a set is not ready:
+
+- `warn`: matching orders start as usual. Every tick reports one `foundations` problem per set naming what is missing and the queued or running orders going ahead without it; the console shows it under **Foundations not ready**.
+- `block`: matching orders are held back (the tick's **HELD BACK** says why), and `alba run`, the console's **Run now** and the producer refuse to start them with the same reason.
+- `alba orders add` (and a new order from the console or the producer) says what is missing, or that the order will wait.
+
+An order tagged `foundation` (`--tags foundation`) is never held back: it is the order that writes the documents. Without a `foundations` section nothing is checked.
+
+`alba foundations [--json]` lists each set, the state of each document and the orders it holds back or warns about; it exits 1 while a set is not ready. The art lessons `ALBA-ART-08` to `ALBA-ART-13` of the `art-pipeline` pack ([library formats](../library-formats.md#lessons)) say what an art bible holds.
+
 ## Commands and API
 
 ```text
@@ -27,6 +56,7 @@ alba design-docs show <id> [--version n]
 alba design-docs import <md> [--id x]
 alba design-docs export <id> --out <file>
 alba design-docs set <id> --order n --status approved|draft|retired
+alba foundations [--json]
 alba intake [--docs id,id] [--tag TAG]
 alba intake check [TAG] [--dir .alba] [--json]
 alba intake review TAG --accept SYS,.. | --reject SYS --note text | --drop SYS --note text

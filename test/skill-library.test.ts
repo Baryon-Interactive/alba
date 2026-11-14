@@ -72,6 +72,8 @@ test('lesson packs: Alba ships them, a project turns them on with lessons.packs,
       assert.doesNotMatch(l.rule + l.why, /History|Recut|Thermopylae|Red Cliffs|HR[A-Z]|hr_sim|tools\/build_ue/);
     }
   }
+  // The art foundation lessons: bible first, settings that match the shaders, range and subject contrast, consolidating passes, licences, key art against the game.
+  for (let n = 1; n <= 13; n++) assert.ok(ids.has(`ALBA-ART-${String(n).padStart(2, '0')}`), `ALBA-ART-${n} is in the art-pipeline pack`);
   mkdirSync(path.join(dir, 'lessons'));
   writeFileSync(path.join(dir, 'lessons', 'own.md'), '## L-01 Our rule\n- tags: engine\n- rule: ours\n');
   const cfg = project(dir, { lessons: { dir: 'lessons', packs: ['unreal', 'windows-workers'], kind_tags: { ue: ['engine', 'build'] } } });

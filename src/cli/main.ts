@@ -1,4 +1,5 @@
 import { loadMachines } from '../machines/config.ts';
+import { foundationGaps, foundationStates, formatFoundations, orderTraits } from '../foundations/foundations.ts';
 import { machineInstallPlan, machinesView, probeMachines, startInstall, type MachineView } from '../machines/probe.ts';
 import { machineJobs, type MachineJob } from '../machines/jobs.ts';
 import { runDesign } from './design.ts';
@@ -109,6 +110,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   design systems | show <id> | search <text> | history [id] | export [--out dir] | import-template
   design apply <file> [--dry-run] | check [--json] | measure [<target>...] [--dry-run]
   design-docs list | show <id> [--version n] | import <md> [--id x] | export <id> --out <file> | set <id> --order n --status approved|draft|retired
+  foundations [--json]                       the documents each kind of work needs before its content orders (foundations: in alba.yaml), their state, and the orders held back or warned about; exit 1 when one is not ready
   intake [--docs id,id] [--tag T] | intake check [<TAG>] [--dir .alba] [--json] | intake review <TAG> [--accept SYS,..] [--reject SYS --note text] [--drop SYS --note text]
   gates run [--now] [--gate name] | status | cancel   run, inspect or cancel waiting nightly gates
 
@@ -152,7 +154,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   run <TAG> --worker id [--dry-run] [--over-cap]  start a queued order: worktree, prompt, background process, run record; a held order (for example after "stop") starts on the worker named; a full kind cap refuses unless --over-cap
   stop <TAG> [--note text]                   stop the open run: its process and every process under it (identity checked), close the run as cancelled and hold the order; then "run <TAG> --worker id" moves it to another worker
   review <TAG> approve|rework [--note text] [--branch b] [--override]  approve checks the branch is merged and writes <TAG>.accept.md; rework sends it back
-  review <TAG> sheet [--out file.png] [--columns 4] [--cell 320] [--json]  a contact sheet of the order's evidence pictures (default <state_dir>/review/<TAG>-sheet.png) and each one's size, mean luminance, spread and dark share
+  review <TAG> sheet [--out file.png] [--columns 4] [--cell 320] [--json]  a contact sheet of the order's evidence pictures (default <state_dir>/review/<TAG>-sheet.png) and each one's size, mean luminance, spread, dark and highlight share, p5/p95, saturation, and the subject against its surround when <name>.mask.png exists
   serve [--port 4777] [--every 15] [--max-dispatch 1] [--allow-origin url]... [--sign-in] --project f.yaml...
                                              board + JSON interface (docs/console/010-api.md) + a real tick every n minutes (0: none) + an immediate record and tick when a run ends; one serve per state folder; --sign-in asks for the printed key or link
   answer <TAG> (--text <answer> | --choice N [--text note]) [--worker id]
@@ -399,6 +401,18 @@ ${editorLines(editors, projects.length > 1)}` : body;
   }
   const { cfg, orders } = projectOf(values.project);
   if (group === 'design-docs') return runDesignDocs(cfg, command, rest, { json: values.json, out: values.out, id: values.id, order: values.version ?? values.order, status: values.status });
+  if (group === 'foundations') {
+    if (command !== undefined) fail('Usage: alba foundations [--json]');
+    const states = foundationStates(cfg);
+    const affected: Record<string, { tag: string; stage: string }[]> = {};
+    if (states.some(st => !st.ready)) for (const doc of orders.all()) {
+      const stage = orders.stage(doc).stage;
+      if (!['draft', 'planned', 'queued', 'waiting-needs', 'held', 'running'].includes(stage)) continue;
+      for (const gap of foundationGaps(states, orderTraits(cfg, doc))) (affected[gap.name] ??= []).push({ tag: doc.order.tag, stage });
+    }
+    if (states.some(st => !st.ready)) exitCode = 1;
+    return values.json ? JSON.stringify({ configured: !!cfg.foundations, sets: states, orders: affected }, null, 2) : formatFoundations(cfg, states, affected);
+  }
   if (group === 'intake') return runIntake(cfg, orders, command, rest, { json: values.json, docs: values.docs, tag: values.tag, dir: values.dir, accept: values.accept, reject: values.reject, drop: values.drop, note: values.note }, code => { exitCode = code; });
   if (group === 'machines') {
     const usage = 'Usage: alba machines [--json] | machines check [id] | machines install <id> <item> [--apply] | machines jobs [id] [--json] | machines edit <id> [field=value ...] [--dry-run]';
@@ -564,7 +578,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const body = values['body-file'] ? readFileSync(resolveFile(values['body-file'], cfg), 'utf8') : undefined;
         if (values.role) resolveRole(effectiveRoles(cfg, values.workers || process.env.ALBA_WORKERS || cfg.workers ? workersOf(values.workers, cfg) : undefined), { role: values.role, kind: values.kind ?? '' });
         const made = createOrder(cfg, orders, { check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
-        return [tagLine(made.doc), made.file ? t('wrote {file}', { file: made.file }) : '', made.tableRow ? t('added a row to the dispatch table') : '', made.tableWarning ?? ''].filter(Boolean).join('\n');
+        return [tagLine(made.doc), made.file ? t('wrote {file}', { file: made.file }) : '', made.tableRow ? t('added a row to the dispatch table') : '', made.tableWarning ?? '', made.foundationWarning ?? ''].filter(Boolean).join('\n');
       }
       case 'act': {
         need(2, `alba orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b]`);

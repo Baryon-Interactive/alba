@@ -86,13 +86,29 @@ alba status                      # follow it; `alba watch T1` streams its activi
 The worker works in its own worktree (`../mygame-worktrees/mygame-t1`) on branch `mygame-t1`, commits there and ends with a
 report. Review it on the console (`alba serve`, then open the printed address) or with `alba review T1 approve|rework`.
 
-## 3. What to add next
+## 3. Write the foundations before the first content order
+
+Before the first order that makes content (art, levels, sound), write the documents that content must follow: for art, an art bible with direction, palette, value ranges, a scale ruler, material classes, lighting presets, effect sizes and an acceptance list. List them under `design_docs` and name them in `foundations`, so that content orders wait for them (`mode: block`) or at least say on every tick that they are missing (`mode: warn`):
+
+```yaml
+design_docs:
+  files:
+    - { id: art-bible, path: design/art-bible.md, status: draft }
+foundations:
+  mode: block
+  art: { kinds: [art], docs: [art-bible] }
+```
+
+The order that writes them is tagged `foundation` (`alba orders add F1 --title "Art bible" --kind art --tags foundation`), so it is not held back itself. Set the document's status to `approved` once a person has read it; `alba foundations` shows what is still missing ([design intake](../libraries/030-design-intake.md#foundations-before-content-orders)). Turn on the `art-pipeline` lesson pack too (`lessons: { packs: [art-pipeline] }`).
+
+## 4. What to add next
 
 | Need | Where |
 |---|---|
 | Several workers splitting the work by kind, preferences, fallbacks | [routing: worker groups and routes](../workers/012-routing-and-skills.md#routing-worker-groups-and-routes) |
 | One build at a time, shared devices | `dispatch.caps`, `resources` ([014](../workers/014-monitor-leases-loops.md)) |
 | Skills for your engine, and Alba's built-in ones (`game-capture-windows`, `unreal-headless-pipeline`, ...) | [skills](../workers/012-routing-and-skills.md#albas-skill-library) |
+| Documents a kind of work needs before its orders start | `foundations` ([design intake](../libraries/030-design-intake.md#foundations-before-content-orders)) |
 | Rules every order should carry | `lessons` and Alba's lesson packs ([library formats](../library-formats.md#lessons)) |
 | A game editor with MCP for each run | [032](../workers/032-run-editors.md) |
 | Paid tools (pictures, 3D models) with quotes | [031](../workers/031-tool-plugins.md) |

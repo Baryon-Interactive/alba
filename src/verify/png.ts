@@ -158,3 +158,109 @@ export function summarizePng(image: DecodedPng): ImageSummary {
   const thumbnail = Array.from({ length: 256 }, (_, i) => counts[i] ? totals[i] / counts[i] : 0);
   return { thumbnail, meanLuminance: mean, luminanceStddev: count ? Math.sqrt(variance / count) : 0, darkFraction: count ? dark / count : 1 };
 }
+
+/** What a reviewer reads besides the mean: range, highlights, colour, and (with a subject mask) how the subject stands out. Luminance is Rec.709 from 0 to 1. */
+export interface PictureStats {
+  /** Share of pixels brighter than 230 of 255. */
+  highlightFraction: number;
+  /** 5th and 95th percentile of luminance. */
+  p5: number;
+  p95: number;
+  /** Mean HSV saturation (0 grey, 1 full colour). */
+  meanSaturation: number;
+}
+
+export interface SubjectStats {
+  subjectMeanLuminance: number;
+  /** Mean luminance of the band around the subject (outside the mask); absent when the mask leaves no band. */
+  surroundMeanLuminance?: number;
+  /** Subject mean minus surround mean. */
+  subjectContrast?: number;
+  /** Height of the subject's bounding box, in pixels of the picture. */
+  subjectHeight: number;
+  /** Width of the band around the subject, in pixels. */
+  surroundBand: number;
+}
+
+export type SubjectResult = { status: 'ok'; stats: SubjectStats } | { status: 'unsupported'; reason: string };
+
+const HIGHLIGHT = 230 / 255;
+
+/** Highlight share, p5/p95 and mean saturation of a decoded picture (alpha is ignored, as in `summarizePng`). */
+export function pictureStats(image: DecodedPng): PictureStats {
+  const count = image.width * image.height;
+  const histogram = new Uint32Array(256);
+  let high = 0, saturation = 0;
+  for (let p = 0; p < count; p++) {
+    const i = p * image.channels, r = image.pixels[i], g = image.pixels[i + 1], b = image.pixels[i + 2];
+    const l = luminance(r, g, b);
+    histogram[Math.min(255, Math.round(l * 255))]++;
+    if (l > HIGHLIGHT) high++;
+    const max = Math.max(r, g, b);
+    if (max) saturation += (max - Math.min(r, g, b)) / max;
+  }
+  const percentile = (q: number): number => {
+    const rank = Math.max(1, Math.ceil(q * count));
+    let seen = 0;
+    for (let v = 0; v < 256; v++) { seen += histogram[v]; if (seen >= rank) return v / 255; }
+    return 1;
+  };
+  return { highlightFraction: count ? high / count : 0, p5: count ? percentile(0.05) : 0, p95: count ? percentile(0.95) : 0, meanSaturation: count ? saturation / count : 0 };
+}
+
+/** Grow a 0/1 mask by `r` pixels in every direction (a square), with running counts along rows, then columns. */
+function dilate(mask: Uint8Array, width: number, height: number, r: number): Uint8Array {
+  const rows = new Uint8Array(mask.length);
+  for (let y = 0; y < height; y++) {
+    let n = 0;
+    for (let x = 0; x < Math.min(r, width); x++) n += mask[y * width + x];
+    for (let x = 0; x < width; x++) {
+      if (x + r < width) n += mask[y * width + x + r];
+      if (x - r - 1 >= 0) n -= mask[y * width + x - r - 1];
+      rows[y * width + x] = n > 0 ? 1 : 0;
+    }
+  }
+  const out = new Uint8Array(mask.length);
+  for (let x = 0; x < width; x++) {
+    let n = 0;
+    for (let y = 0; y < Math.min(r, height); y++) n += rows[y * width + x];
+    for (let y = 0; y < height; y++) {
+      if (y + r < height) n += rows[(y + r) * width + x];
+      if (y - r - 1 >= 0) n -= rows[(y - r - 1) * width + x];
+      out[y * width + x] = n > 0 ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+/**
+ * The subject against its surround. `mask` is a picture of the same size whose white pixels (luminance at least 0.5, and opaque
+ * when it has alpha) mark the subject. The surround is the band of pixels outside the mask within a quarter of the subject's larger
+ * box side (at least 2 pixels) of it.
+ */
+export function subjectStats(image: DecodedPng, mask: DecodedPng): SubjectResult {
+  if (mask.width !== image.width || mask.height !== image.height) return { status: 'unsupported', reason: `the mask is ${mask.width}x${mask.height}, the picture ${image.width}x${image.height}` };
+  const { width, height } = image, count = width * height;
+  const inside = new Uint8Array(count);
+  let top = height, bottom = -1, left = width, right = -1, n = 0, sum = 0;
+  for (let p = 0; p < count; p++) {
+    const m = p * mask.channels;
+    if (luminance(mask.pixels[m], mask.pixels[m + 1], mask.pixels[m + 2]) < 0.5 || (mask.channels === 4 && mask.pixels[m + 3] < 128)) continue;
+    inside[p] = 1; n++;
+    const i = p * image.channels; sum += luminance(image.pixels[i], image.pixels[i + 1], image.pixels[i + 2]);
+    const x = p % width, y = (p - x) / width;
+    if (y < top) top = y; if (y > bottom) bottom = y; if (x < left) left = x; if (x > right) right = x;
+  }
+  if (!n) return { status: 'unsupported', reason: 'the mask marks no subject' };
+  const subjectHeight = bottom - top + 1;
+  const band = Math.max(2, Math.round(Math.max(subjectHeight, right - left + 1) / 4));
+  const grown = dilate(inside, width, height, band);
+  let around = 0, aroundSum = 0;
+  for (let p = 0; p < count; p++) {
+    if (!grown[p] || inside[p]) continue;
+    const i = p * image.channels; aroundSum += luminance(image.pixels[i], image.pixels[i + 1], image.pixels[i + 2]); around++;
+  }
+  const subjectMeanLuminance = sum / n;
+  const surround = around ? aroundSum / around : undefined;
+  return { status: 'ok', stats: { subjectMeanLuminance, ...(surround !== undefined ? { surroundMeanLuminance: surround, subjectContrast: subjectMeanLuminance - surround } : {}), subjectHeight, surroundBand: band } };
+}

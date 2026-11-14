@@ -11,7 +11,7 @@ export const attentionLabel = (kind: string): string => ({
   picks: t('Waiting for a pick'), quotes: t('Quotes waiting for approval'), blocked: t('Blocked, failed or dropped'),
   stalled: t('Stalled runs'), 'start-failed': t('Failed starts'), looping: t('Looping runs'), 'lease-expired': t('Expired leases'),
   quota: t('Quota problems'), 'no-fit': t('No worker fits'), 'no-worker': t('No available worker'), spend: t('Spend limits'),
-  'usage-waste': t('Usage warnings'), 'usage-budget': t('Usage budgets'),
+  'usage-waste': t('Usage warnings'), 'usage-budget': t('Usage budgets'), foundations: t('Foundations not ready'),
   'commit-nudge': t('Commit reminders'), lingering: t('Delivered runs still open'), 'maybe-finished': t('Runs to record'),
   'no-report': t('Missing reports'), launch: t('Launch problems'), monitor: t('Monitor problems'), config: t('Configuration problems'),
 }[kind] ?? t('Problems'));

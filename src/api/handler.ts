@@ -928,7 +928,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (role) resolveRole(effectiveRoles(view.config, ctx.workers), { role, kind: str(body, 'kind') ?? '' });
       const made = createOrder(view.config, view.orders, { tag, title, kind: str(body, 'kind'), role, needs: strList(body, 'needs'), worker: str(body, 'worker'), heavy: str(body, 'heavy'), base_ref: str(body, 'base_ref'), tags: strList(body, 'tags'), skills: strList(body, 'skills'), mandate: mandate as never, body: str(body, 'body'), slug: str(body, 'slug'), queue: body.queue === true }, ctx.probes.now());
       const stage = view.orders.stage(made.doc);
-      return done<A.NewOrderResult>(201, { order: summaryOf(view.config, made.doc, stage, env()), ...(made.file ? { file: made.file } : {}), tableRow: made.tableRow, ...(made.tableWarning ? { tableWarning: made.tableWarning } : {}) });
+      return done<A.NewOrderResult>(201, { order: summaryOf(view.config, made.doc, stage, env()), ...(made.file ? { file: made.file } : {}), tableRow: made.tableRow, ...(made.tableWarning ? { tableWarning: made.tableWarning } : {}), ...(made.foundationWarning ? { foundationWarning: made.foundationWarning } : {}) });
     }
 
     if (parts[0] === 'workers' && parts.length === 1) {

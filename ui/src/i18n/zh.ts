@@ -427,6 +427,7 @@ export const zh: Record<string, string> = {
   "Usage warnings": "用量提醒",
   "No usage warnings": "无用量提醒",
   "Usage budgets": "用量预算",
+  "Foundations not ready": "底座文档未就绪",
   '+{n} more': '另有 {n} 项',
   'Capacity': '服务容量不足',
   'Commit reminders': '提交提醒',

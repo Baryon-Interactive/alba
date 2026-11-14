@@ -23,6 +23,7 @@ import { spawnDetachedProgram } from '../run/spawn.ts';
 import { workerEnvironment } from '../run/environment.ts';
 import { orderSpend, ownerOf, spendToday } from '../usage/spend.ts';
 import { routingOf } from '../routing/classify.ts';
+import { foundationGaps, foundationStates, missingText } from '../foundations/foundations.ts';
 import { workerHistory } from '../routing/history.ts';
 import { isGenericKind } from '../routing/kinds.ts';
 import { monitoringLines } from '../monitor/monitor.ts';
@@ -366,6 +367,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
   const loops: Record<string, LoopFinding[]> = {};
   const lingering: Record<string, { status: string; summary: string; quietMinutes: number; ended?: boolean }> = {};
   const pinProblems: TickReport['problems'] = [];
+  const foundationSets = project.foundations ? foundationStates(project) : [];
   const tickOrders: TickOrder[] = docs.map((d, index) => {
     const o = d.order;
     const pinProblem = workerPinProblem(project, d, workersFile);
@@ -397,7 +399,10 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
       if (open) { const found = watchRun(project, probes, { tag: o.tag, run: open, lastCommitAt: activity[o.tag].lastCommitAt }, { record: options.record }); if (found.length) loops[o.tag] = found; }
     }
     const routing = routingOf(project, d, at);
+    const effectiveKind = isGenericKind(o.kind) ? routing.kind || o.kind : o.kind;
+    const gaps = foundationSets.length && (stage === 'queued' || open) ? foundationGaps(foundationSets, { kind: effectiveKind, tags: [...(o.tags ?? []), ...routing.tags] }) : [];
     return {
+      ...(gaps.length ? { foundations: gaps.map(g => ({ set: g.name, mode: g.mode, missing: missingText(g) })) } : {}),
       role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { ...o, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind })),
       tag: o.tag, stage: open ? 'running' : stage, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind, kindTags: routing.tags, heavy: heavyOf(project, d), workerText: o.worker, pinnedWorker: pinProblem ? undefined : o.next_worker,
       ...(o.mandate?.spend_cap !== undefined ? { spendCapUsd: o.mandate.spend_cap, spentUsd: orderSpend(d, workersFile.workers, probes).cost_usd ?? 0 } : {}),

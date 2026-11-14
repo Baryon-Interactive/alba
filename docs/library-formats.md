@@ -19,7 +19,7 @@ Markdown files directly inside each configured lesson directory contain sections
 |---|---|---|
 | `unreal` | build through the project's scripts, one engine build at a time, rebuild prebuilt libraries, headless content scripts, `/Game` paths from Git Bash, SDK junctions, evidence from the package, instanced-mesh materials | `engine`, `build`, `package`, `accept`, `windows`, `art` |
 | `windows-workers` | non-ASCII through PowerShell pipes, absolute paths and reading scripted edits back, no desktop automation, PowerShell 5.1, the proxy, tests never writing to the real profile | `all`, `windows`, `git` |
-| `art-pipeline` | pictures only through the image tool inside the cap, returned sizes, paid 3D steps one at a time, choosing model settings, headless Blender scripts, judging pieces as the game shows them, provenance | `art`, `image`, `tripo`, `blender`, `engine` |
+| `art-pipeline` | pictures only through the image tool inside the cap, returned sizes, paid 3D steps one at a time, choosing model settings, headless Blender scripts, judging pieces as the game shows them, provenance, the art bible before content, generation settings that match the shaders, range and subject contrast, consolidating passes, licences, key art against the game | `art`, `image`, `tripo`, `blender`, `engine` |
 | `deterministic-sim` | determinism by construction, a rules library without engine or network, many seeds and output hashes, scenarios that fix inputs and not outcomes | `sim`, `engine`, `accept`, `content` |
 
 ```yaml

@@ -57,3 +57,46 @@ built-in tools `image-gateway` and `tripo-3d` (see docs/workers/031-tool-plugins
   - Per file: tool, model, prompt file, time, cost, task id and a hash of the source picture; keep totals next to the cap.
   - Count calls from the tool's own ledger, not from a count you keep by hand.
 - why: rights and contest rules ask for the origin of every asset, and a hand count of 0 once hid 11 real calls.
+
+## ALBA-ART-08 Write the art bible before the first content asset
+- tags: art, image, tripo, engine
+- rule:
+  - Before any content order, write and approve one art bible: direction (one sentence and comparison pictures), palette in hex, value ranges for ground and characters, a scale ruler (character, tile or plot, prop, building), material classes and their parameters, lighting preset fields, an effects size and timing table, and an asset acceptance list.
+  - A new bible lists which earlier style rules it replaces; mark them superseded where they are written.
+  - Orders cite the section of the bible they follow.
+- why: a project that started without one ended with contradictory style rules and every batch judged against a different idea.
+
+## ALBA-ART-09 Generation settings match what the shaders need
+- tags: art, image, tripo, engine
+- rule:
+  - Before a batch, generate one sample and check its channels against the shading plan: normal, roughness and metal, emissive, and whether light is baked into the colour.
+  - Write the settings that passed into the order and keep them for the batch; change them only with a new sample.
+- why: a batch generated without the maps its shaders expected looked flat under the game's lights.
+
+## ALBA-ART-10 Judge pictures by range and subject contrast, not mean brightness
+- tags: art, image, engine
+- rule:
+  - Acceptance of a scene or capture reports the highlight share, p5 and p95 luminance, how much brighter the subject is than its surround, and the subject's height in pixels (`alba review <TAG> sheet` gives them; a `<name>.mask.png` marks the subject).
+  - A target for the mean alone is not enough: name a highlight share and a subject contrast too.
+- why: captures that met the mean brightness target were grey and flat, with no highlights at all.
+
+## ALBA-ART-11 Consolidate, do not stack passes
+- tags: art, engine
+- rule:
+  - When a new pass would hide or move what an earlier pass placed, first fold the scene into one layout data file, then change that.
+  - Never scale a delivered mesh non-uniformly, or to fit a box in screen pixels; fix the size at the source against the scale ruler.
+- why: a battlefield built from six passes that overrode each other could not be changed without breaking another pass.
+
+## ALBA-ART-12 A licence line before any asset that was not generated
+- tags: art, image, tripo
+- rule:
+  - Before a downloaded, bought or inherited asset is used, record its source, licence and link next to it.
+  - An inherited asset with no licence is removed or recorded before the next content order; it is never kept "for now".
+- why: legacy assets with no licence record were still in the game at review.
+
+## ALBA-ART-13 Compare key art and the game side by side every milestone
+- tags: art, image, engine
+- rule:
+  - At each milestone, put the 2D key art and an in-game capture at the same framing next to each other.
+  - Write the gaps (value, saturation, scale, detail) into the next batch of orders.
+- why: key art and the game drifted apart unnoticed until a review months later.

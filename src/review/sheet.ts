@@ -1,17 +1,41 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 import type { ProjectConfig } from '../config.ts';
 import { listEvidence } from '../evidence/evidence.ts';
 import type { Orders } from '../orders/service.ts';
 import type { Probes } from '../tick/gather.ts';
-import { decodePng, summarizePng, type DecodedPng } from '../verify/png.ts';
+import { decodePng, pictureStats, subjectStats, summarizePng, type DecodedPng } from '../verify/png.ts';
 
-/** One picture on the sheet, with what a reviewer checks first: is it black, flat, or the size it should be. */
-export interface SheetImage { index: number; file: string; from: string; width?: number; height?: number; meanLuminance?: number; luminanceStddev?: number; darkFraction?: number; skipped?: string }
+/**
+ * One picture on the sheet, with what a reviewer checks first: is it black, flat, or the size it should be; then its range (highlights,
+ * p5/p95), colour and, when a `<name>.mask.png` lies next to it, how far the subject stands out from its surround.
+ */
+export interface SheetImage {
+  index: number; file: string; from: string; width?: number; height?: number; meanLuminance?: number; luminanceStddev?: number; darkFraction?: number; skipped?: string;
+  highlightFraction?: number; p5?: number; p95?: number; meanSaturation?: number;
+  /** The subject mask that was read, and what it gave (or why it could not be used). */
+  mask?: string; maskSkipped?: string;
+  subjectMeanLuminance?: number; surroundMeanLuminance?: number; subjectContrast?: number; subjectHeight?: number;
+}
 export interface Sheet { tag: string; out?: string; columns: number; cell: number; images: SheetImage[] }
 
 const MAX_IMAGES = 36;
+const MASK = /\.mask\.png$/i;
+
+/** The subject numbers from `<name>.mask.png` next to the picture, when there is one. */
+function maskFields(file: string, image: DecodedPng): Partial<SheetImage> {
+  const mask = file.replace(/\.png$/i, '.mask.png');
+  if (mask === file || !existsSync(mask)) return {};
+  const at = mask.replace(/\\/g, '/');
+  let decoded;
+  try { decoded = decodePng(readFileSync(mask)); } catch (e) { return { mask: at, maskSkipped: (e as Error).message }; }
+  if (decoded.status !== 'ok') return { mask: at, maskSkipped: decoded.reason };
+  const subject = subjectStats(image, decoded.image);
+  if (subject.status !== 'ok') return { mask: at, maskSkipped: subject.reason };
+  const s = subject.stats;
+  return { mask: at, subjectMeanLuminance: s.subjectMeanLuminance, ...(s.surroundMeanLuminance !== undefined ? { surroundMeanLuminance: s.surroundMeanLuminance, subjectContrast: s.subjectContrast } : {}), subjectHeight: s.subjectHeight };
+}
 
 /** A PNG of 8-bit RGB pixels (filter 0 on every row). */
 export function encodePng(width: number, height: number, rgb: Buffer): Buffer {
@@ -50,15 +74,17 @@ function fit(image: DecodedPng, cell: number, cellHeight: number, into: Buffer, 
 
 /**
  * A contact sheet of an order's evidence pictures (the ones its reports name, then the evidence folders; as the evidence list of the
- * order page) and, per picture, its size and mean luminance, its spread and how much of it is near black. Only PNG is decoded; other
- * files are listed as skipped. Without `out` nothing is written.
+ * order page) and, per picture, its size and mean luminance, its spread, how much of it is near black, its highlight share, p5 and p95
+ * luminance and mean saturation, and with a `<name>.mask.png` the subject against its surround. Only PNG is decoded; other files are
+ * listed as skipped; masks are not pictures of their own. Without `out` nothing is written.
  */
 export function contactSheet(project: ProjectConfig, orders: Orders, probes: Probes, tag: string, options: { out?: string; columns?: number; cell?: number } = {}): Sheet {
   const list = listEvidence(project, orders, probes, tag);
   const columns = Math.max(1, Math.min(8, options.columns ?? 4)), cell = Math.max(64, Math.min(1024, options.cell ?? 320));
   const images: SheetImage[] = [];
   const decoded: DecodedPng[] = [];
-  for (const f of list.files.filter(f => f.kind === 'image').slice(0, MAX_IMAGES)) {
+  // A subject mask belongs to its picture: it is read with it, never put on the sheet itself.
+  for (const f of list.files.filter(f => f.kind === 'image' && !MASK.test(f.path)).slice(0, MAX_IMAGES)) {
     const entry: SheetImage = { index: images.length + 1, file: f.path, from: f.from };
     images.push(entry);
     if (!/\.png$/i.test(f.path)) { entry.skipped = 'not a PNG'; continue; }
@@ -66,7 +92,8 @@ export function contactSheet(project: ProjectConfig, orders: Orders, probes: Pro
     try { result = decodePng(readFileSync(f.path)); } catch (e) { entry.skipped = (e as Error).message; continue; }
     if (result.status !== 'ok') { entry.skipped = result.reason; continue; }
     const s = summarizePng(result.image);
-    Object.assign(entry, { width: result.image.width, height: result.image.height, meanLuminance: s.meanLuminance, luminanceStddev: s.luminanceStddev, darkFraction: s.darkFraction });
+    const p = pictureStats(result.image);
+    Object.assign(entry, { width: result.image.width, height: result.image.height, meanLuminance: s.meanLuminance, luminanceStddev: s.luminanceStddev, darkFraction: s.darkFraction, highlightFraction: p.highlightFraction, p5: p.p5, p95: p.p95, meanSaturation: p.meanSaturation }, maskFields(f.path, result.image));
     decoded.push(result.image);
   }
   const sheet: Sheet = { tag: orders.get(tag).order.tag, columns, cell, images };
@@ -92,7 +119,10 @@ export function formatSheet(sheet: Sheet): string {
   let cell = 0;
   for (const i of sheet.images) {
     const at = i.skipped ? '  -' : String(++cell).padStart(3);
-    lines.push(i.skipped ? `${at}  ${i.file}  skipped: ${i.skipped}` : `${at}  ${i.width}x${i.height}  mean ${num(i.meanLuminance)}  spread ${num(i.luminanceStddev)}  dark ${pct(i.darkFraction)}  ${i.file}`);
+    const signed = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}`;
+    const subject = i.maskSkipped ? `  mask skipped: ${i.maskSkipped}` : i.subjectMeanLuminance !== undefined
+      ? `  subject ${num(i.subjectMeanLuminance)} vs ${num(i.surroundMeanLuminance)}${i.subjectContrast !== undefined ? ` (${signed(i.subjectContrast)})` : ''} ${i.subjectHeight}px` : '';
+    lines.push(i.skipped ? `${at}  ${i.file}  skipped: ${i.skipped}` : `${at}  ${i.width}x${i.height}  mean ${num(i.meanLuminance)}  spread ${num(i.luminanceStddev)}  dark ${pct(i.darkFraction)}  high ${pct(i.highlightFraction)}  p5 ${num(i.p5)}  p95 ${num(i.p95)}  sat ${num(i.meanSaturation)}${subject}  ${i.file}`);
   }
   if (!sheet.images.length) lines.push('  (no evidence pictures: none named in a report, none in the evidence folders)');
   return lines.join('\n');

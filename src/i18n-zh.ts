@@ -895,6 +895,25 @@ export const zh: Record<string, string> = {
   'Sign in: {url}\nKey file (for programs of this account): {file}': '登录：{url}\n密钥文件（供本账户的程序使用）：{file}',
   'Held so that no tick starts it again. Start it on a worker with "alba run {tag} --worker <id>", or release it with "alba orders act {tag} release".': '已搁置，巡检不会再自动启动它。用 "alba run {tag} --worker <id>" 在指定工人上启动，或用 "alba orders act {tag} release" 解除搁置。',
   'Stopped run {run}. The order is held: start it on a worker with "alba run {tag} --worker <id>", or release it with "alba orders act {tag} release".': '已停止运行 {run}。工单已搁置：用 "alba run {tag} --worker <id>" 在指定工人上启动，或用 "alba orders act {tag} release" 解除搁置。',
+  // Foundations (foundations: in alba.yaml)
+  'approved': '已批准',
+  'present': '已有',
+  'draft, not approved': '草稿，未批准',
+  'retired': '已作废',
+  'empty': '空文件',
+  'ready': '已就绪',
+  'NOT READY': '未就绪',
+  'kinds {list}': '种类 {list}',
+  'tags {list}': '标签 {list}',
+  'held back:': '暂不开工：',
+  'going ahead without them:': '照常开工（缺底座）：',
+  '(not in design_docs, and not a file path)': '（不在 design_docs 里，也不是文件路径）',
+  'the "{set}" foundations are not ready ({missing})': '“{set}”底座文档未就绪（{missing}）',
+  'The "{set}" foundations are not ready ({missing}): {tag} will not start until they are (alba foundations).': '“{set}”底座文档未就绪（{missing}）：就绪之前 {tag} 不会开工（alba foundations）。',
+  'The "{set}" foundations are not ready ({missing}): write and approve them before content orders (alba foundations).': '“{set}”底座文档未就绪（{missing}）：先写好并批准，再做内容工单（alba foundations）。',
+  'The "{set}" foundations are not ready ({missing}); held back until they are: {tags}.': '“{set}”底座文档未就绪（{missing}）；就绪之前暂不开工：{tags}。',
+  'The "{set}" foundations are not ready ({missing}); going ahead without them: {tags}.': '“{set}”底座文档未就绪（{missing}）；这些工单照常开工：{tags}。',
+  '{file} has no "foundations:" section; orders start without foundation documents.': '{file} 没有 “foundations:” 一节；工单开工前不检查底座文档。',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

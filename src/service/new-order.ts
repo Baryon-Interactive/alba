@@ -2,6 +2,7 @@ import { closeSync, existsSync, mkdirSync, openSync, rmSync, writeSync } from 'n
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { fail, t } from '../i18n.ts';
+import { foundationNotice } from '../foundations/foundations.ts';
 import type { Mandate, OrderDoc } from '../orders/model.ts';
 import { nextFreeTag, type Orders } from '../orders/service.ts';
 import { findOrderFile } from '../run/prompt.ts';
@@ -43,6 +44,8 @@ export interface NewOrderOutcome {
   tableRow: boolean;
   /** Why the table row was not added although the project asks for it (the order and the file exist anyway). */
   tableWarning?: string;
+  /** The project's foundations (`foundations:`) apply to the order and are not ready: what is missing, and whether it may start. */
+  foundationWarning?: string;
 }
 
 /** A readable part of a file name from a title: lower-case ASCII words joined by "-". */
@@ -96,7 +99,8 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
     throw e;
   }
   if (input.queue) doc = orders.act(input.tag, 'queue');
-  const outcome: NewOrderOutcome = { doc, ...(file ? { file } : {}), tableRow: false };
+  const foundationWarning = foundationNotice(project, doc);
+  const outcome: NewOrderOutcome = { doc, ...(file ? { file } : {}), tableRow: false, ...(foundationWarning ? { foundationWarning } : {}) };
   const table = project.dispatch_table;
   if (table?.write_back) {
     try {
