@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowRightLeft, Ban, CircleCheck, CircleDollarSign, Copy, CreditCard, Link2, Pencil, Plus, Server } from 'lucide-react';
+import { ArrowRightLeft, Ban, CircleCheck, CircleDollarSign, Copy, CreditCard, Link2, Pencil, Plus, Server, Trash2 } from 'lucide-react';
 import type { QuotaPoint, Worker } from '@api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Empty, ErrorBox, PageHeader, Section } from '@/components/common';
 import { QuoteCard } from '@/components/QuoteCard';
 import { ResourcesSection } from '@/components/Monitoring';
 import { ExternalUsageSection } from '@/components/library/ExternalUsage';
-import { NewWorkerDialog, WorkerEditDialog } from '@/components/WorkerEdit';
+import { NewWorkerDialog, RemoveWorkerDialog, WorkerEditDialog } from '@/components/WorkerEdit';
 import { useCredits, useProjectId, useQuotaHistory, useWorkers } from '@/lib/queries';
 import { totalsByUnit } from '@/lib/spend';
 import { dateTime, usd } from '@/lib/format';
@@ -72,7 +72,7 @@ export function SupplyDetails({ w }: { w: Worker }) {
   </div>;
 }
 
-function WorkerCard({ project, w, onEdit, onCopy }: { project: string; w: Worker; onEdit: (w: Worker) => void; onCopy: (w: Worker) => void }) {
+function WorkerCard({ project, w, onEdit, onCopy, onRemove }: { project: string; w: Worker; onEdit: (w: Worker) => void; onCopy: (w: Worker) => void; onRemove: (w: Worker) => void }) {
   const [open, setOpen] = useState(false);
   const state = !w.enabled ? <Badge tone="neutral"><Ban />{t('turned off')}</Badge>
     : w.available ? <Badge tone="success"><CircleCheck />{t('available')}</Badge>
@@ -82,7 +82,7 @@ function WorkerCard({ project, w, onEdit, onCopy }: { project: string; w: Worker
       <CardContent className="grid gap-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <div className="flex items-center gap-2"><span className="text-[15px] font-semibold">{w.id}</span>{state}<Button variant="ghost" size="icon" className="size-7" aria-label={t('Edit {id}', { id: w.id })} title={t('Edit')} onClick={() => onEdit(w)}><Pencil className="size-3.5" /></Button><Button variant="ghost" size="icon" className="size-7" aria-label={t('Copy {id}', { id: w.id })} title={t('Copy as a new worker')} onClick={() => onCopy(w)}><Copy className="size-3.5" /></Button></div>
+            <div className="flex items-center gap-2"><span className="text-[15px] font-semibold">{w.id}</span>{state}<Button variant="ghost" size="icon" className="size-7" aria-label={t('Edit {id}', { id: w.id })} title={t('Edit')} onClick={() => onEdit(w)}><Pencil className="size-3.5" /></Button><Button variant="ghost" size="icon" className="size-7" aria-label={t('Copy {id}', { id: w.id })} title={t('Copy as a new worker')} onClick={() => onCopy(w)}><Copy className="size-3.5" /></Button><Button variant="ghost" size="icon" className="size-7" aria-label={t('Remove {id}', { id: w.id })} title={t('Remove from the workers file')} onClick={() => onRemove(w)}><Trash2 className="size-3.5" /></Button></div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <span>{w.engine}</span>{w.route && <span>· {w.route}</span>}
               {w.host && <Badge tone="primary" title={t('Runs on {host} over SSH', { host: w.host })}><Server />{w.host}</Badge>}
@@ -152,11 +152,12 @@ export function WorkersPage() {
   const [editing, setEditing] = useState<string | undefined>();
   const [copying, setCopying] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<string | undefined>();
   if (q.isError) return <ErrorBox error={q.error} />;
   if (!q.data) return <div className="grid gap-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-40" /><Skeleton className="h-40" /></div>;
   const workers = q.data.workers;
   const totalSpend = workers.reduce((n, w) => n + w.spendTodayUsd, 0);
-  const card = (w: Worker) => <WorkerCard key={w.id} project={project} w={w} onEdit={x => setEditing(x.id)} onCopy={x => { setCopying(x.id); setAdding(true); }} />;
+  const card = (w: Worker) => <WorkerCard key={w.id} project={project} w={w} onEdit={x => setEditing(x.id)} onCopy={x => { setCopying(x.id); setAdding(true); }} onRemove={x => setRemoving(x.id)} />;
   const editingWorker = workers.find(w => w.id === editing);
   return (
     <div>
@@ -175,6 +176,7 @@ export function WorkersPage() {
       <QuotesSection project={project} />
       <ExternalUsageSection project={project} />
       {editingWorker && <WorkerEditDialog project={project} worker={editingWorker} kinds={[]} open onOpenChange={o => { if (!o) setEditing(undefined); }} />}
+      {removing && <RemoveWorkerDialog project={project} id={removing} open onOpenChange={o => { if (!o) setRemoving(undefined); }} />}
       <NewWorkerDialog project={project} workers={workers} copyFrom={copying} open={adding} onOpenChange={o => { setAdding(o); if (!o) setCopying(undefined); }} />
       {q.data.sources.length > 0 && (
         <Section title={t('Quota sources')} count={q.data.sources.length}>

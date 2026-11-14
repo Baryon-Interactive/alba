@@ -1,9 +1,9 @@
 import { DraftPanel } from '@/components/DraftPanel';
 import { AcceptanceCard } from '@/components/AcceptanceCard';
 import { OrderAccounting } from '@/components/Usage';
-import { lazy, Suspense, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router';
-import { ArrowRight, CircleDot, FileText, Play } from 'lucide-react';
+import { ArrowRight, CircleDot, FileText, Pencil, Play } from 'lucide-react';
 import { ORDER_ACTIONS, type OrderDetail, type OrderEvent, type OrderSummary, type Run } from '@api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { MonitorPanel, ProgressPanel, RotationNote } from '@/components/Monitori
 import { MergeReadinessSection } from '@/components/MergeReadinessSection';
 import { OrderSkillsPanel, RoutePanel, RunRoutingNote } from '@/components/RoutingPanels';
 import { Empty, ErrorBox, Section, StageBadge, TagLink, UsageText } from '@/components/common';
+import { OrderBodyDialog, OrderDefinitionEdit } from '@/components/OrderEdit';
 import { draftKey, hasDraft } from '@/lib/drafts';
 import { useOrder, useOrders, useProjectId, useRoute } from '@/lib/queries';
 import { stageLabel, visibleActions, waitingFor } from '@/lib/stages';
@@ -77,6 +78,8 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
   const route = useRoute(project, o.tag);
   const m = o.mandate;
   const reroute = d.reroutes?.at(-1);
+  const [editing, setEditing] = useState(false);
+  const [editingBody, setEditingBody] = useState(false);
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="grid content-start gap-6">
@@ -130,7 +133,8 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
           )}
         </Section>
         {d.file && (
-          <Section title={<><FileText className="size-4" />{t('Work order')}</>} actions={<span className="font-mono text-xs text-muted-foreground">{d.file.path}</span>}>
+          <Section title={<><FileText className="size-4" />{t('Work order')}</>} actions={<div className="flex items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{d.file.path}</span><Button size="sm" variant="outline" disabled={d.file.truncated} title={d.file.truncated ? t('The file is too long to edit here.') : undefined} onClick={() => setEditingBody(true)}><Pencil />{t('Edit work order')}</Button></div>}>
+            {editingBody && <OrderBodyDialog project={project} tag={o.tag} file={d.file} open onOpenChange={v => { if (!v) setEditingBody(false); }} />}
             <Card><pre className="max-h-96 overflow-auto px-4 py-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{d.file.markdown}{d.file.truncated ? `\n\n… ${t('cut')}` : ''}</pre></Card>
           </Section>
         )}
@@ -143,23 +147,28 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
             <p className="mt-2">{d.why}</p>
           </Card>
         </Section>
-        <Section title={t('Definition')}>
-          <Card><CardContent><dl>
+        <Section title={t('Definition')} actions={!editing && <Button size="sm" variant="ghost" onClick={() => setEditing(true)} aria-label={t('Edit the definition')}><Pencil />{t('Edit')}</Button>}>
+          {editing ? <Card><CardContent><OrderDefinitionEdit project={project} order={o} onDone={() => setEditing(false)} /></CardContent></Card> : <Card><CardContent><dl>
             <Fact label={t('Route')}>{route.data?.role?.id ?? o.role}</Fact>
             <Fact label={t('Worker')}>{route.data?.chosen ?? o.worker}</Fact>
             <Fact label={t('Next worker')}>{o.nextWorker}</Fact>
             <Fact label={t('Kind')}>{o.kind}</Fact>
+            <Fact label={t('Priority')}>{o.priority}</Fact>
             <Fact label={t('Heavy class')}>{o.heavy}</Fact>
             <Fact label={t('Uses')}>{o.uses?.length ? o.uses.map(u => <Badge key={u} tone="outline" className="mr-1.5">{u}</Badge>) : undefined}</Fact>
             <Fact label={t('Needs')}>{o.needs.length ? o.needs.map(n => <span key={n} className="mr-2"><TagLink project={project} tag={n} /></span>) : undefined}</Fact>
             <Fact label={t('Condition')}>{o.condition}</Fact>
+            <Fact label={t('Tags')}>{o.tags?.length ? o.tags.join(', ') : undefined}</Fact>
+            <Fact label={t('Skills')}>{o.skills?.length ? o.skills.join(', ') : undefined}</Fact>
+            <Fact label={t('Tools')}>{o.tools?.length ? o.tools.join(', ') : undefined}</Fact>
+            <Fact label={t('Independent check')}>{o.check === 'none' ? t('skip it') : undefined}</Fact>
             <Fact label={t('Branch')}><span className="font-mono text-xs">{o.branch}</span></Fact>
             <Fact label={t('Base')}><span className="font-mono text-xs">{o.base_ref}</span></Fact>
             <Fact label={t('Worktree')}><span className="font-mono text-xs">{d.worktree ?? o.worktree}</span></Fact>
             <Fact label={t('Created')}>{dateTime(o.created)}</Fact>
             <Fact label={t('Updated')}>{dateTime(o.updated)}</Fact>
             <Fact label={t('Calls by other tools')}>{d.externalCalls?.length ? d.externalCalls.map(c => <div key={c.ledger} className="text-xs"><span className="font-mono">{c.ledger}</span>: {t('{ok} succeeded, {failed} failed', { ok: c.ok, failed: c.failed })}</div>) : undefined}</Fact>
-          </dl></CardContent></Card>
+          </dl></CardContent></Card>}
         </Section>
         {m && (
           <Section title={t('Mandate')}>

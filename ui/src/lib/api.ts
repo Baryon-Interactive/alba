@@ -4,6 +4,7 @@ import type {
   QuoteApproveRequest, QuoteList, QuoteRejectRequest, Question, QuestionAnswerRequest, RunList, RunLog, SayRequest, SayResult, Session, TickRequest, TickView,
   ResourceList, LeaseReleaseRequest, LeaseReleaseResult, WorkerList, WorkerEditRequest, WorkerEditResult, NewWorkerRequest, WorkerYaml, SkillUseRequest, ConfigEditResult,
   DocList, DocFile, DocSearch, OverviewAll, ProjectOverview, VerifyResult, ProducerView, ProducerActionRequest, ProducerChatView,
+  ConfigView, RoutingMigration, OrderSummary,
 } from '@api';
 import type { ProducerAction } from '@api';
 import type { ArtSetting, ArtView, ExternalUsage, PickChooseRequest, PickChooseResult, PickList, SettingApproveRequest, SpendApproveRequest, SpendQuote, SpendView } from '@api';
@@ -183,7 +184,24 @@ export const api = {
   docs: (project: string) => request<DocList>(`/api/docs${qs({ project })}`),
   doc: (project: string, path: string) => request<DocFile>(`/api/docs/file${qs({ project, path })}`),
   docSearch: (project: string, q: string, limit = 30) => request<DocSearch>(`/api/docs/search${qs({ project, q, limit })}`),
+  // : editing the configuration files, orders and workers
+  config: (project: string, target: ConfigTarget) => request<ConfigView>(`/api/config${qs({ project, target })}`),
+  editConfig: (body: { project: string; target: ConfigTarget; edits: ConfigEdit[]; dryRun?: boolean }) => post<ConfigEditResult>('/api/config', body),
+  routingMigration: (project: string) => request<RoutingMigration>(`/api/routing/migrate${qs({ project })}`),
+  orderFields: (project: string, tag: string, fields: OrderFieldsEdit) => post<OrderSummary>(`/api/orders/${enc(tag)}/fields`, { project, ...fields }),
+  orderBody: (project: string, tag: string, text: string, expected: string) => post<{ ok: true; file: string }>(`/api/orders/${enc(tag)}/body`, { project, text, expected }),
+  removeWorker: (project: string, id: string) => post<WorkerEditResult>(`/api/workers/${enc(id)}/remove`, { project }),
 };
+
+/** Which file a configuration edit goes to: the project's own file or the shared workers file. */
+export type ConfigTarget = 'project' | 'workers';
+/** One change of `POST /api/config`: the value at `path` becomes `value`; without `value` the key is removed. */
+export interface ConfigEdit { path: (string | number)[]; value?: unknown }
+/** The fields of an order that `POST /api/orders/:tag/fields` changes; `null` clears one. */
+export interface OrderFieldsEdit {
+  title?: string; kind?: string; priority?: number | null; worker?: string | null; role?: string; needs?: string[]; tags?: string[]; skills?: string[];
+  uses?: string[]; tools?: string[]; heavy?: string | null; condition?: string | null; check?: 'independent' | 'none'; review?: 'manual' | 'auto'; intent?: string;
+}
 
 /** Where the bytes of an image or video file of the project are (`GET /api/files`); a relative path is looked up in the order's worktree first. */
 export const fileUrl = (project: string, path: string, tag?: string) => `/api/files${qs({ project, path, tag })}`;

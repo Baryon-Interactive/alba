@@ -21,6 +21,10 @@ vi.mock('@/lib/queries', () => ({
   useEditWorker: () => ({}),
   useNewWorker: () => ({}),
   useWorkerYaml: () => ({}),
+  useRemoveWorker: () => ({}),
+  useConfig: () => ({}),
+  useEditConfig: () => ({}),
+  useRoutingMigration: () => ({}),
   errorText: String,
 }));
 

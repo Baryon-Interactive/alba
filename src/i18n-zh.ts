@@ -747,7 +747,6 @@ export const zh: Record<string, string> = {
   'report handed in ({status}); process still running': '报告已交（{status}）；进程还在',
   '{tag}: the worker ended its turn and handed in its report ({status}: {summary}) but its process is still there after {min} min; it is stopped and the report read.': '{tag}：工人已结束回合并交了报告（{status}：{summary}），但进程过了 {min} 分钟还在；现在停掉它并读取报告。',
   'Recorded the report at the end of its log ({status}: {summary}).': '已记录日志末尾的报告（{status}：{summary}）。',
-  'Nothing to change.': '没有要改的内容。',
   'Each change needs a path: a list of keys.': '每项修改都需要一个路径（键的列表）。',
   '{path} cannot be changed from the console.': '{path} 不能在控制台里修改。',
   '{id} is still in use: {what}.': '{id} 还在使用中：{what}。',

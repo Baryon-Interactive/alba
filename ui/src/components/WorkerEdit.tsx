@@ -8,7 +8,7 @@ import { Checkbox, Skeleton } from '@/components/ui/misc';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ErrorBox } from '@/components/common';
 import { ApiFailure } from '@/lib/api';
-import { errorText, useEditWorker, useNewWorker, useWorkerYaml } from '@/lib/queries';
+import { errorText, useEditWorker, useNewWorker, useRemoveWorker, useWorkerYaml } from '@/lib/queries';
 import { changesOf, formOf, otherProblems, problemsFor, type DisabledRow, type FieldProblem, type WorkerForm } from '@/lib/workers';
 import { t } from '@/i18n';
 
@@ -157,6 +157,25 @@ export function WorkerEditDialog({ project, worker, kinds, open, onOpenChange }:
             {tab === 'yaml' && <YamlEditor project={project} worker={worker} onDone={() => onOpenChange(false)} />}
           </TabsContent>
         </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Take a worker out of the workers file, after a confirmation. The server refuses while a run, a pinned order or a route still uses it, and says which. */
+export function RemoveWorkerDialog({ project, id, open, onOpenChange }: { project: string; id: string; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const remove = useRemoveWorker(project);
+  useEffect(() => { if (open) remove.reset(); }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle>{t('Remove {id}?', { id })}</DialogTitle>
+        <DialogDescription>{t('The worker is taken out of the workers file; the old file is copied next to it first. A worker that a run, a pinned order or a route still uses cannot be removed.')}</DialogDescription>
+        {remove.isError && <ErrorBox error={errorText(remove.error)} />}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('Back')}</Button>
+          <Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate(id, { onSuccess: () => onOpenChange(false) })}>{remove.isPending ? t('Working…') : t('Remove the worker')}</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

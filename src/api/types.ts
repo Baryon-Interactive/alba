@@ -389,6 +389,12 @@ export interface OrderDefinition {
   tags?: string[];
   /** Skills named on the order: always put into the worktree. */
   skills?: string[];
+  /** Tool plugins a run of this order gets. */
+  tools?: string[];
+  /** Its place in the dispatch order among ready orders (absent: 0). */
+  priority?: number;
+  /** `none`: no independent check after the run (absent: the project's way). */
+  check?: 'independent' | 'none';
   /** The kind and extra tags the order was classified as (absent before the first classification). */
   routing?: Routing;
   mandate?: Mandate;

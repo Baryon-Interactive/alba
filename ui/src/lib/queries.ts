@@ -4,7 +4,7 @@ import type { DecisionList } from '@api';
 import type { ActionRequest, NewDecisionRequest, NewWorkerRequest, PickChooseRequest, SayRequest, SettingApproveRequest, SpendApproveRequest, TickRequest, WorkerEditRequest } from '@api';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { api, ApiFailure, type NewOrderBody } from './api.ts';
+import { api, ApiFailure, type ConfigEdit, type ConfigTarget, type NewOrderBody, type OrderFieldsEdit } from './api.ts';
 import { keys } from './keys.ts';
 import { t } from '@/i18n';
 import { actionLabel, stageLabel } from './stages.ts';
@@ -278,6 +278,67 @@ export function useSetRole(project: string, tag: string) {
     onSuccess: route => {
       client.setQueryData(keys.route(project, tag), route);
       for (const key of [keys.order(project, tag), keys.orders(project), keys.orderSkills(project, tag)]) void client.invalidateQueries({ queryKey: key });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------- : editing configuration, orders and workers
+
+/** The editable sections of the project file or the workers file, as written there. Read again whenever an editor opens. */
+export const useConfig = (project: string, target: ConfigTarget, enabled = true) => useQuery({ queryKey: ['config', project, target], queryFn: () => api.config(project, target), enabled: enabled && !!project, staleTime: 0, retry: false });
+/** For each file that still has legacy `roles`, the `routing` that would replace them (nothing is written). */
+export const useRoutingMigration = (project: string, enabled = true) => useQuery({ queryKey: ['routing-migrate', project], queryFn: () => api.routingMigration(project), enabled: enabled && !!project, staleTime: 0, retry: false });
+
+/** After a write to a configuration file every view that reads it is read again. */
+function refreshConfig(client: ReturnType<typeof useQueryClient>, project: string) {
+  for (const k of [['config', project], ['routing-migrate', project], ['roles', project], ['route', project], keys.workers(project), keys.resources(project), keys.skills(project), ['order-skills', project], keys.overview(project), keys.projectOverview(project)]) void client.invalidateQueries({ queryKey: k });
+}
+
+/** Several changes to one configuration file in one write; the server checks the whole result first. */
+export function useEditConfig(project: string, target: ConfigTarget) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (edits: ConfigEdit[]) => api.editConfig({ project, target, edits }),
+    onSuccess: res => {
+      toast.success(res.changed.length ? t('Saved: {fields}', { fields: res.changed.join(', ') }) : t('Nothing changed'));
+      refreshConfig(client, project);
+    },
+  });
+}
+
+/** Fields of an order changed after it was made. */
+export function useEditOrderFields(project: string, tag: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (fields: OrderFieldsEdit) => api.orderFields(project, tag, fields),
+    onSuccess: (_res, fields) => {
+      toast.success(t('{tag} saved: {fields}', { tag, fields: Object.keys(fields).join(', ') }));
+      for (const k of [keys.order(project, tag), keys.orders(project), keys.route(project, tag), keys.orderSkills(project, tag), keys.overview(project), keys.projectOverview(project)]) void client.invalidateQueries({ queryKey: k });
+    },
+  });
+}
+
+/** The work-order text replaced; refused when the file changed since `expected` was read. */
+export function useEditOrderBody(project: string, tag: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { text: string; expected: string }) => api.orderBody(project, tag, v.text, v.expected),
+    onSuccess: () => {
+      toast.success(t('The work order of {tag} is saved', { tag }));
+      for (const k of [keys.order(project, tag), keys.route(project, tag)]) void client.invalidateQueries({ queryKey: k });
+    },
+  });
+}
+
+/** A worker taken out of the workers file; refused while something still uses it. */
+export function useRemoveWorker(project: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removeWorker(project, id),
+    onSuccess: res => {
+      toast.success(t('{id} removed', { id: res.id }));
+      refreshWorkers(client, project);
+      refreshConfig(client, project);
     },
   });
 }

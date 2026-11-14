@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { Skeleton } from '@/components/ui/misc';
 
 const RolesPage = lazy(() => import('@/pages/RolesPage').then(m => ({ default: m.RolesPage })));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const MachinesPage = lazy(() => import('@/pages/MachinesPage').then(m => ({ default: m.MachinesPage })));
 const UsagePage = lazy(() => import('@/pages/UsagePage').then(m => ({ default: m.UsagePage })));
 const NeedsPage = lazy(() => import('@/pages/NeedsPage').then(m => ({ default: m.NeedsPage })));
@@ -52,6 +53,7 @@ export function App() {
         <Route path="usage" element={<UsagePage />} />
         <Route path="runs" element={<RunsPage />} />
         <Route path="roles" element={<RolesPage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="machines" element={<MachinesPage />} />
         <Route path="workers" element={<Suspense fallback={<Skeleton className="h-64" />}><WorkersPage /></Suspense>} />
         <Route path="decisions" element={<Suspense fallback={<Skeleton className="h-64" />}><DecisionsPage /></Suspense>} />

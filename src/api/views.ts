@@ -320,7 +320,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
       ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
       ...(o.planned ? { planned: true } : {}), ...(o.intent ? { intent: o.intent } : {}), ...(o.role ? { role: o.role } : {}),
       review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind({ kind: o.kind, routing: routingNow }), ...(o.uses?.length ? { uses: o.uses } : {}), ...(o.heavy ? { heavy: o.heavy } : {}), needs: o.needs, ...(o.condition ? { condition: o.condition } : {}),
-      ...(o.role ? { role: o.role } : {}), ...(o.worker ? { worker: o.worker } : {}), ...(o.tags?.length ? { tags: o.tags } : {}), ...(o.skills?.length ? { skills: o.skills } : {}), routing: toRouting(routingNow), ...(o.mandate ? { mandate: o.mandate } : {}), ...(o.branch ? { branch: o.branch } : {}),
+      ...(o.role ? { role: o.role } : {}), ...(o.worker ? { worker: o.worker } : {}), ...(o.tags?.length ? { tags: o.tags } : {}), ...(o.skills?.length ? { skills: o.skills } : {}), ...(o.tools?.length ? { tools: o.tools } : {}), ...(o.priority !== undefined ? { priority: o.priority } : {}), ...(o.check ? { check: o.check } : {}), routing: toRouting(routingNow), ...(o.mandate ? { mandate: o.mandate } : {}), ...(o.branch ? { branch: o.branch } : {}),
       ...(o.base_ref ? { base_ref: o.base_ref } : {}), ...(o.worktree ? { worktree: o.worktree } : {}), created: o.created, updated: o.updated,
     },
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
