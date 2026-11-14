@@ -230,6 +230,19 @@ test('api: the clean plan is read only', async () => {
   assert.ok(existsSync(f.worktree));
 });
 
+test('clean plan: a package rule with a prefix only looks at folders with that prefix and finds the owner after it', () => {
+  const s = setup({ packages: [{ dir: 'artifacts/packages', keep: 1, prefix: 'Game-' }] });
+  for (const tag of ['OLD', 'NEW', 'OPEN']) s.orders.add({ tag, title: tag, kind: 'task' });
+  s.orders.act('OLD', 'approve', { force: true }); s.orders.act('NEW', 'approve', { force: true });
+  ['Game-OLD', 'Game-OPEN', 'Game-NEW', 'Other-OLD'].forEach((name, i) => {
+    const dir = path.join(s.root, 'artifacts/packages', name); mkdirSync(dir, { recursive: true });
+    const at = new Date(Date.UTC(2026, 0, 1 + i)); utimesSync(dir, at, at);
+  });
+  const plan = planClean(s.cfg, s.orders, s.env).items.filter(i => i.kind === 'package');
+  assert.deepEqual(plan.map(i => [path.basename(i.path), i.tag, i.action]), [['Game-NEW', 'NEW', 'keep'], ['Game-OPEN', 'OPEN', 'keep'], ['Game-OLD', 'OLD', 'delete']]);
+  assert.throws(() => validateProject({ id: 'x', name: 'x', root: s.root, work_orders: s.root, state_dir: path.join(s.dir, 'st'), clean: { packages: [{ dir: 'artifacts/packages', keep: 1, prefix: 'a/b' }] } }, path.join(s.dir, 'x.yaml')), /prefix/);
+});
+
 test('clean fixture dry-run: reused PID, unrelated live run and junction are eligible', t => {
   const s = setup({ packages: [{ dir: 'artifacts/packages', keep: 0 }] });
   s.worktree('MERGED');

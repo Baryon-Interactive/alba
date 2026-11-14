@@ -147,7 +147,7 @@ export interface DocsConfig {
 /** What `alba clean` may remove. Without this section it only looks at merged, idle, clean worktrees. */
 export interface CleanConfig {
   drives?: { path: string; min_free_gb: number }[];
-  packages?: { dir: string; keep: number; links_from?: string[] }[];
+  packages?: { dir: string; keep: number; links_from?: string[]; prefix?: string }[];   // prefix: only folders named <prefix><tag>... (a builds folder shared by projects)
   logs_days?: number;
   min_gain_gb?: number;
   auto_classes?: string[];
@@ -782,11 +782,12 @@ function validateClean(raw: unknown, file: string, root: string): CleanConfig {
   for (const key of ['builds', 'packages'] as const) if (raw[key] !== undefined) {
     if (!Array.isArray(raw[key])) fail('{file}: clean folder retention must be a list.', { file });
     out[key] = (raw[key] as unknown[]).map((b, i) => {
-      if (!isRecord(b) || Object.keys(b).some(k => !['dir', 'keep', ...(key === 'packages' ? ['links_from'] : [])].includes(k)) || typeof b.dir !== 'string' || !b.dir.trim() || typeof b.keep !== 'number' || !Number.isInteger(b.keep) || b.keep < 0) fail('{file}: "clean.{key}[{i}]" needs "dir" and a whole number "keep" >= 0.', { file, key, i });
+      if (!isRecord(b) || Object.keys(b).some(k => !['dir', 'keep', ...(key === 'packages' ? ['links_from', 'prefix'] : [])].includes(k)) || typeof b.dir !== 'string' || !b.dir.trim() || typeof b.keep !== 'number' || !Number.isInteger(b.keep) || b.keep < 0) fail('{file}: "clean.{key}[{i}]" needs "dir" and a whole number "keep" >= 0.', { file, key, i });
       if ((key === 'builds' && path.isAbsolute(b.dir)) || (!path.isAbsolute(b.dir) && b.dir.split(/[\\/]/).includes('..'))) fail('{file}: "clean.{key}[{i}].dir" is a folder inside the project.', { file, key, i });
       if (key === 'packages' && !safePackageRoot(path.resolve(root, b.dir.trim()), root)) fail('{file}: clean.packages dir must not be a drive root, the project root or its ancestor, or traverse a link.', { file });
       if (b.links_from !== undefined && (!Array.isArray(b.links_from) || b.links_from.some(p => typeof p !== 'string' || !p.trim() || (!path.isAbsolute(p) && p.split(/[\\/]/).includes('..'))))) fail('{file}: clean.packages links_from must be a list of folders.', { file });
-      return { dir: b.dir.trim(), keep: b.keep, ...(Array.isArray(b.links_from) ? { links_from: b.links_from.map(p => (p as string).trim()) } : {}) };
+      if (b.prefix !== undefined && (typeof b.prefix !== 'string' || !b.prefix.trim() || /[\\/]/.test(b.prefix))) fail('{file}: clean.packages prefix is the start of a folder name.', { file });
+      return { dir: b.dir.trim(), keep: b.keep, ...(Array.isArray(b.links_from) ? { links_from: b.links_from.map(p => (p as string).trim()) } : {}), ...(typeof b.prefix === 'string' ? { prefix: b.prefix.trim() } : {}) };
     });
   }
   for (const key of ['logs_days', 'min_gain_gb'] as const) if (raw[key] !== undefined) {

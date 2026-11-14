@@ -26,10 +26,10 @@ export function retentionItems(project: ProjectConfig, orders: Orders, now: numb
     const dir = path.resolve(project.root, rule.dir);
     if (!existsSync(dir) || !safePackageRoot(dir, project.root)) continue;
     const entries = readdirSync(dir).map(name => ({ name, full: path.join(dir, name), st: lstatSync(path.join(dir, name)) }))
-      .filter(e => e.st.isDirectory() || e.st.isSymbolicLink()).sort((a, b) => b.st.mtimeMs - a.st.mtimeMs || b.name.localeCompare(a.name));
+      .filter(e => (e.st.isDirectory() || e.st.isSymbolicLink()) && (!rule.prefix || e.name.toLowerCase().startsWith(rule.prefix.toLowerCase()))).sort((a, b) => b.st.mtimeMs - a.st.mtimeMs || b.name.localeCompare(a.name));
     entries.forEach((e, index) => {
-      // Package folder names must be an order tag, or begin with tag + a separator.
-      const doc = artifactOwner(e.name, docs);
+      // Package folder names must be an order tag, or begin with tag + a separator (after the rule's prefix, if any).
+      const doc = artifactOwner(rule.prefix ? e.name.slice(rule.prefix.length) : e.name, docs);
       const keep = index < rule.keep || !doc || !merged.has(doc.order.tag) || orders.stage(doc).stage === 'awaiting-review';
       items.push({ kind: 'package', pathClass: 'packages', path: e.full, ...(doc ? { tag: doc.order.tag } : {}), targets: [], links: 0, action: keep ? 'keep' : 'delete',
         reason: index < rule.keep ? `One of the newest ${rule.keep} packages.` : !doc ? 'Package owner is unknown; keep it.' : keep ? 'Order is not merged or awaits review.' : 'Older package of a merged order.' });
