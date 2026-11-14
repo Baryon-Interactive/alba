@@ -274,7 +274,7 @@ function readSources(file: WorkersFile, names: Set<string>, probes: Probes, at: 
   });
 }
 
-export interface TickOptions { record: boolean; /** Producer preview only: planned orders compete for the same slots, without launching. */ includePlanned?: boolean; /** A real tick may write one commit reminder. A dry run only reads reminders already sent. */ nudge?: boolean; finishes?: { tag: string; run: string; outcome: string; why: string }[] }
+export interface TickOptions { /** Open runs of the other projects that share the workers file, by worker id: they use the same concurrency. */ peers?: Map<string, number>; record: boolean; /** Producer preview only: planned orders compete for the same slots, without launching. */ includePlanned?: boolean; /** A real tick may write one commit reminder. A dry run only reads reminders already sent. */ nudge?: boolean; finishes?: { tag: string; run: string; outcome: string; why: string }[] }
 
 export interface TickResult { report: TickReport; quotas: QuotaReading[]; workers: WorkerState[]; activity: Record<string, OrderActivity>; history: QuotaReading[]; dispatchOrder: string[] }
 
@@ -337,7 +337,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
     return {
       config, available: a.available, reasons: a.reasons, startable: !!config.launch || config.card_only === true,
       roleHistory: Object.fromEntries(results.filter(r => r.worker === config.id).map(r => [r.role, { samples: r.samples, ...(r.acceptedShare !== null ? { rate: r.acceptedShare } : {}) }])),
-      running: own.filter(x => x.open).length + checks.filter(r => r.worker === config.id && r.status === 'running').length, history: histories[config.id] ?? {},
+      running: own.filter(x => x.open).length + checks.filter(r => r.worker === config.id && r.status === 'running').length + (options.peers?.get(config.id) ?? 0), history: histories[config.id] ?? {},
       runsToday: own.filter(x => !x.r.imported && !x.r.monitor && new Date(x.r.started).toDateString() === now.toDateString()).length + checks.filter(r => r.worker === config.id && new Date(r.started).toDateString() === now.toDateString()).length,
       ...(config.daily_cap_usd !== undefined ? { spendTodayUsd: today, overCap } : {}),
     };

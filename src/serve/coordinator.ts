@@ -23,6 +23,7 @@ import { scheduledRound } from '../producer/round.ts';
 import { runMeasurements } from '../design/measure.ts';
 import { runNightlyGates } from '../gates/runner.ts';
 import { tick } from '../tick/gather.ts';
+import { peerRunning, useFleetLock } from './fleet.ts';
 
 export interface ServeOptions extends Omit<ServerOptions, 'loop' | 'workers'> {
   workers: WorkersFile;
@@ -40,6 +41,10 @@ export interface ServeOptions extends Omit<ServerOptions, 'loop' | 'workers'> {
   debounceMs?: number;
   /** Read workers.yaml and the project files again when they change (default true). */
   reloadConfigs?: boolean;
+  /** The other projects served with these, sharing the workers file: their open runs count against each worker's concurrency. */
+  peerProjects?: ProjectConfig[];
+  /** The serve's fleet lock (src/serve/fleet.ts), when each project runs in a thread of its own. */
+  fleetLock?: SharedArrayBuffer;
 }
 
 /** Entries of the event log after which something may be dispatchable (or no longer blocked): a tick follows soon. */
@@ -66,6 +71,7 @@ export interface Serve {
  * The state folders are locked while it runs, so a scheduled `alba tick` skips instead of doubling up.
  */
 export function startCoordinator(options: ServeOptions, board: Board): Serve {
+  useFleetLock(options.fleetLock);
   const state: { lastTickAt?: string; lastExitCode?: number } = {};
   const ordersFor = (p: ProjectConfig) => new Orders(stateStore(p), () => options.probes.now().toISOString(), 'serve');
   const sessions = new Map<string, ReturnType<typeof producerSession>>();
@@ -110,7 +116,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
   };
   const briefTimer = setInterval(briefPass, 30_000);
   briefTimer.unref();
-  let lastSignature = '';
+  const lastSignature = new Map<string, string>();
   let followUp: NodeJS.Timeout | undefined;
 
   board.ctx.loop = () => ({ everyMinutes: options.everyMinutes, ...state });
@@ -122,12 +128,15 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
   // A slow quota command is read at most once a minute whatever the number of ticks; memory is read fresh for every tick that may start something.
   const tickProbes = { ...board.ctx.slow, freeRamGb: () => options.probes.freeRamGb() };
   let workers = options.workers;
+  // The projects that share the workers file with `project`: served in other threads, or the other projects of this coordinator.
+  const peersOf = (project: ProjectConfig) => [...(options.peerProjects ?? []), ...options.projects.filter(p => p.id !== project.id)];
+  const peers = (project: ProjectConfig) => () => peerRunning(peersOf(project), workers);
   const measuring = new Map<string, Promise<unknown>>();
   const measurePass = () => {
     for (const project of options.projects) {
       if (!project.design?.enabled || measuring.has(project.id)) continue;
       const orders = ordersFor(project);
-      const pending = () => tick(project, orders, workers, tickProbes, { record: false }).report.moves.some(m => m.mode !== 'card');
+      const pending = () => tick(project, orders, workers, tickProbes, { record: false, peers: peers(project)() }).report.moves.some(m => m.mode !== 'card');
       const job = runMeasurements(project, orders, { freeRamGb: () => options.probes.freeRamGb(), ordersFirst: pending })
         .then(results => { if (results.some(r => r.status === 'ok' || r.status === 'failed')) board.invalidate(); })
         .catch(e => options.print(`Design measurement failed: ${String(e)}`)).finally(() => measuring.delete(project.id));
@@ -185,12 +194,11 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
           if (!sessionEnabled(project) && session && !directorMessages(project).some(m => m.status === 'running')) { void session.stop(); sessions.delete(project.id); }
           reconcileProducerSession(project);
           if (sessionEnabled(project) && !sessions.has(project.id)) sessions.set(project.id, producerSession(project, ordersFor(project), undefined, options.probes, options.workers.file));
-          const result = executeTick({ project, orders: ordersFor(project), workers, probes: tickProbes }, { maxDispatch: options.maxDispatch });
+          const result = executeTick({ project, orders: ordersFor(project), workers, probes: tickProbes, peers: peers(project) }, { maxDispatch: options.maxDispatch });
           board.ctx.onReadings?.(project.id, result);
           const r = result.report;
           const open = producerPass(project, ordersFor(project), { tick: r, workers: result.workers, workersFile: workers, now: options.probes.now(), env: { workers, probes: options.probes } });
           const guest = sessions.get(project.id); if (guest) void guest.onPass(open).catch(e => options.print(t('producer session failed: {why}', { why: (e as Error).message.split('\n')[0] })));
-          briefPass();
           state.lastTickAt = r.at;
           state.lastExitCode = r.exitCode;
           // The HTTP worker bridge flushes durable events before forwarding a publication.
@@ -198,12 +206,13 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
           board.hub.scan?.();
           board.hub.publish(project.id, 'tick.done', { project: project.id, at: r.at, source, real: true, exitCode: r.exitCode, done: r.done, problems: r.problems.length });
           const signature = JSON.stringify({ ...r, at: undefined });
-          lines.push(`${options.projects.length > 1 ? `[${project.id}] ` : ''}${signature === lastSignature ? t('tick ({source}): nothing changed (exit {code})', { source, code: r.exitCode }) : formatReport(r, false)}`);
-          lastSignature = signature;
+          lines.push(`${options.projects.length > 1 || options.peerProjects?.length ? `[${project.id}] ` : ''}${signature === lastSignature.get(project.id) ? t('tick ({source}): nothing changed (exit {code})', { source, code: r.exitCode }) : formatReport(r, false)}`);
+          lastSignature.set(project.id, signature);
         } catch (e) {
           lines.push(`[${project.id}] ${t('tick ({source}) failed: {why}', { source, why: (e as Error).message.split('\n')[0] })}`);
         }
       }
+      briefPass();
       board.invalidate();
       for (const line of lines) options.print(line);
       measurePass();

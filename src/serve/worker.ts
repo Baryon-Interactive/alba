@@ -10,6 +10,7 @@ import { Orders } from '../orders/service.ts';
 import { stateStore, closeStateStores } from '../orders/backend.ts';
 import { currentLang, withLang } from '../i18n.ts';
 import { cachedProbes } from '../web/snapshot.ts';
+import { peerRunning } from './fleet.ts';
 
 const port = parentPort!;
 const options = workerData as ServeOptions;
@@ -45,8 +46,9 @@ port.on('message', ({ id, method, args }) => {
         const project = options.projects.find(p => p.id === args.project);
         if (!project) throw new Error('No such project');
         const orders = new Orders(stateStore(project), undefined, 'serve');
+        const peers = () => peerRunning(options.peerProjects ?? [], board.ctx.workers!);
         value = withLang(args.lang ?? currentLang(), () => args.real
-          ? executeTick({ project, orders, workers: board.ctx.workers!, probes }, { maxDispatch: args.maxDispatch })
+          ? executeTick({ project, orders, workers: board.ctx.workers!, probes, peers }, { maxDispatch: args.maxDispatch })
           : tick(project, orders, board.ctx.workers!, board.ctx.slow, { record: false, finishes: findFinishes(project, orders, probes, board.ctx.workers).map(f => ({ tag: f.tag, run: f.run, outcome: f.outcome, why: f.why })) }));
         board.invalidate();
       } else if (method === 'stop') { await coordinator.stop(); closeStateStores(); }
