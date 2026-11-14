@@ -95,6 +95,24 @@ test('clean plan: a merged worktree that changed recently is kept (idle_hours), 
   assert.ok(plan.items.every(i => i.path !== s.root.replace(/\\/g, '/')));
 });
 
+test('clean plan: build caches go from idle worktrees that must stay, approved-but-ahead included; review, monitoring and recent work keep them', () => {
+  const s = setup();
+  const cache = (wt: string) => { mkdirSync(path.join(wt, 'Library'), { recursive: true }); writeFileSync(path.join(wt, 'Library', 'big.bin'), 'x'.repeat(500)); };
+  const ahead = s.worktree('AHEAD', { commit: true }); cache(ahead); s.orders.act('AHEAD', 'approve', { force: true });
+  const review = s.worktree('REVIEW', { commit: true }); cache(review);
+  s.orders.runStart('REVIEW', { worker: 'fake' }); s.orders.runEnd('REVIEW', 'completed');
+  s.orders.report('REVIEW', { status: 'ready', summary: 'done', evidence: [], commits: [] });
+  assert.equal(s.orders.stage(s.orders.get('REVIEW')).stage, 'awaiting-review');
+  const by = Object.fromEntries(planClean(s.cfg, s.orders, s.env).items.map(i => [i.tag, i]));
+  assert.deepEqual([by.AHEAD.action, by.AHEAD.targets, by.AHEAD.pathClass], ['prune', ['Library'], 'caches']);
+  assert.match(by.AHEAD.reason, /commit\(s\) the base branch lacks: only the cache folders go/);
+  assert.equal(by.REVIEW.action, 'keep');
+  assert.match(by.REVIEW.reason, /awaiting-review/);
+  const recent = planClean({ ...s.cfg, clean: { ...s.cfg.clean!, idle_hours: 100 } }, s.orders, s.env).items.find(i => i.tag === 'AHEAD')!;
+  assert.equal(recent.action, 'keep');
+  assert.match(recent.reason, /cache folders changed 1 h ago \(idle_hours is 100\)/);
+});
+
 test('clean plan: only the newest builds stay', () => {
   const s = setup();
   const builds = path.join(s.root, 'artifacts', 'builds');

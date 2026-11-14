@@ -191,10 +191,16 @@ export function planClean(project: ProjectConfig, orders: Orders, env: CleanEnv)
       else items.push(item('keep', t('Merged, but changed {h} h ago (idle_hours is {n}).', { h: Math.floor(idleHours), n: cfg.idle_hours })));
       continue;
     }
-    if (orderMerged && !inBase) { items.push(item('keep', t('Approved, but its branch has {n} commit(s) the base branch lacks.', { n: facts.ahead.length }))); continue; }
+    // Build output (UE Intermediate/Cooked/StagedBuilds, DDC, sim build trees: tens of GB per worktree) is rebuilt on
+    // demand, so it goes from every idle worktree that has to stay, approved-but-ahead ones included.
     const caches = cfg.caches.filter(c => existsSync(path.join(w.path, c)));
-    if (caches.length) items.push(item('prune', t('Work not merged yet ({stage}): only the cache folders go.', { stage: doc ? orders.stage(doc, merged).stage : '-' }), caches));
-    else items.push(item('keep', t('Work not merged yet.')));
+    const stage = doc ? orders.stage(doc, merged).stage : '-';
+    const kept = orderMerged ? t('Approved, but its branch has {n} commit(s) the base branch lacks.', { n: facts.ahead.length }) : t('Work not merged yet.');
+    if (!caches.length) { items.push(item('keep', kept)); continue; }
+    if (stage === 'awaiting-review' || stage === 'monitoring') { items.push(item('keep', t('{stage}: the cache folders stay until it is decided.', { stage }))); continue; }
+    const cacheIdle = (now - Math.max(Date.parse(facts.lastAt) || 0, safeMtime(w.path), ...caches.map(c => safeMtime(path.join(w.path, c))))) / 3_600_000;
+    if (cacheIdle < cfg.idle_hours) { items.push(item('keep', t('{kept} Its cache folders changed {h} h ago (idle_hours is {n}).', { kept, h: Math.floor(cacheIdle), n: cfg.idle_hours }))); continue; }
+    items.push(item('prune', orderMerged ? t('Approved, but its branch has {n} commit(s) the base branch lacks: only the cache folders go.', { n: facts.ahead.length }) : t('Work not merged yet ({stage}): only the cache folders go.', { stage }), caches));
   }
 
   for (const b of cfg.builds) {
