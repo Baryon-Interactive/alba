@@ -72,6 +72,8 @@ import { editProducerConfig, readProducerConfig } from '../producer/config-edit.
 import { draftAgain, draftWorkView } from '../producer/work-sessions.ts';
 import { producerLog } from '../producer/activity.ts';
 import { orderDiff } from './diff.ts';
+import { doctorProject, type DoctorResult } from '../plugins/doctor.ts';
+import { pluginsView } from '../plugins/view.ts';
 import { libraryGet, libraryPost } from './library.ts';
 import { overviewAll, overviewProject } from './overview-all.ts';
 import { sendJson as json } from '../web/response.ts';
@@ -147,6 +149,8 @@ function sshChange(raw: unknown): SshAddressChange | undefined {
 const MAX_BODY = 1_000_000;
 const LOG_READ_BYTES = 1_000_000;
 
+/** Doctor checks running now, by project and tool ids: the same check asked again joins the running one. */
+const doctorRuns = new Map<string, Promise<DoctorResult[]>>();
 const projectCaches = new WeakMap<ApiContext, { at: number; revision: number; projects: ProjectConfig[]; workers?: WorkersFile; value: A.ProjectInfo[] }>();
 
 /** UserError messages are for people; the status comes from what they say. */
@@ -484,6 +488,10 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const view = light(q('project'));
       return json(res, 200, orderSkillsView(view.config, ctx.workers, view.orders.get(parts[1])) satisfies A.OrderSkills);
     }
+    if (parts[0] === 'plugins' && parts.length === 1) {
+      const config = light(q('project')).config;
+      return json(res, 200, pluginsView(config, ctx.probes.now().toISOString()) satisfies A.PluginsView);
+    }
     if (parts[0] === 'config' && parts.length === 1) {
       const config = light(q('project')).config;
       const target = q('target') === 'workers' ? 'workers' : 'project';
@@ -657,6 +665,18 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
   }
 
   if (method === 'POST') {
+    if (parts[0] === 'plugins' && parts[1] === 'doctor' && parts.length === 2) {
+      // Starts the tools' MCP servers and lists their tools (never calls one). Everything it waits on is a child process, so this
+      // thread keeps answering meanwhile; the same check asked again while one runs shares it instead of starting the servers twice.
+      needsWrite();
+      const body = await readJson(req), view = light(str(body, 'project') ?? q('project'));
+      const ids = strList(body, 'ids');
+      const key = `${view.config.id}\0${[...new Set(ids ?? [])].sort().join(',')}`;
+      const running = doctorRuns.get(key) ?? doctorProject(view.config, ids).finally(() => doctorRuns.delete(key));
+      doctorRuns.set(key, running);
+      const results = await running;
+      return json(res, 200, { project: view.config.id, at: ctx.probes.now().toISOString(), ok: results.every(r => r.ok), results } satisfies A.PluginDoctor);
+    }
     if (parts[0] === 'design-docs' && parts.length === 1) {
       needsWrite(); const body = await readJson(req), view = light(str(body, 'project') ?? q('project'));
       const id = str(body, 'id', true)!, title = str(body, 'title'), markdown = str(body, 'body', true)!;

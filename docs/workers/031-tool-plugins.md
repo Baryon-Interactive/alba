@@ -251,10 +251,20 @@ plugins:
 | `alba tools resume <job>` | goes on with a waiting job |
 | `alba tools jobs [--order <TAG>]` / `alba tools show <job>` | the jobs, and one job with its input, output folder, files, answer and error |
 
+## In the console
+
+The **Tools** page (`/p/<project>/tools`) shows every plugin the project can see: whether it is on, its version and origin, its
+settings (the project's value or the default), its MCP servers with the tools workers are offered and the names of the environment
+variables they read (set or missing where `alba serve` runs; never the value), skill, CLI, probe, resources, operations and the kinds
+that use it. It turns a tool on and off, changes an enabled tool's settings, `plugins.by_kind` and `plugins.auto_approve` (with what Alba
+approved by itself today and in all), all through the project file with the same checks as loading it (turning a tool off also takes
+out its settings and the kinds' references to it). **Check** runs the doctor on the serving machine. Below them are the latest tool
+jobs. `plugins.sources` and `plugins.replace` are changed in the file only. The calls are in [010](../console/010-api.md#additions-tool-plugins).
+
 ## Not yet
 
 - Routing by the probe: an order with a tool may still be started on a machine without it.
-- Checks and viewers (a `.glb` viewer for tripo-3d); a console page for tool jobs (they show as events on the order); an operation that waits on a long task
+- Checks and viewers (a `.glb` viewer for tripo-3d); running an operation from the console; an operation that waits on a long task
   (`wait:`) beyond its own timeout.
 - Tools on roles (`roles.<id>.tools`) and on the order page of the console.
 - Third-party sources, `alba-plugins.lock`, `plugins new` and `plugins test`.

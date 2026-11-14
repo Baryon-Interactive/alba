@@ -291,7 +291,7 @@ export const useRoutingMigration = (project: string, enabled = true) => useQuery
 
 /** After a write to a configuration file every view that reads it is read again. */
 function refreshConfig(client: ReturnType<typeof useQueryClient>, project: string) {
-  for (const k of [['config', project], ['routing-migrate', project], ['roles', project], ['route', project], keys.workers(project), keys.resources(project), keys.skills(project), ['order-skills', project], keys.overview(project), keys.projectOverview(project)]) void client.invalidateQueries({ queryKey: k });
+  for (const k of [['config', project], ['plugins', project], ['routing-migrate', project], ['roles', project], ['route', project], keys.workers(project), keys.resources(project), keys.skills(project), ['order-skills', project], keys.overview(project), keys.projectOverview(project)]) void client.invalidateQueries({ queryKey: k });
 }
 
 /** Several changes to one configuration file in one write; the server checks the whole result first. */
@@ -342,3 +342,11 @@ export function useRemoveWorker(project: string) {
     },
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------- : tool plugins
+
+/** The tool plugins the project can see, with their settings, servers, operations and the latest tool jobs. */
+export const usePlugins = (project: string) => useQuery({ queryKey: ['plugins', project], queryFn: () => api.plugins(project), enabled: !!project, staleTime: 5_000, refetchInterval: 30_000 });
+
+/** The doctor for some tools (or the enabled ones): starts their servers on the serving machine and lists their tools; nothing is called. */
+export const usePluginDoctor = (project: string) => useMutation({ mutationFn: (ids?: string[]) => api.pluginDoctor(project, ids) });

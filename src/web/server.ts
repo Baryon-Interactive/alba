@@ -127,7 +127,7 @@ export function startServer(options: ServerOptions): Server {
 }
 
 /** GET reads answered by a reader thread: everything but streams and what needs this thread (SSH, sessions, the hub). */
-const BUFFERED = /^\/api\/(projects|orders|runs|producer|decisions|overview|workers|usage|needs|roles|skills|lessons|credits|resources|events|clean|config|routing|design|design-docs|docs|picks|art|intake|p)(\/|$)/;
+const BUFFERED = /^\/api\/(projects|orders|runs|producer|decisions|overview|workers|usage|needs|roles|skills|lessons|credits|resources|events|clean|config|plugins|routing|design|design-docs|docs|picks|art|intake|p)(\/|$)/;
 /** The reads among them that can take seconds: they have a reader of their own. */
 const SLOW = /^\/api\/(clean|usage|skills|roles|lessons)(\/|$)/;
 

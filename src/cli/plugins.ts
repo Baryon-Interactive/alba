@@ -2,9 +2,8 @@ import type { ProjectConfig } from '../config.ts';
 import { fail } from '../i18n.ts';
 import { adapters } from '../workers/adapters/index.ts';
 import { ENGINE_IDS } from '../machines/engines/index.ts';
-import { doctorTool } from '../plugins/doctor.ts';
+import { doctorProject } from '../plugins/doctor.ts';
 import { discoverPlugins, type LoadedTool } from '../plugins/registry.ts';
-import { withSettings } from '../plugins/manifest.ts';
 
 /** The tool ids of `--tools a,b`, each one enabled in the project (an empty value clears the list). */
 export function enabledTools(project: ProjectConfig, csv: string): string[] {
@@ -62,15 +61,7 @@ export async function runPlugins(project: ProjectConfig, command: string | undef
   if (command === 'doctor') {
     const ids = rest.length ? rest : [...enabled];
     if (!ids.length) return json ? '[]' : 'No tool is enabled in this project; name one: alba plugins doctor <id>.';
-    const results = [];
-    for (const id of ids) {
-      // An enabled tool is checked with the project's settings; another one with its defaults.
-      const raw = found.tools.find(x => x.manifest.id === id);
-      let tool = project.plugins?.tools[id] ?? raw;
-      if (tool && tool === raw) { try { tool = { ...raw, manifest: withSettings(raw.manifest, {}) }; } catch (e) { results.push({ id, ok: false, checks: [{ name: 'settings', ok: false, detail: `${(e as Error).message}; enable it and set it under plugins.settings.${id}` }] }); continue; } }
-      if (!tool) { results.push({ id, ok: false, checks: [{ name: 'manifest', ok: false, detail: found.problems.find(p => p.includes(`/${id}/`)) ?? 'no such plugin' }] }); continue; }
-      results.push(await doctorTool(tool));
-    }
+    const results = await doctorProject(project, ids);
     if (results.some(r => !r.ok)) setExitCode(1);
     if (json) return JSON.stringify(results, null, 2);
     return results.map(r => [`${r.ok ? 'ok  ' : 'FAIL'} ${r.id}`, ...r.checks.map(c => `  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}: ${c.detail}`)].join('\n')).join('\n');

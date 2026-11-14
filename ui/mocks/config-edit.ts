@@ -18,6 +18,12 @@ const start = (): { project: Values; workers: Values } => ({
     budget: { tokens_per_day: 4000000, currency: 'USD' },
     clean: { idle_hours: 48, caches: ['Intermediate', 'DerivedDataCache'] },
     routing: { routes: { art: { kinds: ['art', 'vfx'], requires: ['vision'], group: 'visual', description: 'Pictures and effects' } } },
+    plugins: {
+      enable: ['image-gateway', 'tripo-3d'],
+      settings: { 'image-gateway': { base_url: 'http://127.0.0.1:3425', model: 'gpt-image-2', key_env: '' }, 'tripo-3d': { ceiling: 60 } },
+      by_kind: { art: ['image-gateway'], model: ['tripo-3d'] },
+      auto_approve: { images: { per_job: 2, per_day: 20 }, credits: 0 },
+    },
   },
   workers: {
     routing: { groups: { main: ['codex', 'claude-sonnet', '*'], visual: ['claude-opus', 'codex'] }, routes: { gameplay: { kinds: ['gameplay', 'bug'], group: 'main' } }, default: 'main' },
@@ -25,6 +31,8 @@ const start = (): { project: Values; workers: Values } => ({
   },
 });
 const of = (project: string) => { if (!files.has(project)) files.set(project, start()); return files.get(project)!; };
+/** The project file of the mock as it is now (the Tools page reads its `plugins` block). */
+export const projectValues = (project: string): Values => of(project).project;
 const record = (v: unknown): v is Values => !!v && typeof v === 'object' && !Array.isArray(v);
 
 function apply(root: Values, path: (string | number)[], value: unknown) {
@@ -32,6 +40,17 @@ function apply(root: Values, path: (string | number)[], value: unknown) {
   for (const k of path.slice(0, -1)) { if (!record(at[k])) at[k] = {}; at = at[k] as Values; }
   const last = path[path.length - 1];
   if (value === undefined) delete at[last]; else at[last] = structuredClone(value);
+}
+
+/** What the loader would refuse in the `plugins` block (src/plugins/registry.ts), in short. */
+function pluginsProblem(values: Values): string | undefined {
+  const p = record(values.plugins) ? values.plugins : {};
+  const enable = Array.isArray(p.enable) ? p.enable as string[] : [];
+  const known = ['example-echo', 'image-gateway', 'tripo-3d'];
+  for (const id of enable) if (!known.includes(id)) return `alba.yaml: "plugins.enable": no plugin "${id}" (found: ${known.join(', ')}).`;
+  for (const id of Object.keys(record(p.settings) ? p.settings : {})) if (!enable.includes(id)) return `alba.yaml: "plugins.settings.${id}": "${id}" is not in plugins.enable.`;
+  for (const [kind, ids] of Object.entries(record(p.by_kind) ? p.by_kind : {})) for (const id of Array.isArray(ids) ? ids as string[] : []) if (!enable.includes(id)) return `alba.yaml: "plugins.by_kind.${kind}": "${id}" is not in plugins.enable.`;
+  return undefined;
 }
 
 export function handleConfigEdit(c: Ctx): boolean {
@@ -47,6 +66,8 @@ export function handleConfigEdit(c: Ctx): boolean {
     if (edits.some(e => e.path[0] === 'dispatch' && e.path[1] === 'on_loop' && e.value !== undefined && e.value !== 'report' && e.value !== 'stop')) return fail(res, 400, 'bad_request', 'alba.yaml: "dispatch.on_loop" must be "report" or "stop".'), true;
     const copy = structuredClone(of(c.project)[target]);
     for (const e of edits) apply(copy, e.path, e.value);
+    const problem = target === 'project' ? pluginsProblem(copy) : undefined;
+    if (problem) return fail(res, 400, 'bad_request', problem), true;
     if (!body.dryRun) of(c.project)[target] = copy;
     return send(res, 200, { ok: true, file: target === 'workers' ? 'workers.yaml' : 'alba.yaml', changed: edits.map(e => e.path.join('.')), ...(body.dryRun ? { dryRun: true } : {}) }), true;
   }

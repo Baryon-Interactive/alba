@@ -154,6 +154,13 @@ async function priceOf(session: McpStdio, toolName: string, input: Record<string
   return { amount, ...(typeof answer?.note === 'string' && answer.note.trim() ? { note: answer.note.trim().slice(0, 500) } : {}), ...(answer?.unpriced === true || amount === 0 ? { unpriced: true } : {}) };
 }
 
+/** What Alba approved by itself in one unit (`plugins.auto_approve`): in the UTC day of `at`, and in the project ever. */
+export function autoApproved(jobs: readonly ToolJob[], unit: string, at: string): { today: number; ever: number } {
+  const mine = jobs.filter(j => j.quote?.auto && j.quote.unit === unit);
+  const sum = (list: readonly ToolJob[]) => round(list.reduce((n, j) => n + (j.quote!.amount ?? 0), 0));
+  return { today: sum(mine.filter(j => (j.quote!.autoAt ?? j.created).slice(0, 10) === at.slice(0, 10))), ever: sum(mine) };
+}
+
 /**
  * Reserves Alba's approval of a job's quote under the state lock, so two processes cannot both take the last of a day: the amount
  * must be within `plugins.auto_approve.<unit>` for one job and, with what Alba approved before, within `per_day` (a UTC day) and
@@ -167,10 +174,7 @@ function reserveAuto(project: ProjectConfig, id: string, unit: string, amount: n
   updateStateJson<ToolJob[]>(project, JOBS, [], jobs => {
     const job = jobs.find(j => j.id === id);
     if (!job?.quote) return jobs;
-    const before = jobs.filter(j => j.id !== id && j.quote?.auto && j.quote.unit === unit);
-    const sum = (list: ToolJob[]) => round(list.reduce((n, j) => n + (j.quote!.amount ?? 0), 0));
-    const today = sum(before.filter(j => (j.quote!.autoAt ?? j.created).slice(0, 10) === at.slice(0, 10)));
-    const ever = sum(before);
+    const { today, ever } = autoApproved(jobs.filter(j => j.id !== id), unit, at);
     if (today + amount > rule.per_day + EPS) why = `Alba approved ${today} ${unit} of tool jobs today; ${amount} more is over plugins.auto_approve.${unit} per_day ${rule.per_day}`;
     else if (rule.per_project !== undefined && ever + amount > rule.per_project + EPS) why = `Alba approved ${ever} ${unit} of tool jobs in this project; ${amount} more is over plugins.auto_approve.${unit} per_project ${rule.per_project}`;
     else { Object.assign(job.quote, { auto: true, autoAt: at }); why = undefined; }

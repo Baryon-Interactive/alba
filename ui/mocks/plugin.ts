@@ -11,6 +11,7 @@ import { handleLibrary } from './library.ts';
 import { handleDesign } from './design.ts';
 import { handleMachines } from './machines.ts';
 import { handleConfigEdit } from './config-edit.ts';
+import { handlePlugins } from './plugins.ts';
 import { mockNightlyGates } from '../src/mocks/nightly-data.ts';
 import { actionsFor, createWorld, editsOf, iso, makeHistory, makeOverview, makeResources, makeWorkers, seedLog, summarize, whyFor, type MockOrder, type MockProject } from '../src/mocks/data.ts';
 
@@ -307,6 +308,10 @@ export function mockApi(): Plugin {
             const dp = project(url) ?? byId.get(body.project ?? '');
             if (!dp?.info.design?.enabled) return fail(res, 404, 'not_found', 'Design library is off.');
             return handleDesign({ path, method: req.method ?? 'GET', url, body, project: dp.info.id, res, send, fail });
+          }
+          if (path === 'plugins' || path === 'plugins/doctor') {
+            const pp = project(url) ?? byId.get(body.project ?? '') ?? projects[0];
+            if (handlePlugins({ path, method: req.method ?? 'GET', body, project: pp.info.id, res, send })) return;
           }
           if (path === 'config' || path === 'routing/migrate' || /^orders\/[^/]+\/(fields|body)$/.test(path) || /^workers\/[^/]+\/remove$/.test(path)) {
             const cp = project(url) ?? byId.get(body.project ?? '') ?? projects[0];

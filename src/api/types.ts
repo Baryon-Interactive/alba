@@ -489,6 +489,11 @@ export interface SkillUseRequest { project?: string; name: string; use: boolean 
 export interface ConfigEditResult { ok: true; file: string; changed: string[]; backup?: string; dryRun?: boolean }
 /** GET /api/routing/migrate: for each file that still has legacy `roles`, the `routing` that routes every order the same way. */
 export interface RoutingMigration { project: string; files: { target: 'project' | 'workers'; file: string; routing: Record<string, unknown>; yaml: string; notes: string[] }[] }
+/** GET /api/plugins: the tool plugins the project can see, enabled or not, with the latest tool jobs (src/plugins/view.ts). */
+export type { PluginsView, PluginView, PluginServerView, PluginSettingView, PluginOperationView, PluginEnvName, AutoApproveView, ToolJobView } from '../plugins/view.ts';
+export type { DoctorCheck, DoctorResult } from '../plugins/doctor.ts';
+/** POST /api/plugins/doctor: what the doctor found for each tool on the machine that runs `alba serve`. */
+export interface PluginDoctor { project: string; at: string; ok: boolean; results: import('../plugins/doctor.ts').DoctorResult[] }
 /** GET /api/config: the editable sections of the project file or the workers file, as written there. */
 export interface ConfigView { project: string; target: 'project' | 'workers'; file: string; values: Record<string, unknown>; editable: string[] }
 

@@ -20,6 +20,8 @@ export const EDITABLE: Record<ConfigTarget, readonly string[][]> = {
   project: [
     ['routing'], ['roles'], ['resources'], ['budget'], ['usage_warnings'], ['clean'],
     ['skills', 'always'], ['skills', 'by_kind'], ['skills', 'max_per_order'], ['lessons', 'kind_tags'],
+    // the tools a project uses and how (never `plugins.sources` or `plugins.replace`: which code is loaded stays a change of the file)
+    ['plugins', 'enable'], ['plugins', 'settings'], ['plugins', 'by_kind'], ['plugins', 'auto_approve'],
     ...['caps', 'rework_reserve', 'stall_minutes', 'long_command_minutes', 'start_receipt_minutes', 'commit_nudge_minutes', 'min_free_ram_gb', 'merge',
       'on_loop', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'on_lingering', 'lingering_minutes', 'long_commands'].map(k => ['dispatch', k]),
   ],

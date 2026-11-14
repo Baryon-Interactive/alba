@@ -191,6 +191,9 @@ export const api = {
   orderFields: (project: string, tag: string, fields: OrderFieldsEdit) => post<OrderSummary>(`/api/orders/${enc(tag)}/fields`, { project, ...fields }),
   orderBody: (project: string, tag: string, text: string, expected: string) => post<{ ok: true; file: string }>(`/api/orders/${enc(tag)}/body`, { project, text, expected }),
   removeWorker: (project: string, id: string) => post<WorkerEditResult>(`/api/workers/${enc(id)}/remove`, { project }),
+  // : tool plugins
+  plugins: (project: string) => request<import('@api').PluginsView>(`/api/plugins${qs({ project })}`),
+  pluginDoctor: (project: string, ids?: string[]) => post<import('@api').PluginDoctor>('/api/plugins/doctor', { project, ...(ids?.length ? { ids } : {}) }),
 };
 
 /** Which file a configuration edit goes to: the project's own file or the shared workers file. */
