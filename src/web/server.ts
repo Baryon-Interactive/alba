@@ -18,7 +18,7 @@ import { systemProbes, tick, type Probes } from '../tick/gather.ts';
 import { formatReport } from '../tick/plan.ts';
 import type { WorkersFile } from '../workers/config.ts';
 import { producerPage, confirmPage, messagePage, orderPage, overviewPage, projectPage, workersPage } from './html.ts';
-import { buildSnapshot, cachedProbes, type ProjectView, type Snapshot } from './snapshot.ts';
+import { buildSnapshot, cachedProbes, snapshotFromTicks, type ProjectView, type Snapshot } from './snapshot.ts';
 import { freePort } from './port.ts';
 import { stateStore } from '../orders/backend.ts';
 import { Orders } from '../orders/service.ts';
@@ -126,11 +126,22 @@ export function startServer(options: ServerOptions): Server {
   return createBoard(options).server;
 }
 
+/** GET reads answered by a reader thread: everything but streams and what needs this thread (SSH, sessions, the hub). */
+const BUFFERED = /^\/api\/(projects|orders|runs|producer|decisions|overview|workers|usage|needs|roles|skills|lessons|credits|resources|events|clean|config|routing|design|design-docs|docs|picks|art|intake|p)(\/|$)/;
+/** The reads among them that can take seconds: they have a reader of their own. */
+const SLOW = /^\/api\/(clean|usage|skills|roles|lessons)(\/|$)/;
+
 /** The same, with the parts `alba serve` needs: the event hub and the interface's context. */
 export function createBoard(options: ServerOptions): Board {
   const delay = watchLoopDelay();
   const background = options.background ?? (options.probes === systemProbes || !!options.probesModule);
-  const reader = background ? new WorkerChannel(new URL(import.meta.url.endsWith('.ts') ? './read-worker.ts' : './read-worker.js', import.meta.url), { probesModule: options.probesModule }) : undefined;
+  // Two reader threads: reads that can take seconds (the clean plan's git checks, usage accounting, skills, routes with their
+  // results) have a lane of their own, so they never hold up the lists and pages the console asks for every few seconds.
+  const readerFile = new URL(import.meta.url.endsWith('.ts') ? './read-worker.ts' : './read-worker.js', import.meta.url);
+  const lanes = background ? { fast: new WorkerChannel(readerFile, { probesModule: options.probesModule }), slow: new WorkerChannel(readerFile, { probesModule: options.probesModule }) } : undefined;
+  const reader = lanes?.fast;
+  /** The tick results each lane has: they are sent again only when a tick has added new ones. */
+  const sentTicks = new Map<WorkerChannel, number>();
   // The key (auth.ts): never sent in an answer. Pages carry the form token derived from it, browsers a session cookie.
   const token = options.writeToken ?? newKey();
   const formKey = formToken(token);
@@ -149,7 +160,14 @@ export function createBoard(options: ServerOptions): Board {
   const snapshot = (): Snapshot => {
     const lang = currentLang();
     let hit = caches.get(lang);
-    if (!hit || Date.now() - hit.at > ttl) { hit = { at: Date.now(), snap: buildSnapshot(options.projects, ctx.workers, slow) }; caches.set(lang, hit); latest.set(lang, hit.snap); }
+    if (!hit || Date.now() - hit.at > ttl) {
+      // With the serve's tick results for every project, the view is built from them (milliseconds) instead of a dry-run tick
+      // of each project (seconds).
+      const ticks = ctx.tickResults;
+      const fromTicks = !!ticks && options.projects.length > 0 && options.projects.every(p => ticks[p.id]);
+      hit = { at: Date.now(), snap: fromTicks ? snapshotFromTicks(options.projects, ctx.workers, ticks!, slow) : buildSnapshot(options.projects, ctx.workers, slow) };
+      caches.set(lang, hit); latest.set(lang, hit.snap);
+    }
     return hit.snap;
   };
   let revision = 0;
@@ -293,6 +311,17 @@ export function createBoard(options: ServerOptions): Board {
   };
   // Anything that is written to a state folder makes the cached snapshot stale.
   hub.onChange = invalidate;
+  /** What a reader lane needs for one request; the tick results go only when the lane does not have the latest ones yet. */
+  const readArgs = (lane: WorkerChannel, url: URL, headers: IncomingMessage['headers'], port: number) => {
+    const ticks = ctx.tickRevision ?? 0;
+    const send = sentTicks.get(lane) !== ticks;
+    if (send) sentTicks.set(lane, ticks);
+    return {
+      url: url.href, headers, port, projects: ctx.projects, workers: ctx.workers, token, extraOrigins: ctx.extraOrigins,
+      version: ctx.version, revision, loop: ctx.loop?.(), tickRevision: ticks, ...(send ? { tickResults: ctx.tickResults } : {}),
+      problems: Object.fromEntries(ctx.projects.map(p => [p.id, ctx.extraProblems?.(p.id) ?? []])),
+    };
+  };
   const scanActivity = activityScanner(options.probes);
   let activityPending = false;
   hub.onScan = () => {
@@ -408,21 +437,17 @@ export function createBoard(options: ServerOptions): Board {
     if (parts[0] === 'api') {
       // Buffered aggregate/detail reads have their own loop and connection; streams retain the main event hub. A slow read here
       // (routes with their results, the clean plan's git checks, skills) would otherwise stop every other request, pages included.
-      const buffered = req.method === 'GET' && !url.pathname.endsWith('/chat/stream') && (/^\/api\/(projects|orders|runs|producer|decisions|overview|workers|usage|needs|roles|skills|lessons|credits|resources|events|clean)(\/|$)/.test(url.pathname) || /^\/api\/p\/[^/]+\/overview$/.test(url.pathname));
-      if (reader && buffered) {
-        return void reader.call<{ status: number; headers: Record<string, string>; body?: Uint8Array }>('read', {
-          url: url.href, headers: req.headers, port, projects: ctx.projects, workers: ctx.workers, token, extraOrigins: ctx.extraOrigins,
-          version: ctx.version, revision, loop: ctx.loop?.(), tickResults: ctx.tickResults, problems: Object.fromEntries(ctx.projects.map(p => [p.id, ctx.extraProblems?.(p.id) ?? []])),
-        }).then(result => { if (!res.destroyed) { res.writeHead(result.status, result.headers); res.end(result.body ? Buffer.from(result.body) : undefined); } }).catch(fail);
+      const buffered = req.method === 'GET' && !url.pathname.endsWith('/stream') && BUFFERED.test(url.pathname);
+      if (lanes && buffered) {
+        const lane = SLOW.test(url.pathname) ? lanes.slow : lanes.fast;
+        return void lane.call<{ status: number; headers: Record<string, string>; body?: Uint8Array }>('read', readArgs(lane, url, req.headers, port))
+          .then(result => { if (!res.destroyed) { res.writeHead(result.status, result.headers); res.end(result.body ? Buffer.from(result.body) : undefined); } }).catch(fail);
       }
       return void handleApi(ctx, req, res, url, port).catch(fail);
     }
     if (parts[0] === 'legacy') {
       if (reader && req.method === 'GET') {
-        return void reader.call<{ status: number; headers: Record<string, string>; body?: Uint8Array }>('legacy', {
-          url: url.href, headers: req.headers, port, projects: ctx.projects, workers: ctx.workers, token, extraOrigins: ctx.extraOrigins,
-          version: ctx.version, revision, loop: ctx.loop?.(), tickResults: ctx.tickResults, problems: Object.fromEntries(ctx.projects.map(p => [p.id, ctx.extraProblems?.(p.id) ?? []])),
-        }).then(result => { if (!res.destroyed) { res.writeHead(result.status, result.headers); res.end(result.body ? Buffer.from(result.body) : undefined); } }).catch(fail);
+        return void reader.call<{ status: number; headers: Record<string, string>; body?: Uint8Array }>('legacy', readArgs(reader, url, req.headers, port)).then(result => { if (!res.destroyed) { res.writeHead(result.status, result.headers); res.end(result.body ? Buffer.from(result.body) : undefined); } }).catch(fail);
       }
       return void handle(req, res, url, parts.slice(1)).catch(fail);
     }
@@ -453,6 +478,6 @@ export function createBoard(options: ServerOptions): Board {
   const refresh = options.listen !== false && !reader && ttl > 0 ? setInterval(() => {
     for (const lang of ['en', 'zh'] as const) try { withLang(lang, snapshot); } catch { /* retain the previous readings */ }
   }, Math.max(1000, ttl)).unref() : undefined;
-  server.once('close', () => { void reader?.close(); delay.close(); if (refresh) clearInterval(refresh); hub.stop(); });
+  server.once('close', () => { void lanes?.fast.close(); void lanes?.slow.close(); delay.close(); if (refresh) clearInterval(refresh); hub.stop(); });
   return { server, hub, ctx, invalidate, renderLegacy: handle };
 }

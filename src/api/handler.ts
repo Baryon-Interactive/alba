@@ -122,6 +122,8 @@ export interface ApiContext {
   sessionControl?: (project: ProjectConfig, action: 'start' | 'stop') => Promise<import('../producer/session.ts').ProducerSessionStatus>;
   /** Last completed coordinator readings, forwarded without rerunning probes on HTTP. */
   tickResults?: Record<string, import('../tick/gather.ts').TickResult>;
+  /** Goes up each time a project's tick results arrive (the reader lanes are sent them again only then). */
+  tickRevision?: number;
   onReadings?: (project: string, result: import('../tick/gather.ts').TickResult) => void;
   /** Problems the server itself knows (a refused configuration file), shown next to the tick's. */
   extraProblems?: (project: string) => A.Problem[];

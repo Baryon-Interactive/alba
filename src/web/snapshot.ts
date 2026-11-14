@@ -1,3 +1,4 @@
+import { ownerOf } from '../usage/spend.ts';
 import { existsSync } from 'node:fs';
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc, Report, Stage } from '../orders/model.ts';
@@ -125,6 +126,36 @@ export function cachedProbes(base: Probes, ttlMs: number): Probes & { prime(comm
       return value;
     },
   };
+}
+
+/**
+ * The board's view from the last real tick of each project (the serve's project threads send their results), instead of a dry-run
+ * tick of every project (seconds each). Orders and rows are read now; the workers' running counts are counted now over all the
+ * projects shown, so a run that started or ended since that tick shows at once. Quota, availability and problems are the tick's.
+ */
+export function snapshotFromTicks(configs: ProjectConfig[], workers: WorkersFile | undefined, results: Record<string, TickResult>, probes: Probes, actor = 'web'): Snapshot {
+  const snapshot: Snapshot = { at: probes.now().toISOString(), projects: [], workersFile: workers };
+  const open = new Map<string, number>();
+  for (const config of configs) {
+    const orders = new Orders(stateStore(config), () => probes.now().toISOString(), actor);
+    const result = results[config.id];
+    const view: ProjectView = { config, orders, rows: [] };
+    try {
+      view.rows = rowsOf(config, orders, result?.activity);
+      if (workers) for (const doc of orders.all()) for (const run of doc.runs) {
+        if (run.ended !== undefined) continue;
+        const id = ownerOf(workers.workers, run.worker)?.id;
+        if (id) open.set(id, (open.get(id) ?? 0) + 1);
+      }
+    } catch (e) { view.error = (e as Error).message.split('\n')[0]; }
+    if (result) { view.tick = result.report; view.workers = result.workers.map(w => ({ ...w })); view.quotas = result.quotas; view.history = result.history; }
+    snapshot.projects.push(view);
+    const min = config.dispatch.min_free_ram_gb;
+    if (min !== undefined) snapshot.minFreeRamGb = Math.max(snapshot.minFreeRamGb ?? 0, min);
+  }
+  for (const view of snapshot.projects) for (const w of view.workers ?? []) w.running = open.get(w.config.id) ?? 0;
+  if (workers) snapshot.freeRamGb = probes.freeRamGb();
+  return snapshot;
 }
 
 /** Reads everything the board shows. Quota and the machine are read through the tick, in dry-run form, without recording history. */

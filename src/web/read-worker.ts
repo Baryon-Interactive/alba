@@ -13,6 +13,7 @@ const probes = workerData.probesModule ? (await import(workerData.probesModule))
 const activity = activityScanner(probes);
 let board: Board | undefined;
 let signature = '', revision = -1;
+let tickResults: Record<string, import('../tick/gather.ts').TickResult> | undefined;
 let queue = Promise.resolve();
 port.on('message', ({ id, method, args }) => {
   queue = queue.then(async () => {
@@ -25,13 +26,15 @@ port.on('message', ({ id, method, args }) => {
         board = createBoard({ ...args, port: 0, probes, background: false, listen: false, writeToken: args.token });
       }
       const ctx = board.ctx;
+      if (args.tickResults !== undefined) { tickResults = args.tickResults; board.invalidate(); }
+      ctx.tickResults = tickResults;
       if (revision !== args.revision) { revision = args.revision; board.invalidate(); }
       ctx.loop = () => args.loop;
       ctx.extraProblems = project => args.problems[project] ?? [];
       const cached = ctx.readings;
       // Reuse completed tick facts without running a second gather on aggregate request paths.
       ctx.readings = () => {
-        const results = args.tickResults;
+        const results = tickResults;
         if (!results || !Object.keys(results).length) return cached?.() ?? ctx.snapshot();
         const limits = ctx.projects.flatMap(config => config.dispatch.min_free_ram_gb === undefined ? [] : [config.dispatch.min_free_ram_gb]);
         return { at: new Date().toISOString(), workersFile: ctx.workers,

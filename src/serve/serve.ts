@@ -80,7 +80,7 @@ export function startServe(options: ServeOptions): Serve {
   for (const [id, channel] of channels) {
     channel.worker.on('message', message => {
       if (stopped) return;
-      if (message.event === 'readings') (board.ctx.tickResults ??= {})[message.project] = message.result;
+      if (message.event === 'readings') { (board.ctx.tickResults ??= {})[message.project] = message.result; board.ctx.tickRevision = (board.ctx.tickRevision ?? 0) + 1; board.invalidate(); }
       if (message.event === 'publish') { board.hub.scan(); board.hub.publish(message.project, message.name, message.data); }
       if (message.event === 'print') options.print(message.line);
       if (message.event === 'state') {
