@@ -1,0 +1,9 @@
+verify:
+  screenshots:
+    luminance:
+      - { match: "**/*-cin*.png", mean_min: 0.22 }
+      - { match: "**/*-cmd*.png", mean_min: 0.28, region: [20, 100, 1600, 700] }
+    motion:
+      - { a: "**/{name}-t0.png", b: "**/{name}-t1.png", region: [20, 560, 1600, 160], min: 0.5 }
+
+# These measurements are acceptance evidence, not a substitute for opening each image.

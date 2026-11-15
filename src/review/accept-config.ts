@@ -6,6 +6,8 @@ export interface AcceptStep {
   timeout_minutes: number;
   when_changed?: string[];
   resource?: string;
+  artifacts?: string[];
+  artifacts_required?: boolean;
 }
 export interface AcceptConfig {
   independent_check?: boolean | Record<string, boolean>;
@@ -42,10 +44,12 @@ export function validateAccept(raw: unknown, base: string): AcceptConfig {
   if (raw.steps !== undefined && !Array.isArray(raw.steps)) return bad('steps');
   const steps = ((raw.steps ?? []) as unknown[]).map((step, index): AcceptStep => {
     if (!record(step)) return bad(`steps[${index}]`);
-    keys(step, ['name', 'command', 'timeout_minutes', 'when_changed', 'resource'], 'steps');
+    keys(step, ['name', 'command', 'timeout_minutes', 'when_changed', 'resource', 'artifacts', 'artifacts_required'], 'steps');
     if (typeof step.name !== 'string' || !step.name.trim() || typeof step.timeout_minutes !== 'number' || !Number.isFinite(step.timeout_minutes) || step.timeout_minutes <= 0) return bad('steps');
     if (step.resource !== undefined && (typeof step.resource !== 'string' || !step.resource.trim())) return bad('steps.resource');
-    return { name: step.name, command: command(step.command, 'steps.command'), timeout_minutes: step.timeout_minutes, ...(step.when_changed !== undefined ? { when_changed: strings(step.when_changed, 'steps.when_changed') } : {}), ...(step.resource ? { resource: step.resource as string } : {}) };
+    if (step.artifacts !== undefined && (!Array.isArray(step.artifacts) || (step.artifacts as unknown[]).some(a => typeof a !== 'string' || !a.trim()))) return bad('steps.artifacts');
+    if (step.artifacts_required !== undefined && typeof step.artifacts_required !== 'boolean') return bad('steps.artifacts_required');
+    return { name: step.name, command: command(step.command, 'steps.command'), timeout_minutes: step.timeout_minutes, ...(step.when_changed !== undefined ? { when_changed: strings(step.when_changed, 'steps.when_changed') } : {}), ...(step.resource ? { resource: step.resource as string } : {}), ...(step.artifacts !== undefined ? { artifacts: step.artifacts as string[] } : {}), ...(step.artifacts_required === true ? { artifacts_required: true } : {}) };
   });
   if (new Set(steps.map(s => s.name)).size !== steps.length) return bad('steps.name');
   for (const key of ['note_template', 'merge_message'] as const) if (raw[key] !== undefined && (typeof raw[key] !== 'string' || !raw[key].trim())) return bad(key);

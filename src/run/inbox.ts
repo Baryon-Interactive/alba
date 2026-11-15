@@ -68,6 +68,7 @@ export function installLockHelper(worktree: string): void {
   const to = path.join(worktree, '.alba', 'bin', 'lock.mjs');
   mkdirSync(path.dirname(to), { recursive: true });
   copyFileSync(fileURLToPath(new URL('./lock-helper.mjs', import.meta.url)), to);
+  copyFileSync(fileURLToPath(new URL('./named-lock.mjs', import.meta.url)), path.join(path.dirname(to), 'named-lock.mjs'));
   excludeLocally(worktree, ['.alba/bin/']);
 }
 

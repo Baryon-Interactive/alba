@@ -44,6 +44,22 @@ An order can declare `## Acceptance`, `## Evidence`, and `## Paths` sections. Ev
 
 Evidence newer than the current run's start is fresh. Evidence newer than the order's first run but older than the current run is carried over, giving `warn`; evidence predating the first run is stale and fails, as does missing evidence. Directories are judged by their recursive regular-file contents, reporting `n of m files fresh` and the carried-over count; an empty directory is missing. A required evidence glob passes with at least one fresh match, warns with carried-over matches and no fresh ones, and fails only with no usable matches. Reasons name fresh matches first and count leftover matches instead of listing old files.
 
+Projects may add measured image rules under `verify.screenshots`:
+
+```yaml
+verify:
+  screenshots:
+    luminance:
+      - { match: "**/*-cin*.png", mean_min: 0.22 }
+      - { match: "**/*-cmd*.png", mean_min: 0.28, region: [20, 100, 1600, 700] }
+    motion:
+      - { a: "**/{name}-t0.png", b: "**/{name}-t1.png", region: [20, 560, 1600, 160], min: 0.5 }
+```
+
+Luminance uses Rec.709 weights and a whole image or pixel region. Motion compares paired frames on a 0 to 255 mean absolute luminance scale; different sizes fail. A rule matching no image is a warning, and an image that cannot be decoded is also a warning. The same measurements are available to scripts as `alba image lum <png> [--region x,y,w,h] [--json]` and `alba image motion <a.png> <b.png> [--region x,y,w,h] [--json]`. These gates measure; they do not replace a person opening the image.
+
+An acceptance step can declare `artifacts: ["dist/Development/Windows/*.exe", "artifacts/package-receipt-*.json"]`. Passing steps record each matched file's relative path, size, SHA-256 and modified time in the `accept-step` event and `trial.json`; the `accept-trial` event and `alba orders show <TAG>` carry the same hashes. Missing globs warn unless `artifacts_required: true`; links whose real path leaves the trial or project root are recorded as `refused` and do not fail the step. Hashing is streamed and capped at 200 files and 2 GB, with `truncated: true` when a cap is reached.
+
 The `screenshots` gate checks images named by the report or matched by the order's `## Evidence` globs, including `.png`, `.jpg`, `.jpeg`, `.gif`, and `.webp`. It detects PNG, JPEG, GIF and WebP from their bytes. An extension mismatch fails with a precise repair, such as `JPEG data in a .png file: save it as PNG or rename it .jpg`. PNGs (plain or interlaced) in RGB, RGBA, palette and grayscale (with or without alpha) are decoded without extra dependencies, including packed palette/grayscale samples and 16-bit samples reduced to 8 bits. Huffman-coded JPEGs (baseline, and the first scan of a progressive one) are read at one value per 8x8 block, from the blocks' DC coefficients: enough for the blank, dark and duplicate checks. Byte-identical images and PNGs whose 16×16 luminance thumbnails differ by less than 1.5% fail as duplicates; flat PNGs and JPEGs with luminance standard deviation below 0.02 fail as blank; a mean luminance below 0.12 or more than 85% of pixels below 0.05 warns as dark. GIF and WebP files (and arithmetic-coded or lossless JPEGs) receive the byte-identical check and are labelled `not decoded (GIF)` (or the detected format, or the reason); invalid PNGs include their decode reason. PNGs over 64 MB are skipped with a warning. Configure thresholds or turn the item off in the project file:
 
 ```yaml

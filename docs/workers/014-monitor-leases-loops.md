@@ -157,3 +157,7 @@ If a run has no receipt written after it began and no commit since it began, aft
 | Is a run going round in circles | `alba loops`, Problems on the first page |
 | Why did another worker take the order | the runs of the order, `run-rotated` in its timeline |
 | Did the worker start | the step count on the card, `start-failed` in Problems |
+
+## 7. Named locks and resources
+
+Use `alba lock <name> -- <program>` when two orders must take turns at one machine-wide thing, such as one game window or one screenshot capture. A lock is a short mutual-exclusion turn and does not consume a project capacity. Use a project resource when the work consumes a counted machine or service slot, needs a lease in the console, or must block a class of work. `alba resources` shows both resource leases and held named locks; named locks include the holder, command, folder, minutes held and a stale flag. `alba lock list` shows the same machine-wide lock directory without loading a project.

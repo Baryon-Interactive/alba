@@ -29,6 +29,29 @@ export interface ImageSummary {
   darkFraction: number;
 }
 
+export type PixelRegion = [number, number, number, number];
+function regionBounds(image: DecodedPng, region?: PixelRegion): [number, number, number, number] {
+  const [x, y, w, h] = region ?? [0, 0, image.width, image.height];
+  const left = Math.max(0, Math.min(image.width, x)), top = Math.max(0, Math.min(image.height, y));
+  const right = Math.max(left, Math.min(image.width, x + w)), bottom = Math.max(top, Math.min(image.height, y + h));
+  return [left, top, right, bottom];
+}
+/** Mean Rec.709 luminance in 0..1, optionally restricted to x,y,w,h pixels. */
+export function meanLuminance(image: DecodedPng, region?: PixelRegion): number {
+  const [left, top, right, bottom] = regionBounds(image, region); let sum = 0, count = 0;
+  for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) { const i = (y * image.width + x) * image.channels; sum += 0.2126 * image.pixels[i] + 0.7152 * image.pixels[i + 1] + 0.0722 * image.pixels[i + 2]; count++; }
+  const value = count ? sum / count / 255 : 0;
+  return Math.abs(value - Math.round(value)) < 1e-12 ? Math.round(value) : value;
+}
+/** Mean absolute Rec.709 luminance difference on a 0..255 scale. */
+export function meanAbsoluteLuminanceDifference(a: DecodedPng, b: DecodedPng, region?: PixelRegion): number {
+  if (a.width !== b.width || a.height !== b.height) throw new Error(`image sizes differ: ${a.width}x${a.height} and ${b.width}x${b.height}`);
+  const [left, top, right, bottom] = regionBounds(a, region); let sum = 0, count = 0;
+  for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) { const p = (y * a.width + x) * a.channels, q = (y * b.width + x) * b.channels; sum += Math.abs((0.2126 * a.pixels[p] + 0.7152 * a.pixels[p + 1] + 0.0722 * a.pixels[p + 2]) - (0.2126 * b.pixels[q] + 0.7152 * b.pixels[q + 1] + 0.0722 * b.pixels[q + 2])); count++; }
+  const value = count ? sum / count : 0;
+  return Math.abs(value - Math.round(value)) < 1e-12 ? Math.round(value) : value;
+}
+
 const paeth = (a: number, b: number, c: number): number => {
   const p = a + b - c;
   const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
