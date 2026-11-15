@@ -2,10 +2,10 @@
 # tripo-studio-plugin; this plugin starts it, gives workers its tools, and gives Alba one paid operation that goes through it end to end.
 # Enable it with   plugins: { enable: [tripo-3d], settings: { tripo-3d: { server: <path>/mcp/bootstrap.mjs, ceiling: 60 } } }
 id: tripo-3d
-version: 1.0.0
+version: 1.1.0
 apiVersion: 1
 kinds: [tool]
-description: Generates 3D models from pictures or text with Tripo Studio (the member account logged in on this machine) and downloads them.
+description: Generates and edits 3D models with Tripo Studio (the member account logged in on this machine) - generate, segment and complete parts, remesh, texture, rig, animate, motions, Smart UV - and downloads them.
 
 settings:
   server:
@@ -26,7 +26,13 @@ agent:
       tools: [tripo_auth_status, tripo_get_payment, tripo_list_models, tripo_get_model, tripo_list_operations, tripo_quote_operation,
               tripo_generate_model, tripo_generate_texture, tripo_generate_pbr, tripo_export_model, tripo_download,
               tripo_get_configuration_review, tripo_task_sync, tripo_task_wait, tripo_task_cancel, tripo_get_task, tripo_list_tasks,
-              tripo_task_reconcile, tripo_render_model]
+              tripo_task_reconcile, tripo_render_model,
+              tripo_import_model, tripo_segment_model, tripo_complete_parts, tripo_remesh_model, tripo_upscale_texture,
+              tripo_rig_model, tripo_animate_model, tripo_list_animation_presets, tripo_generate_motion, tripo_apply_motion,
+              tripo_list_motions, tripo_get_motion, tripo_generate_uv, tripo_apply_uv, tripo_get_uv_context,
+              tripo_preview_texture_edit, tripo_apply_texture_edits, tripo_inspect_local_parts, tripo_edit_parts,
+              tripo_bake_texture_projection, tripo_paint_texture, tripo_crop_image, tripo_list_image_assets, tripo_get_image_asset,
+              tripo_generate_multiview]
     tripo-ops:
       command: node
       args: ["${plugin}/ops.mjs", --server, "${setting.server}", --package, "${setting.package}", --ceiling, "${setting.ceiling}"]
@@ -62,7 +68,65 @@ operations:
         format: { type: string, enum: [glb, fbx, obj, usdz, stl, 3mf] }
         name: { type: string, description: "file name without extension (default: model)" }
         character_name: { type: string }
+        model_version: { type: string }
+        quad: { type: boolean }
+        smart_poly: { type: boolean }
+        generate_parts: { type: boolean, description: "split into parts while generating (needed for later part work)" }
+        t_pose: { type: boolean }
+        geometry_quality: { type: string }
+        symmetry: { type: string }
+        delight: { type: boolean }
+        texture_alignment: { type: string }
+        enable_image_autofix: { type: boolean }
+        segmentation_granularity: { type: string }
     run: { mcp: tripo-ops, tool: tripo_make_model, out_arg: out_dir }
     quote: { unit: credits, tool: tripo_price }
     output: { files: ["*.glb", "*.fbx", "*.obj", "*.usdz", "*.stl", "*.3mf", "*.zip"] }
     timeout_minutes: 90
+  operate:
+    description: >-
+      Any other paid Studio operation on an existing project or asset - segment_model, complete_parts, remesh_model, generate_texture,
+      generate_pbr, upscale_texture, rig_model, animate_model, generate_motion, apply_motion, generate_uv, generate_multiview,
+      preview_texture_edit, apply_texture_edits. args are that Tripo tool's own arguments (project_id from an earlier job's
+      result.json). Waited for; the resulting model is downloaded when there is one. Paid in Tripo credits.
+    input:
+      type: object
+      required: [tool, args]
+      additionalProperties: false
+      properties:
+        tool: { type: string, enum: [generate_multiview, segment_model, complete_parts, remesh_model, generate_texture, generate_pbr, upscale_texture, rig_model, animate_model, generate_motion, apply_motion, generate_uv, preview_texture_edit, apply_texture_edits] }
+        args: { type: object }
+        download: { type: boolean }
+        format: { type: string, enum: [glb, fbx, obj, usdz, stl, 3mf] }
+        name: { type: string }
+    run: { mcp: tripo-ops, tool: tripo_operate, out_arg: out_dir }
+    quote: { unit: credits, tool: tripo_price_op }
+    output: { files: ["*.glb", "*.fbx", "*.obj", "*.usdz", "*.stl", "*.3mf", "*.zip", "result.json"] }
+    timeout_minutes: 90
+  operate-free:
+    description: A free Studio operation - import_model (a local GLB/FBX/OBJ becomes a Studio project), export_model, apply_uv. Waited for; a model result is downloaded.
+    input:
+      type: object
+      required: [tool, args]
+      additionalProperties: false
+      properties:
+        tool: { type: string, enum: [import_model, export_model, apply_uv] }
+        args: { type: object }
+        download: { type: boolean }
+        format: { type: string, enum: [glb, fbx, obj, usdz, stl, 3mf] }
+        name: { type: string }
+    run: { mcp: tripo-ops, tool: tripo_operate_free, out_arg: out_dir }
+    output: { files: ["*.glb", "*.fbx", "*.obj", "*.usdz", "*.stl", "*.3mf", "*.zip", "result.json"] }
+    timeout_minutes: 60
+  read:
+    description: A read-only or local Studio tool - get_model (include parts / animation_presets), list_models, get_task, list_tasks, list_animation_presets, list_motions, get_motion, get_uv_context, inspect_local_parts, render_model, edit_parts, bake_texture_projection, paint_texture, crop_image, get_payment, list_operations. Its answer is kept as result.json.
+    input:
+      type: object
+      required: [tool, args]
+      additionalProperties: false
+      properties:
+        tool: { type: string, enum: [get_model, list_models, get_task, list_tasks, list_animation_presets, list_motions, get_motion, get_uv_context, inspect_local_parts, render_model, edit_parts, bake_texture_projection, paint_texture, crop_image, get_payment, list_operations] }
+        args: { type: object }
+    run: { mcp: tripo-ops, tool: tripo_read, out_arg: out_dir }
+    output: { files: ["result.json", "*.webp", "*.png", "*.glb"] }
+    timeout_minutes: 20

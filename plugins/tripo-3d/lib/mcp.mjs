@@ -66,7 +66,9 @@ export async function connect(command, args, { env = process.env, timeoutMs = 18
     if (r?.isError) throw new Error(`${name}: ${text.slice(0, 600) || 'error'}`);
     return { value, text };
   };
-  return { call, close };
+  /** The server's tool list (name, description, inputSchema). */
+  const list = async () => (await request('tools/list', {}))?.tools ?? [];
+  return { call, list, close };
 }
 
 /** The first value under `key` anywhere in `value` (breadth first). */

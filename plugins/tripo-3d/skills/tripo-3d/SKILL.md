@@ -22,5 +22,13 @@ that account's wallet. Use only the `tripo_*` tools; never another 3D service un
    before and after).
 6. **Report** the task ids, the settings (tier, face limit, texture), the credits spent and the files.
 
+**Other operations** (plugin 1.1): parts - `tripo_segment_model`, then `tripo_complete_parts` (quick_cap closes holes,
+ai_completion regrows a part; part names from `tripo_get_model` include parts) and `tripo_remesh_model` per part; textures -
+`tripo_generate_texture` (whole model or `part_names`), `tripo_upscale_texture`, Magic Brush (`tripo_render_model` ->
+`tripo_preview_texture_edit` -> `tripo_apply_texture_edits`); rigging - `tripo_rig_model` (V3, `skeleton_preset` unity for
+Unity Humanoid), `tripo_animate_model` with a preset id, or `tripo_generate_motion` + `tripo_apply_motion`; Smart UV -
+`tripo_generate_uv` then `tripo_apply_uv`; `tripo_import_model` brings a local GLB in (free). Every paid one follows steps 2-5.
+Tripo's own quote may say unknown (its pricing table expired): then quote the project's ceiling and book what the wallet shows.
+
 A white mesh (`smart_mesh`) has no textures: texture it with `tripo_generate_texture`, then `tripo_generate_pbr`, as the order asks.
 An order or a note may change any of this; it wins over this skill.
