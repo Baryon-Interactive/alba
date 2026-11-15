@@ -99,6 +99,53 @@ test('base_merged counts base commits unreachable from the delivery, honoring ma
   assert.equal(check().ok, true);
 });
 
+function landOnMain(f: ReturnType<typeof fixture>) {
+  git(f.root, 'switch', '-q', 'main');
+  mkdirSync(path.join(f.root, 'shared'));
+  writeFileSync(path.join(f.root, 'shared', 'ba1.txt'), 'merged order BA1\n');
+  writeFileSync(path.join(f.root, 'generated.txt'), 'changed by merged order ST1\n');
+  git(f.root, 'add', '.'); git(f.root, 'commit', '-qm', 'merged orders BA1 and ST1');
+  git(f.root, 'switch', '-q', 'delivery');
+}
+
+test('base_intact passes a normal branch and a branch that merged the base and kept working', () => {
+  const f = fixture({ base_intact: true });
+  f.deliver();
+  const check = () => deliveryChecks(f.project, f.orders.get('T1'), f.root).find(i => i.name === 'base_intact')!;
+  assert.equal(check().ok, true);
+  landOnMain(f);
+  // Behind the base without merging it is base_merged's concern, not undone base work.
+  assert.equal(check().ok, true);
+  git(f.root, 'merge', '-qm', 'merge base', 'main');
+  writeFileSync(path.join(f.root, 'feature.txt'), 'feature, continued\n');
+  writeFileSync(path.join(f.root, 'shared', 'ba1.txt'), 'merged order BA1, extended by this order\n');
+  git(f.root, 'add', '.'); git(f.root, 'commit', '-qm', 'continue after merge');
+  assert.equal(check().ok, true, check().detail);
+});
+
+test('base_intact fails a branch that reverted its merge of the base and names the undone files', () => {
+  const f = fixture({ base_merged: true }, 'auto');
+  landOnMain(f);
+  git(f.root, 'merge', '-qm', 'merge base', 'main');
+  git(f.root, 'revert', '--no-edit', '-m', '1', 'HEAD');
+  writeFileSync(path.join(f.root, 'feature.txt'), 'feature, continued\n');
+  git(f.root, 'add', '.'); git(f.root, 'commit', '-qm', 'continue after revert');
+  const items = () => deliveryChecks(f.project, f.orders.get('T1'), f.root);
+  assert.deepEqual(items().map(i => i.name), ['base_merged', 'base_intact']);
+  assert.equal(items()[0].ok, true, 'base commits stay reachable after the revert');
+  const intact = items()[1];
+  assert.equal(intact.ok, false);
+  assert.match(intact.detail, /2 file\(s\).*generated\.txt, shared\/ba1\.txt\..*Revert commit\(s\): \w+ Revert "merge base"/);
+  assert.doesNotMatch(intact.detail, /feature\.txt/);
+  f.deliver(); lintDelivery(f.project, f.orders, 'T1');
+  assert.equal(f.orders.stage(f.orders.get('T1')).stage, 'queued');
+  const note = f.orders.get('T1').actions.find(a => a.lint)!.note!;
+  assert.match(note, /1\. base_intact: .*generated\.txt, shared\/ba1\.txt/);
+  assert.equal(deliveryChecks(f.config({ base_intact: false }), f.orders.get('T1'), f.root).some(i => i.name === 'base_intact'), false);
+  git(f.root, 'revert', '--no-edit', 'HEAD~1');
+  assert.equal(items()[1].ok, true, items()[1].detail);
+});
+
 test('generated_paths checks committed diffs against the merge base and instructs restoration', () => {
   const f = fixture({ generated_paths: ['**/generated.*'] });
   f.deliver();
@@ -214,7 +261,7 @@ test('run completion and imported deliveries automatically record lint and bounc
 
 test('delivery check configuration rejects invalid values without adding dependencies', () => {
   const f = fixture();
-  for (const bad of [{ report_required: 'yes' }, { base_merged: { max_behind: -1 } }, { base_merged: {} }, { generated_paths: 'cache/**' }, { report_must_match: [{ pattern: '[', message: 'bad' }] }, { report_must_not_match: [{ pattern: 'x' }] }]) assert.throws(() => f.config(bad));
+  for (const bad of [{ report_required: 'yes' }, { base_merged: { max_behind: -1 } }, { base_merged: {} }, { base_intact: 'yes' }, { generated_paths: 'cache/**' }, { report_must_match: [{ pattern: '[', message: 'bad' }] }, { report_must_not_match: [{ pattern: 'x' }] }]) assert.throws(() => f.config(bad));
 });
 
 test('console API retains delivery findings after rework and marks both board summary paths', async () => {

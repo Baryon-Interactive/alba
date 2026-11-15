@@ -9,10 +9,10 @@ import { findOrderFile } from '../run/prompt.ts';
 import { parseOrderSections } from '../verify/verify.ts';
 import { changedFiles, globToRegExp, type CheckItem } from './general.ts';
 
-export const hasDeliveryChecks = (c: ChecksConfig): boolean => !!(c.report_required || c.revision_is_head || c.base_merged || c.generated_paths?.length || c.evidence_required || c.report_must_match?.length || c.report_must_not_match?.length);
+export const hasDeliveryChecks = (c: ChecksConfig): boolean => !!(c.report_required || c.revision_is_head || c.base_merged || c.base_intact || c.generated_paths?.length || c.evidence_required || c.report_must_match?.length || c.report_must_not_match?.length);
 
 function git(cwd: string, args: string[]): string {
-  return execFileSync('git', ['--no-optional-locks', '-C', cwd, ...args], { encoding: 'utf8', windowsHide: true, timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync('git', ['--no-optional-locks', '-C', cwd, ...args], { encoding: 'utf8', windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function expandTag(text: string, tag: string, regex = false): string {
@@ -40,6 +40,33 @@ function worktreeMatches(root: string, glob: string): boolean {
     return false;
   };
   return walk(base);
+}
+
+const nameList = (out: string): string[] => out.split('\0').filter(Boolean);
+
+/**
+ * Files the base changed between this branch's fork point and the merge base, that HEAD still has at the
+ * fork-point content. A branch that merged the base and then reverted that merge (git revert -m 1) passes
+ * base_merged, because the base commits stay reachable, but merging it would delete the base's work.
+ * The fork point is the parent of the oldest first-parent commit not reachable from the base.
+ */
+export function revertedBaseFiles(worktree: string, base: string, head = 'HEAD'): { files: string[]; reverts: string[] } {
+  const none = { files: [], reverts: [] };
+  const own = git(worktree, ['rev-list', '--first-parent', head, '--not', base]).split(/\r?\n/).filter(Boolean);
+  if (!own.length) return none;
+  const parents = git(worktree, ['rev-list', '--parents', '-n', '1', own.at(-1)!]).split(' ');
+  const fork = parents[1];
+  if (!fork) return none;
+  const mergeBase = git(worktree, ['merge-base', base, head]);
+  if (mergeBase === fork) return none;
+  const diff = (from: string, to: string) => nameList(git(worktree, ['-c', 'core.quotepath=false', 'diff', '--no-renames', '--name-only', '-z', from, to]));
+  const baseChanged = diff(fork, mergeBase);
+  if (!baseChanged.length) return none;
+  const branchDiffers = new Set(diff(fork, head));
+  const files = baseChanged.filter(f => !branchDiffers.has(f));
+  if (!files.length) return none;
+  const reverts = git(worktree, ['log', '--format=%h %s', '--grep=^This reverts commit', `${base}..${head}`]).split(/\r?\n/).filter(Boolean).slice(0, 5);
+  return { files, reverts };
 }
 
 /** Optional checks, shared by the delivery gate and the explicit check command. */
@@ -73,6 +100,13 @@ export function deliveryChecks(project: ProjectConfig, doc: OrderDoc, worktree: 
     const max = typeof cfg.base_merged === 'object' ? cfg.base_merged.max_behind : 0;
     const behind = Number(git(worktree, ['rev-list', '--count', `HEAD..${base}`]));
     return { ok: behind <= max, detail: `${behind} base commit(s) behind ${base}, allowed ${max}.${behind > max ? ' Merge the base branch into this branch and resolve conflicts.' : ''}` };
+  });
+  if (cfg.base_intact ?? !!cfg.base_merged) add('base_intact', () => {
+    const undone = revertedBaseFiles(worktree, base);
+    if (!undone.files.length) return { ok: true, detail: `No base work merged from ${base} is undone in HEAD.` };
+    const shown = undone.files.slice(0, 40), more = undone.files.length - shown.length;
+    const reverts = undone.reverts.length ? ` Revert commit(s): ${undone.reverts.join('; ')}.` : '';
+    return { ok: false, detail: `${undone.files.length} file(s) that ${base} changed after this branch forked are back at their fork-point content in HEAD, so merging would undo merged work: ${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''}.${reverts} Merge ${base} again without reverting it (or restore these files from ${base}), and change only this order's own files.` };
   });
   if (cfg.generated_paths?.length) add('generated_paths', () => {
     const hit = changedFiles(worktree, base).filter(f => cfg.generated_paths!.some(g => globToRegExp(g).test(f.path))).map(f => f.path);

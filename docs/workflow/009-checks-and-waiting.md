@@ -29,6 +29,7 @@ checks:
   report_required: true
   revision_is_head: true
   base_merged: true                 # same as { max_behind: 0 }
+  base_intact: true                 # default: on when base_merged is on
   generated_paths: ["generated/**", "docs/build-output.md"]
   evidence_required: true
   report_must_match:
@@ -44,6 +45,7 @@ checks:
 | `report_required` | The final delivery has a valid final report block (or a valid standalone report JSON file). Inferred free-text/git deliveries fail. Write a complete final block to repair it. |
 | `revision_is_head` | The report's `revision` resolves to the worktree's HEAD. A missing `revision` fails even when `commits` lists HEAD. Full hashes and unambiguous abbreviated hashes are supported. Report the current HEAD after committing repairs. |
 | `base_merged` | At most `max_behind` commits of `dispatch.base_ref` are unreachable from HEAD. Merge the base and resolve conflicts to repair it. The mapping requires a nonnegative integer; `true` means zero and `false` disables the check. |
+| `base_intact` | No file that `dispatch.base_ref` changed between the branch's fork point (the parent of its oldest first-parent commit not in the base) and the merge base is back at its fork-point content in HEAD. A branch that merged the base and then reverted that merge passes `base_merged` but fails here; the finding lists the files and the revert commits. Merge the base again without reverting it, or restore the files from the base. On whenever `base_merged` is on, unless `base_intact: false`. |
 | `generated_paths` | No matching tracked file differs between the merge base with `dispatch.base_ref` and HEAD, including deletions. Restore generated paths from the merge base; do not commit build-regenerated data. |
 | `evidence_required` | Every file path under the order's `## Evidence` exists in HEAD or the order's worktree; each glob needs at least one file. Create the missing evidence in this order's branch or worktree. |
 | `report_must_match` / `report_must_not_match` | Each regular expression matches / does not match the structured report plus the original final message. Failures include the configured repair `message`. Expressions use multiline matching; `{tag}` and `{tag_lower}` expand literally in patterns and as text in messages. |

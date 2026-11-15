@@ -83,6 +83,7 @@ export interface ChecksConfig {
   report_required?: boolean;
   revision_is_head?: boolean;
   base_merged?: boolean | { max_behind: number };
+  base_intact?: boolean;            // default: on when base_merged is on
   generated_paths?: string[];
   evidence_required?: boolean;
   report_must_match?: { pattern: string; message: string }[];
@@ -911,10 +912,10 @@ function validateChecks(raw: unknown, file: string, base: string): ChecksConfig 
   const out: ChecksConfig = { clean_worktree: true, ahead_of_base: true, protected_paths: [], forbidden_tracked: [], encoding_scan: true };
   if (raw === undefined) return out;
   if (!isRecord(raw)) fail('{file}: "checks" must be a mapping.', { file });
-  const known = ['clean_worktree', 'ahead_of_base', 'protected_paths', 'forbidden_tracked', 'encoding_scan', 'max_new_file_kb', 'references', 'result_parser', 'report_required', 'revision_is_head', 'base_merged', 'generated_paths', 'evidence_required', 'report_must_match', 'report_must_not_match'];
+  const known = ['clean_worktree', 'ahead_of_base', 'protected_paths', 'forbidden_tracked', 'encoding_scan', 'max_new_file_kb', 'references', 'result_parser', 'report_required', 'revision_is_head', 'base_merged', 'base_intact', 'generated_paths', 'evidence_required', 'report_must_match', 'report_must_not_match'];
   const unknown = Object.keys(raw).filter(k => !known.includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "checks": {keys}.', { file, keys: unknown.join(', ') });
-  for (const key of ['clean_worktree', 'ahead_of_base', 'encoding_scan', 'report_required', 'revision_is_head', 'evidence_required'] as const) {
+  for (const key of ['clean_worktree', 'ahead_of_base', 'encoding_scan', 'report_required', 'revision_is_head', 'base_intact', 'evidence_required'] as const) {
     const v = raw[key];
     if (v === undefined) continue;
     if (typeof v !== 'boolean') fail('{file}: "checks.{key}" must be true or false.', { file, key });
