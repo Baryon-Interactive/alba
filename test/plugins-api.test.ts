@@ -48,7 +48,7 @@ test('GET /api/plugins: every plugin with settings, servers, env names (set or n
     const v = r.body;
     assert.equal(v.project, 'demo');
     assert.deepEqual(v.enable, ['image-gateway', 'example-echo']);
-    assert.deepEqual(v.tools.map((x: { id: string }) => x.id), ['example-echo', 'image-gateway', 'tripo-3d']);
+    assert.deepEqual(v.tools.map((x: { id: string }) => x.id), ['audio-studio', 'example-echo', 'image-gateway', 'tripo-3d']);
     const image = v.tools.find((x: { id: string }) => x.id === 'image-gateway');
     assert.equal(image.enabled, true);
     assert.equal(image.origin, 'built-in');

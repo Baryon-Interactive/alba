@@ -79,7 +79,7 @@ test('project config: enable loads the tools, by_kind names enabled tools only, 
   assert.equal(cfg.resources!['mesh-wallet']!.slots, 2);
   assert.equal(cfg.resources!.gpu!.slots, 1, 'a resource the project declares wins');
   const bad = (plugins: unknown, pattern: RegExp) => assert.throws(() => validateProject({ ...base, plugins }, path.join(dir, 'alba.yaml')), pattern);
-  bad({ enable: ['nope'] }, /plugins\.enable": no plugin "nope" \(found: example-echo, image-gateway, tripo-3d\)/);
+  bad({ enable: ['nope'] }, /plugins\.enable": no plugin "nope" \(found: audio-studio, example-echo, image-gateway, tripo-3d\)/);
   bad({ enable: ['mesh'], sources: [{ path: 'tools' }], by_kind: { model: ['example-echo'] } }, /plugins\.by_kind\.model": "example-echo" is not in plugins\.enable/);
   bad({ sources: [{ git: 'https://example.com/x.git' }] }, /git and npm sources are not supported yet/);
   bad({ enable: ['mesh'], extra: 1 }, /unknown key\(s\) under "plugins": extra/);

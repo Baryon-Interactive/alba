@@ -1,0 +1,53 @@
+# Music and sound effects from Stable Audio 3 running on this machine, through the audio-studio-mcp server
+# (https://github.com/kanaworksai-hue/audio-studio-mcp, MIT). The server is installed once per machine; this plugin starts it only for
+# the runs and jobs that use the tool, so no agent session keeps its own copy alive (each one held ~1.4 GB before 0.2.1's lazy loading).
+# Enable it with   plugins: { enable: [audio-studio], settings: { audio-studio: { server: <path>/.venv/Scripts/audio-studio-mcp.exe } } }
+id: audio-studio
+version: 1.0.0
+apiVersion: 1
+kinds: [tool]
+description: Generates, edits and exports music, instrument loops and sound effects with Stable Audio 3 on this machine's GPU (local, free).
+
+settings:
+  server:
+    description: The audio-studio-mcp program (an absolute path, e.g. <checkout>/.venv/Scripts/audio-studio-mcp.exe on Windows, or a name on PATH).
+    default: audio-studio-mcp
+  output_dir:
+    description: Where a worker's calls write their files (an absolute folder); empty for the server's own folder (AUDIO_STUDIO_OUTPUT_DIR, else <checkout>/outputs). Alba's own jobs always write into the job's folder.
+    default: ""
+
+agent:
+  mcp:
+    audio:
+      command: "${setting.server}"
+      args: [--output-dir, "${setting.output_dir}"]
+      tools: [generate_audio, edit_audio, process_audio, unload_models]
+  skill: skills/audio-studio
+
+machines:
+  probe: ["${setting.server}", --check]
+
+resources:
+  # One Stable Audio 3 model on the GPU at a time: medium takes ~12 GB while loaded, two would not fit beside a game editor.
+  audio-gpu: { slots: 1 }
+
+# Alba's own calls run the server once per job (--call): the model loads, the tool runs, the process exits and frees the GPU.
+operations:
+  generate:
+    description: Music, an instrument loop or stem, or a sound effect from text; one 44.1 kHz 24-bit WAV per candidate (variations 1-4), each with a .json sidecar (prompt, seed, settings).
+    input: schemas/generate.json
+    run: { cli: ["${setting.server}", --output-dir, "{out}", --call, generate_audio, --input, "{input}"] }
+    output: { files: ["*.wav"] }
+    timeout_minutes: 30
+  edit:
+    description: An existing clip changed - variation (audio to audio), inpaint a time range, or continue it to a longer length; one WAV per candidate.
+    input: schemas/edit.json
+    run: { cli: ["${setting.server}", --output-dir, "{out}", --call, edit_audio, --input, "{input}"] }
+    output: { files: ["*.wav"] }
+    timeout_minutes: 30
+  process:
+    description: Trim, trim silence, mono, normalize (peak or LUFS), seamless loop and fades, exported as 48 or 44.1 kHz WAV, OGG Vorbis or FLAC; loads no model.
+    input: schemas/process.json
+    run: { cli: ["${setting.server}", --output-dir, "{out}", --call, process_audio, --input, "{input}"] }
+    output: { files: ["*.wav", "*.ogg", "*.flac"] }
+    timeout_minutes: 10

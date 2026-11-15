@@ -229,6 +229,26 @@ Tripo Studio with the member account logged in on the machine (no API key), thro
 
 It holds `tripo-wallet` (2 slots) while it runs.
 
+### `audio-studio`: music and sound effects
+
+Stable Audio 3 on the machine's own GPU through [audio-studio-mcp](https://github.com/kanaworksai-hue/audio-studio-mcp) (installed
+once per machine; the model weights are under the Stability AI Community License). Local and free, so no quote and no order needed.
+
+- **Workers** get the `audio` server with `generate_audio`, `edit_audio` (variation, inpaint, continue), `process_audio` (trim, loop,
+  fades, peak or LUFS normalize, 48 kHz WAV/OGG/FLAC) and `unload_models`, and a skill (prompt shapes per audio type, lengths,
+  candidates by seed, export for the game, provenance). The server lives as long as the run: no agent session keeps its own copy.
+- **Alba** has the operations `generate`, `edit` and `process`, with the inputs of those tools. Each job runs the server once
+  (`audio-studio-mcp --output-dir <job folder> --call <tool> --input <file>`): the model loads, the files and their `.json` sidecars
+  are written into the job folder, the answer (paths, seeds, peaks) is the job's text, and the process exits, freeing the GPU.
+
+| Setting | Default | |
+|---|---|---|
+| `server` | `audio-studio-mcp` | the program: an absolute path such as `<checkout>/.venv/Scripts/audio-studio-mcp.exe`, or a name on PATH |
+| `output_dir` | empty | where a worker's calls write; empty for the server's own folder |
+
+It holds `audio-gpu` (1 slot) while a run or job uses it: one model on the GPU at a time (medium takes about 12 GB while loaded). The
+probe is `audio-studio-mcp --check` (the runtime is installed; no model is loaded).
+
 ```yaml
 # A local images gateway, and the Tripo plugin Codex already has installed
 plugins:

@@ -1,0 +1,126 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "input_audio": {
+      "description": "Absolute path to an audio file (any format soundfile/ffmpeg reads).",
+      "type": "string"
+    },
+    "start_seconds": {
+      "default": 0.0,
+      "description": "Trim: keep from here.",
+      "minimum": 0,
+      "type": "number"
+    },
+    "end_seconds": {
+      "minimum": 0,
+      "default": null,
+      "description": "Trim: keep until here (default: end).",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "trim_silence": {
+      "default": false,
+      "description": "Cut leading/trailing silence (useful for one-shot SFX).",
+      "type": "boolean"
+    },
+    "silence_threshold_db": {
+      "default": -50.0,
+      "maximum": -10,
+      "minimum": -90,
+      "type": "number"
+    },
+    "mono": {
+      "default": false,
+      "description": "Downmix to mono (common for positional game SFX).",
+      "type": "boolean"
+    },
+    "normalize": {
+      "default": "none",
+      "description": "none = only the safety ceiling; peak = scale so the peak hits peak_ceiling_db; loudness = EBU R128 to target_lufs, two-pass, linear gain when the true-peak limit allows it, otherwise ffmpeg's dynamic mode (reported as loudnorm_mode); the peak ceiling is applied afterwards.",
+      "enum": [
+        "none",
+        "peak",
+        "loudness"
+      ],
+      "type": "string"
+    },
+    "target_lufs": {
+      "default": -16.0,
+      "description": "loudness mode: -14 streaming/video, -16 game BGM, -23 broadcast. SFX are usually peak-normalized instead.",
+      "maximum": -5,
+      "minimum": -40,
+      "type": "number"
+    },
+    "peak_ceiling_db": {
+      "default": -1.0,
+      "description": "Peak ceiling / target in dBFS.",
+      "maximum": 0,
+      "minimum": -24,
+      "type": "number"
+    },
+    "loop": {
+      "default": false,
+      "description": "Make a seamless loop by crossfading the tail into the head (output gets shorter by loop_crossfade_ms).",
+      "type": "boolean"
+    },
+    "loop_crossfade_ms": {
+      "default": 200.0,
+      "description": "Loop crossfade: ~50–200 ms for rhythmic BGM cut on a bar, 500–2000 ms for ambience.",
+      "maximum": 5000,
+      "minimum": 1,
+      "type": "number"
+    },
+    "fade_in_ms": {
+      "default": 0.0,
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "number"
+    },
+    "fade_out_ms": {
+      "default": 0.0,
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "number"
+    },
+    "format": {
+      "default": "wav",
+      "description": "wav = 24-bit PCM; ogg = Ogg Vorbis (Unity/Godot); flac = 24-bit lossless.",
+      "enum": [
+        "wav",
+        "ogg",
+        "flac"
+      ],
+      "type": "string"
+    },
+    "sample_rate": {
+      "default": 48000,
+      "description": "48000 for video; 44100 keeps the model's native rate (no resampling).",
+      "enum": [
+        44100,
+        48000
+      ],
+      "type": "integer"
+    },
+    "ogg_quality": {
+      "default": 0.6,
+      "description": "Vorbis quality 0.1–1.0 (0.6 ≈ 190 kbps stereo).",
+      "maximum": 1.0,
+      "minimum": 0.1,
+      "type": "number"
+    },
+    "title": {
+      "default": null,
+      "description": "Output file name stem. Default: <input>_proc.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "input_audio"
+  ]
+}

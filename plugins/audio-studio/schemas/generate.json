@@ -1,0 +1,124 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "prompt": {
+      "default": "",
+      "description": "English description (see server instructions). Optional for sfx when the sound_* fields are given.",
+      "type": "string"
+    },
+    "audio_type": {
+      "default": "music",
+      "description": "music = BGM / full instrumental track; instrument = solo instrument, stem or loop; sfx = sound effect, ambience or one-shot; raw = no prefix (prompt used verbatim)",
+      "enum": [
+        "music",
+        "instrument",
+        "sfx",
+        "raw"
+      ],
+      "type": "string"
+    },
+    "duration_seconds": {
+      "maximum": 380,
+      "minimum": 0.5,
+      "default": null,
+      "description": "Length in seconds. Default: music 60, instrument 12, sfx 5, raw 30.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "variations": {
+      "default": 1,
+      "description": "Number of candidates (different seeds) to generate in one call.",
+      "maximum": 4,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "bpm": {
+      "maximum": 300,
+      "minimum": 30,
+      "default": null,
+      "description": "Tempo for music/instrument; appended as 'BPM: N.'",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "sound_source": {
+      "default": "",
+      "description": "SFX: what makes the sound (object, instrument, creature, machine).",
+      "type": "string"
+    },
+    "sound_action": {
+      "default": "",
+      "description": "SFX: how it is triggered and evolves over time (attack, decay, movement).",
+      "type": "string"
+    },
+    "sound_material": {
+      "default": "",
+      "description": "SFX: material, texture, timbre.",
+      "type": "string"
+    },
+    "sound_space": {
+      "default": "",
+      "description": "SFX: space and recording (indoor/outdoor, distance, dry/reverberant, mic).",
+      "type": "string"
+    },
+    "seed": {
+      "maximum": 2147483643,
+      "minimum": -1,
+      "default": null,
+      "description": "Base seed for reproducibility; omit or -1 for random.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "negative_prompt": {
+      "default": null,
+      "description": "Qualities to avoid. Only takes effect when cfg != 1.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cfg": {
+      "default": 1.0,
+      "description": "Guidance. 1.0 = official default; 3–7 = stricter prompt adherence (≈2× slower).",
+      "maximum": 15,
+      "minimum": 0,
+      "type": "number"
+    },
+    "steps": {
+      "default": 8,
+      "description": "Sampling steps; 8 is the official default.",
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "title": {
+      "default": null,
+      "description": "Short name; used as the file name and stored in metadata. Auto-named if omitted.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "original_idea": {
+      "default": "",
+      "description": "The user's original request, verbatim and in their language. Stored in metadata only.",
+      "type": "string"
+    },
+    "peak_ceiling_db": {
+      "maximum": 0,
+      "minimum": -24,
+      "default": -1.0,
+      "description": "Safety ceiling in dBFS: a louder peak is turned down to this, quieter audio is untouched. null disables.",
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  }
+}

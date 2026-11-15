@@ -1,0 +1,150 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "input_audio": {
+      "description": "Absolute path to an existing audio file (wav/mp3/flac/ogg).",
+      "type": "string"
+    },
+    "mode": {
+      "description": "variation = audio-to-audio remix/style or timbre transfer of the whole clip; inpaint = regenerate only [start,end] and keep the rest; continue = extend the clip to duration_seconds, regenerating from just before the end of its audible content (see overlap_seconds)",
+      "enum": [
+        "variation",
+        "inpaint",
+        "continue"
+      ],
+      "type": "string"
+    },
+    "prompt": {
+      "default": "",
+      "description": "What the result (or the regenerated region) should sound like. May be empty for continue.",
+      "type": "string"
+    },
+    "audio_type": {
+      "default": "music",
+      "description": "Same prefixes as generate_audio.",
+      "enum": [
+        "music",
+        "instrument",
+        "sfx",
+        "raw"
+      ],
+      "type": "string"
+    },
+    "strength": {
+      "default": 0.6,
+      "description": "variation only: init noise level. ~0.4 keeps melody/rhythm (timbre transfer), ~0.6 style transfer, 0.8+ loose.",
+      "maximum": 1.0,
+      "minimum": 0.05,
+      "type": "number"
+    },
+    "start_seconds": {
+      "minimum": 0,
+      "default": null,
+      "description": "inpaint only: region start.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "end_seconds": {
+      "minimum": 0,
+      "default": null,
+      "description": "inpaint only: region end.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "duration_seconds": {
+      "maximum": 380,
+      "minimum": 0.5,
+      "default": null,
+      "description": "Output length. variation/inpaint default = input length; continue = required total length (> input length).",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "overlap_seconds": {
+      "default": 1.0,
+      "description": "continue only: start regenerating this many seconds before the end of the audible content, so a trailing fade or silence is replaced and the join is smooth.",
+      "maximum": 10,
+      "minimum": 0,
+      "type": "number"
+    },
+    "variations": {
+      "default": 1,
+      "description": "Number of candidates (different seeds).",
+      "maximum": 4,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "bpm": {
+      "maximum": 300,
+      "minimum": 30,
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "seed": {
+      "maximum": 2147483643,
+      "minimum": -1,
+      "default": null,
+      "description": "Base seed for reproducibility; omit or -1 for random.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "negative_prompt": {
+      "default": null,
+      "description": "Only used when cfg != 1.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cfg": {
+      "default": 1.0,
+      "maximum": 15,
+      "minimum": 0,
+      "type": "number"
+    },
+    "steps": {
+      "default": 8,
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "title": {
+      "default": null,
+      "description": "Short name; used as the file name and stored in metadata. Auto-named if omitted.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "original_idea": {
+      "default": "",
+      "description": "The user's original request, verbatim and in their language. Stored in metadata only.",
+      "type": "string"
+    },
+    "peak_ceiling_db": {
+      "maximum": 0,
+      "minimum": -24,
+      "default": -1.0,
+      "description": "Safety ceiling in dBFS: a louder peak is turned down to this, quieter audio is untouched. null disables.",
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "input_audio",
+    "mode"
+  ]
+}
