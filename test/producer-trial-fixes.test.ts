@@ -168,3 +168,30 @@ test('Claude usage: the final message_delta counts, not the provisional message_
   ]);
   assert.deepEqual([plain.uncached_input_tokens, plain.cache_read_input_tokens, plain.output_tokens], [100, 1000, 40]);
 });
+
+test('work sessions: a live process whose start time cannot be read yet is not refused; a known different one is', async () => {
+  const f = await fixture({ populate: false, project: settings() });
+  const p = f.board.ctx.projects[0], base = workProbes(f), recorded = '2026-01-01T00:00:00Z';
+  writeStateFile(p, '_producer-cases.json', JSON.stringify([card('blocked'), card('question'), card('stale')]));
+  const finish = (log: string) => writeFileSync(log, JSON.stringify({ type: 'result', result: `--- alba-producer-work ---\n${JSON.stringify({ summary: 'Findings', finding: 'Stored facts agree' })}\n--- end ---` }) + '\n');
+  // The process table has not read the new pid yet (startedAtForCheck answers undefined): the run stays open, then its result counts.
+  const unknown = { ...base, isAlive: () => true, processStartedAt: () => undefined };
+  const first = startProducerWork(p, f.orders, 'blocked/SAMPLE', 'work', 'Inspect it', { ...base, isAlive: () => true });
+  assert.equal(first.process_started_at, recorded);
+  pollProducerWorks(p, unknown);
+  assert.equal(producerWorks(p).find(r => r.id === first.id)?.status, 'running');
+  finish(first.log);
+  pollProducerWorks(p, unknown);
+  assert.equal(producerWorks(p).find(r => r.id === first.id)?.status, 'done');
+  // A known start time that is not the recorded one is another process: refused.
+  const second = startProducerWork(p, f.orders, 'question/SAMPLE', 'work', 'Inspect it', { ...base, isAlive: () => true });
+  pollProducerWorks(p, { ...base, isAlive: () => true, processStartedAt: () => '2026-01-01T00:05:00Z' });
+  assert.match(producerWorks(p).find(r => r.id === second.id)?.reason ?? '', /identity is missing or changed/);
+  // No start time recorded at launch: a process created within the launch window is the run's own, a later one is not.
+  const third = startProducerWork(p, f.orders, 'stale/SAMPLE', 'work', 'Inspect it', { ...base, isAlive: () => true, processStartedAt: () => undefined });
+  assert.equal(third.process_started_at, undefined);
+  pollProducerWorks(p, { ...base, isAlive: () => true, processStartedAt: () => new Date(Date.parse(third.started) + 2000).toISOString() });
+  assert.equal(producerWorks(p).find(r => r.id === third.id)?.status, 'running');
+  pollProducerWorks(p, { ...base, isAlive: () => true, processStartedAt: () => new Date(Date.parse(third.started) + 600_000).toISOString() });
+  assert.equal(producerWorks(p).find(r => r.id === third.id)?.status, 'failed');
+});

@@ -5,7 +5,7 @@ import { producerWorkConfig, type ProjectConfig } from '../config.ts';
 import type { Orders } from '../orders/service.ts';
 import { readStateJson, stateTransaction, writeStateFile } from '../orders/state-files.ts';
 import { startedAtForCheck, systemProbes, type Probes } from '../tick/gather.ts';
-import { processStartMatches } from '../run/kill-tree.ts';
+import { runProcessMatches } from '../run/kill-tree.ts';
 import { producerActions as producerActionsOf, producerCases, producerState, type ProducerCase, type ProducerActionDetails } from './producer.ts';
 import { reserveDraftAllowance } from './drafting-budget.ts';
 import { isGoalDraft } from './goals.ts';
@@ -214,7 +214,9 @@ export function pollProducerWorks(project: ProjectConfig, probes: Probes = syste
   for (const run of producerWorks(project).filter(r => r.status === 'running')) {
     const now = probes.now(), live = run.pid && probes.isAlive(run.pid);
     const actual = live ? startedAtForCheck(probes, run.pid!) : undefined;
-    if (live && (!actual || !run.process_started_at || !processStartMatches(actual, run.process_started_at))) {
+    // An unknown start time is "cannot tell" (the process table has not read a pid started since its last refresh), so the
+    // run stays open; only a known time that is not the run's own (recorded, else its launch window) is another process.
+    if (live && actual && !runProcessMatches(actual, run.process_started_at, run.started)) {
       run.status = 'failed'; run.reason = 'Work process identity is missing or changed; result refused.';
     } else {
       let final: string | undefined, error: string | undefined, codexAnswer = '';
