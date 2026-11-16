@@ -136,6 +136,7 @@ const oneLine = (text: string, max = 200): string => text.replace(/\s+/g, ' ').t
 const NOISE = /rmcp::transport|ignoring unrecognized|unrecognized configuration|OutputTextDelta without active item|failed to refresh available models|^Reading additional input from stdin\.\.\.$/i;
 const OUTPUT_LIMIT_RE = /Incomplete response returned,\s*reason:\s*(?:max_output_tokens|length)\b|\bmax_output_tokens\b|finish_reason["':=\s]+length\b|stop_reason["':=\s]+max_tokens\b/i;
 const CONTEXT_LIMIT_RE = /context_length_exceeded|context_window_exceeded|model_context_window_exceeded|context window exceeded|ran out of room in the model's context window|maximum context length|prompt is too long/i;
+const STDERR_ERROR_LINE = /^(?:\S*\d{4}-\d\d-\d\dT\S*\s+)?(?:ERROR|FATAL)\b|^(?:error|fatal)\b\s*[:\[]|^Error:/i;
 const QUOTA_RE = /usage limit|hit your (?:usage |rate )?limit|limit (?:has been )?reached|(?:5|five)[- ]hour limit|weekly limit|insufficient[_ ]quota|exceeded your current quota|quota (?:exceeded|exhausted|used up)|out of (?:credits|quota)|billing hard limit/i;
 
 export function readExitReceipt(exitFile: string | undefined, reader: TailReader = systemTailReader): ExitReceipt | undefined {
@@ -403,17 +404,20 @@ function parseStderrTail(stderrTail: string): { stop?: StopSignal; errorLine?: s
     .filter(l => l && !l.startsWith('{') && !NOISE.test(l))
     .slice(-15);
   if (!lines.length) return {};
-  const joined = lines.join('\n');
+  // Limits are read only from lines that are errors themselves (`<time> ERROR ...`, `error: ...`): the lines after an error
+  // can be file content an engine echoes (a failed apply_patch prints the lines it looked for), which may mention any limit.
+  const errorLines = lines.filter(l => STDERR_ERROR_LINE.test(l));
+  const joined = errorLines.join('\n');
   if (CONTEXT_LIMIT_RE.test(joined)) {
-    const hit = lines.find(l => CONTEXT_LIMIT_RE.test(l)) ?? lines.at(-1)!;
+    const hit = errorLines.find(l => CONTEXT_LIMIT_RE.test(l)) ?? lines.at(-1)!;
     return { stop: { kind: 'context-limit', detail: oneLine(hit) }, errorLine: oneLine(hit) };
   }
   if (OUTPUT_LIMIT_RE.test(joined)) {
-    const hit = lines.find(l => OUTPUT_LIMIT_RE.test(l)) ?? lines.at(-1)!;
+    const hit = errorLines.find(l => OUTPUT_LIMIT_RE.test(l)) ?? lines.at(-1)!;
     return { stop: { kind: 'output-limit', detail: oneLine(hit) }, errorLine: oneLine(hit) };
   }
   if (QUOTA_RE.test(joined)) {
-    const hit = lines.find(l => QUOTA_RE.test(l)) ?? lines.at(-1)!;
+    const hit = errorLines.find(l => QUOTA_RE.test(l)) ?? lines.at(-1)!;
     return { stop: { kind: 'quota', detail: oneLine(hit) }, errorLine: oneLine(hit) };
   }
   return { errorLine: oneLine(lines.at(-1)!) };

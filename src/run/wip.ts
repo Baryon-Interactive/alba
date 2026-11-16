@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { EndKind } from './end-reason.ts';
@@ -138,7 +138,14 @@ export function saveWipSnapshot(worktree: string | undefined, options: SaveWipOp
     const tempIndex = path.join(tempDir, 'index');
     const indexEnv: NodeJS.ProcessEnv = { GIT_INDEX_FILE: tempIndex };
 
-    runGit(worktree, ['read-tree', head], { env: indexEnv });
+    // Start from a copy of the real index: it keeps the file stats, so `git add` only hashes what changed. A temporary index
+    // seeded by `read-tree` has none and would hash every tracked file again (minutes on a large Unreal worktree).
+    let seeded = false;
+    try {
+      const realIndex = runGit(worktree, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim();
+      if (realIndex && existsSync(realIndex)) { copyFileSync(realIndex, tempIndex); seeded = true; }
+    } catch { /* fall back to read-tree */ }
+    if (!seeded) runGit(worktree, ['read-tree', head], { env: indexEnv });
     if (!skipped.length) {
       runGit(worktree, ['add', '-A'], { env: indexEnv });
     } else {

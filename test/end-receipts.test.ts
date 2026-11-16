@@ -327,6 +327,20 @@ test('2. end-reason fixtures classify every kind, stop max_output_tokens from re
     codexHome,
   });
   assert.equal(vanishedRes.kind, 'vanished');
+
+  // file content echoed after an error line (a failed apply_patch) does not count as a limit; the error line itself does
+  const echoLog = writeLogFile('echo', '2026-11-15T17:00:00Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in src/a.ts:\n  const cap = { max_output_tokens: 128, note: "prompt is too long" };\n');
+  const echoRes = readRunEndReason({
+    run: { id: 'r1', engine: 'codex-cli', started: '2026-11-15T17:00:00Z', ended: '2026-11-15T17:01:00Z', log: echoLog, exit_file: writeReceiptFile('echo', { code: 1, open_turn: false }) },
+    codexHome,
+  });
+  assert.equal(echoRes.kind, 'nonzero-exit');
+  const limitLog = writeLogFile('limit', '2026-11-15T17:00:00Z ERROR codex_core::codex: Incomplete response returned, reason: max_output_tokens\n');
+  const limitRes = readRunEndReason({
+    run: { id: 'r1', engine: 'codex-cli', started: '2026-11-15T17:00:00Z', ended: '2026-11-15T17:01:00Z', log: limitLog, exit_file: writeReceiptFile('limit', { code: 1, open_turn: false }) },
+    codexHome,
+  });
+  assert.equal(limitRes.kind, 'output-limit');
 });
 
 test('3. rollout reader reads only the 256 KB tail of a 50 MB rollout file', () => {
@@ -609,7 +623,7 @@ test('6. alba clean removes merged worktrees and branches while leaving refs/alb
   const orders = new Orders(testStore(cfg.state_dir), () => '2026-01-01T00:00:00Z');
   orders.add({ tag: 'CLN1', title: 'Clean test', kind: 'sim', worktree: wt, branch: 'demo-cln1' });
   orders.act('CLN1', 'queue');
-  orders.runStart('CLN1', { worker: 'coder', pid: 60001, cwd: wt });
+  orders.runStart('CLN1', { worker: 'coder', extra: { pid: 60001, cwd: wt } });
 
   // Run 1 ends abnormally with uncommitted work -> creates refs/alba/wip/CLN1-r1.
   writeFileSync(path.join(wt, 'draft.txt'), 'saved wip draft\n');

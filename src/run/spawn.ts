@@ -24,6 +24,10 @@ child.on('error', e => { fs.writeSync(1, 'ERR ' + e.message); process.exit(1); }
 child.on('spawn', () => { fs.writeSync(1, 'PID ' + child.pid); child.unref(); process.exit(0); });
 `;
 
+/** The exit receipt `capture.mjs` writes next to a run's events file when the worker ends. */
+export const exitFileOf = (eventsFile: string): string =>
+  eventsFile.replace(/\.events\.jsonl$/i, '').replace(/\.jsonl$/i, '') + '.exit.json';
+
 /**
  * Starts a program in the background with stdout and stderr appended to a log file, and returns its pid.
  *
@@ -32,9 +36,6 @@ child.on('spawn', () => { fs.writeSync(1, 'PID ' + child.pid); child.unref(); pr
  * pid and exits: the program's recorded parent is then gone, and it survives the end of the process that asked for it (for
  * instance `alba serve`). The pid returned is the program's own, not the helper's.
  */
-export const exitFileOf = (eventsFile: string): string =>
-  eventsFile.replace(/\.events\.jsonl$/i, '').replace(/\.jsonl$/i, '') + '.exit.json';
-
 export function spawnDetachedProgram(program: string, args: string[], options: DetachedOptions): number {
   mkdirSync(path.dirname(options.logFile), { recursive: true });
   if (options.eventsFile) {
