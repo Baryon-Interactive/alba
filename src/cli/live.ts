@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
+import type { RunEnd, RunOutcome } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
 import type { Probes } from '../tick/gather.ts';
 import { liveRuns, type LiveState } from '../run/live.ts';
@@ -17,6 +18,46 @@ export interface StatusRow {
   tokens: number; tokens_reported: boolean; usage: LiveState['usage']; unanswered: { id: string; kind: string; text: string }[];
   /** The log already ends with the run's report while its process is still alive; `ended`: the engine's own end event came last. */
   delivered?: { status: string; ended: boolean };
+  ended?: string;
+  outcome?: RunOutcome;
+  end?: RunEnd;
+}
+
+const RECENT_ENDED_MS = 24 * 60 * 60 * 1000;
+
+/** Non-imported runs that ended within the last 24 hours, carrying `end` for `alba status --json`. */
+export function recentEndedStatusRows(projects: { project: ProjectConfig; orders: Orders }[], probes: Probes): StatusRow[] {
+  const cutoff = probes.now().getTime() - RECENT_ENDED_MS;
+  const rows: StatusRow[] = [];
+  for (const { project, orders } of projects) {
+    for (const doc of orders.all()) {
+      for (const run of doc.runs) {
+        if (!run.ended || run.imported) continue;
+        const endedAt = Date.parse(run.ended);
+        if (!Number.isFinite(endedAt) || endedAt < cutoff) continue;
+        const inputTokens = run.usage?.input_tokens ?? 0;
+        const outputTokens = run.usage?.output_tokens ?? 0;
+        const cachedTokens = run.usage?.cached_tokens ?? 0;
+        const turns = run.usage?.turns ?? 0;
+        const totalTokens = run.usage?.total_tokens ?? (inputTokens + outputTokens);
+        rows.push({
+          project: project.id,
+          tag: doc.order.tag,
+          run: run.id,
+          worker: run.worker,
+          phase: 'idle',
+          tokens: totalTokens,
+          tokens_reported: turns > 0 || run.usage !== undefined,
+          usage: { input_tokens: inputTokens, cached_input_tokens: cachedTokens, output_tokens: outputTokens, turns, per_turn: [] },
+          unanswered: [],
+          ended: run.ended,
+          ...(run.outcome ? { outcome: run.outcome } : {}),
+          ...(run.end ? { end: run.end } : {}),
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 /** Read-only and quota-free. Commit probes run concurrently and have a small deadline. */

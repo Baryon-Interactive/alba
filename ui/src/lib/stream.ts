@@ -38,7 +38,7 @@ export function openStream(opts: {
       if (name === 'run.log') { opts.onRunLog?.(data as { key: string; lines: string[]; offset: number }); return; }
       if (name === 'serve.notice') {
         const n = data as { kind: string; text: string };
-        if (n.kind === 'config-invalid' || n.kind === 'table-import-failed') toast.warning(n.text);
+        if (n.kind === 'config-invalid' || n.kind === 'table-import-failed' || n.kind === 'silent-end') toast.warning(n.text);
       }
       queue(invalidationsFor(name, data, opts.project));
     });

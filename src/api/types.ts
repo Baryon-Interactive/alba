@@ -79,6 +79,23 @@ export interface ProjectOverview extends Omit<Overview, 'workers'> {
 
 export type RunOutcome = 'completed' | 'failed' | 'stalled' | 'capacity' | 'cancelled';
 export type ReportStatus = 'progress' | 'waiting' | 'ready' | 'blocked' | 'failed' | 'dropped' | 'monitoring';
+export type EndKind = 'report' | 'exit-0-no-report' | 'nonzero-exit' | 'stream-cut-mid-turn' | 'output-limit' | 'context-limit' | 'quota' | 'unreachable' | 'killed-by-alba' | 'vanished';
+
+export interface RunEnd {
+  kind: EndKind;
+  detail: string;
+  why: string;
+  exit_code?: number;
+  signal?: string;
+  last_event?: { type: string; at: string };
+  open_turn?: boolean;
+  open_items?: { id: string; type: string; command?: string }[];
+  wip_ref?: string;
+  wip_files?: number;
+  wip_skipped?: boolean;
+  wip_skipped_paths?: string[];
+  wip_error?: string;
+}
 
 // ---------------------------------------------------------------------------------------------------------------- errors
 
@@ -264,6 +281,8 @@ export interface Run {
   handoffFile?: string;
   /** The run ended at a limit: `capacity` (model service), `quota` (usage window used up), or `unreachable` (its endpoint accepted no connection). */
   limit?: 'capacity' | 'quota' | 'unreachable';
+  /** Structured receipt and classification of how the run ended, plus any saved WIP ref. */
+  end?: RunEnd;
 }
 
 /** What a `run.start` event and a run carry about the choice of worker. */
@@ -951,8 +970,8 @@ export interface StreamEvents {
   /** A quote was made, approved, rejected, or money was spent against it. */
   'credits.changed': OrderEvent & { project: string };
   'clean.done': OrderEvent & { project: string };
-  /** `alba serve` changed something by itself: a configuration file was reloaded or refused, a changed dispatch table was imported or refused. */
-  'serve.notice': { project: string; at: string; kind: 'config-reloaded' | 'config-invalid' | 'table-imported' | 'table-import-failed'; text: string };
+  /** `alba serve` changed something by itself or noticed an abnormal silent run end. */
+  'serve.notice': { project: string; at: string; kind: 'config-reloaded' | 'config-invalid' | 'table-imported' | 'table-import-failed' | 'silent-end'; text: string; tag?: string; run?: string };
   /** Any entry type not listed above. */
   'log.other': OrderEvent & { project: string };
   /** New lines at the end of a run's log, for the runs named in `logs`. Not replayed. */

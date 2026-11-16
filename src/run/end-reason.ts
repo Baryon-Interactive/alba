@@ -109,12 +109,20 @@ export const systemTailReader: TailReader = {
 export function probesTailReader(probes: Probes): TailReader {
   return {
     tail(file, maxBytes) {
-      const text = probes.tail(file, maxBytes);
-      return { text, cut: Buffer.byteLength(text) >= maxBytes };
+      try {
+        const text = probes.tail(file, maxBytes);
+        return { text, cut: Buffer.byteLength(text) >= maxBytes };
+      } catch {
+        return { text: '', cut: false };
+      }
     },
     head(file, maxBytes) {
-      if (probes.head) return probes.head(file, maxBytes);
-      return systemTailReader.head!(file, maxBytes);
+      try {
+        if (probes.head) return probes.head(file, maxBytes);
+        return probes.readText(file)?.slice(0, maxBytes) ?? systemTailReader.head!(file, maxBytes);
+      } catch {
+        return '';
+      }
     },
     exists: file => probes.fileTime(file) !== undefined || existsSync(file),
     readdir: dir => systemTailReader.readdir!(dir),
@@ -445,9 +453,12 @@ export function classifyEndReason(input: ClassifyEndInput): EndReason {
     ...(receipt?.open_items.length ? { open_items: receipt.open_items } : {}),
   };
 
-  const killed = (input.albaEvents ?? []).findLast(e =>
-    (ALBA_KILL_EVENTS as readonly string[]).includes(e.type) && (!input.runId || !e.data?.run || e.data.run === input.runId),
+  const eventsList = input.albaEvents ?? [];
+  const killedIdx = eventsList.findLastIndex((e, idx) =>
+    (ALBA_KILL_EVENTS as readonly string[]).includes(e.type)
+    && (!input.runId || e.data?.run === input.runId || (!e.data?.run && !eventsList.slice(idx + 1).some(x => x.type === 'run-start'))),
   );
+  const killed = killedIdx >= 0 ? eventsList[killedIdx] : undefined;
   if (killed) {
     return { ...baseFields, kind: 'killed-by-alba', detail: `stopped by alba (${killed.type})` };
   }

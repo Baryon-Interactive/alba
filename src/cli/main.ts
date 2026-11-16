@@ -50,7 +50,7 @@ import { startServer } from '../web/server.ts';
 import { keyFile, newKey, writeKeyFile } from '../web/auth.ts';
 import { answerOrder } from '../run/answer.ts';
 import { sayToOrder } from '../run/say.ts';
-import { formatStatus, statusRows, unreachableStatusLines, watchOrder } from './live.ts';
+import { formatStatus, recentEndedStatusRows, statusRows, unreachableStatusLines, watchOrder } from './live.ts';
 import { pendingNotes } from '../run/prompt.ts';
 import { lockHolder, skipLine } from '../serve/lock.ts';
 import { startServe } from '../serve/serve.ts';
@@ -285,6 +285,20 @@ function show(orders: Orders, tag: string): string {
   }
   out.push('', t('Runs:'));
   out.push(doc.runs.length ? table(['ID', 'WORKER', 'STARTED', 'ENDED', 'OUTCOME', 'NOTE'], doc.runs.map(r => [r.id, r.worker, r.started, r.ended ?? '', r.limit === 'unreachable' ? t('endpoint unreachable') : (r.outcome ?? (r.ended ? '' : 'open')), r.note ?? ''])) : '  ' + t('(none)'));
+  const endedWithDetail = doc.runs.filter(r => r.end);
+  if (endedWithDetail.length) {
+    for (const r of endedWithDetail) {
+      const e = r.end!;
+      const codePart = e.signal ? `signal ${e.signal}` : e.exit_code !== undefined ? `exit ${e.exit_code}` : 'no exit code';
+      const lastPart = e.last_event ? `last ${e.last_event.type} (${ago(e.last_event.at)} ago)` : 'last -';
+      const wipPart = e.wip_ref ? ` | wip ${e.wip_ref}${e.wip_files !== undefined ? ` (${e.wip_files} file(s))` : ''}${e.wip_skipped ? ' [skipped large files]' : ''}` : e.wip_error ? ` | wip error: ${e.wip_error}` : '';
+      out.push(`  ${r.id}  ${e.kind} | ${codePart} | ${lastPart}${wipPart} | ${e.detail}`);
+    }
+    const wipRefs = [...new Set(endedWithDetail.map(r => r.end?.wip_ref).filter((x): x is string => !!x))];
+    for (const ref of wipRefs) {
+      out.push(`  ${t('WIP snapshot')}: git show --stat ${ref}  |  ${t('restore')}: git checkout ${ref} -- <path>`);
+    }
+  }
   const latest = doc.reports[doc.reports.length - 1];
   out.push('', t('Latest report:'));
   if (latest) {
@@ -396,7 +410,7 @@ async function run(argv: string[]): Promise<string> {
   if (group === 'status') {
     const projects = projectFiles(values.project).map(file => { const project = loadProject(file); return { project, orders: new Orders(stateStore(project)) }; });
     return statusRows(projects, systemProbes).then(async rows => {
-      const body = values.json ? JSON.stringify(rows, null, 2) : [formatStatus(rows), ...unreachableStatusLines(projects)].join('\n');
+      const body = values.json ? JSON.stringify([...rows, ...recentEndedStatusRows(projects, systemProbes)], null, 2) : [formatStatus(rows), ...unreachableStatusLines(projects)].join('\n');
       if (values.json) return body;
       // Editor slots in use (editors: in alba.yaml), with whether each editor answers.
       const editors = (await Promise.all(projects.filter(p => p.project.editors).map(async p => (await editorStatus(p.project)).map(s => ({ ...s, project: p.project.id }))))).flat();

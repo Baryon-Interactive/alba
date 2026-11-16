@@ -7,7 +7,8 @@ import path from 'node:path';
 import { Orders } from '../orders/service.ts';
 import { stateStore } from '../orders/backend.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
-import { applyFinish, findFinishes } from '../run/finish.ts';
+import { applyFinish, findFinishes, type Finish } from '../run/finish.ts';
+import { isSilentEnd } from '../run/end-reason.ts';
 import { importTable } from '../table/import.ts';
 import { classifyOrders } from '../routing/classify.ts';
 import { executeTick } from '../tick/execute.ts';
@@ -202,6 +203,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
           reconcileProducerSession(project);
           if (sessionEnabled(project) && !sessions.has(project.id)) sessions.set(project.id, producerSession(project, ordersFor(project), undefined, options.probes, options.workers.file));
           const result = executeTick({ project, orders: ordersFor(project), workers, probes: tickProbes, peers: peers(project) }, { maxDispatch: options.maxDispatch });
+          for (const f of result.silentEnds ?? []) notifySilentEnd(project.id, f);
           board.ctx.onReadings?.(project.id, result);
           const r = result.report;
           const open = producerPass(project, ordersFor(project), { tick: r, workers: result.workers, workersFile: workers, now: options.probes.now(), env: { workers, probes: options.probes } });
@@ -227,6 +229,18 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
     } finally { ticking = false; }
   };
 
+  const notice = (project: string, kind: A.StreamEvents['serve.notice']['kind'], text: string, extra: { tag?: string; run?: string } = {}) => {
+    board.hub.publish(project, 'serve.notice', { project, at: options.probes.now().toISOString(), kind, text, ...extra });
+    options.print(text);
+  };
+
+  const notifySilentEnd = (project: string, f: Finish) => {
+    if (!isSilentEnd(f.end?.kind)) return;
+    const wip = f.end?.wip_ref ? t(' (saved at {ref})', { ref: f.end.wip_ref }) : '';
+    board.hub.scan?.();
+    notice(project, 'silent-end', t('{tag}: run {run} ended silently ({kind}): {detail}{wip}', { tag: f.tag, run: f.run, kind: f.end!.kind, detail: f.end!.detail, wip }), { tag: f.tag, run: f.run });
+  };
+
   const recordEnds = (): number => {
     let n = 0;
     for (const project of options.projects) {
@@ -235,15 +249,11 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
         applyFinish(orders, f, project);
         n++;
         options.print(t('{tag}: run {run} ended: {outcome} ({why})', { tag: f.tag, run: f.run, outcome: f.outcome, why: f.why }));
+        notifySilentEnd(project.id, f);
       }
     }
     if (n) board.invalidate();
     return n;
-  };
-
-  const notice = (project: string, kind: A.StreamEvents['serve.notice']['kind'], text: string) => {
-    board.hub.publish(project, 'serve.notice', { project, at: options.probes.now().toISOString(), kind, text });
-    options.print(text);
   };
 
   // Triggers from any process: the event logs are read from where they ended when serve started; a few seconds of triggers become one tick.

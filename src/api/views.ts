@@ -68,7 +68,7 @@ export function toRun(run: StoredRun, tag: string, env: ViewEnv): A.Run {
     hasLog: !!run.log && existsSync(run.log), usage: usageOf(run, env.workers?.workers ?? [], env.probes),
     ...(run.role ? { role: run.role, role_source: run.role_source, role_effort: run.role_effort, role_reasoning: run.role_reasoning, mcp_servers: run.mcp_servers, role_warnings: run.role_warnings } : {}),
     ...(run.routing ? { routing: run.routing } : {}), ...(run.skills ? { skills: run.skills } : {}),
-    ...(run.monitor ? { monitor: true } : {}), ...(run.rotated ? { rotatedFrom: { worker: run.rotated.from, reason: run.rotated.reason, paid: run.rotated.paid === true, ...(run.rotated.text ? { text: run.rotated.text } : {}) } } : {}), ...(run.handoff_file ? { handoffFile: run.handoff_file } : {}), ...(run.limit ? { limit: run.limit } : {}),
+    ...(run.monitor ? { monitor: true } : {}), ...(run.rotated ? { rotatedFrom: { worker: run.rotated.from, reason: run.rotated.reason, paid: run.rotated.paid === true, ...(run.rotated.text ? { text: run.rotated.text } : {}) } } : {}), ...(run.handoff_file ? { handoffFile: run.handoff_file } : {}), ...(run.limit ? { limit: run.limit } : {}), ...(run.end ? { end: run.end } : {}),
   };
 }
 

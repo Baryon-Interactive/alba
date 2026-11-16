@@ -1,4 +1,4 @@
-import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
+import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
 import { ACTION_KINDS, RUN_OUTCOMES, nextSeq } from './model.ts';
 import { StaleWrite, type OrderStore } from './store.ts';
 import { actionProblem, inferStage, type StageResult } from './stage.ts';
@@ -351,7 +351,7 @@ export class Orders {
     });
   }
 
-  runEnd(tag: string, outcome: RunOutcome = 'completed'): { doc: OrderDoc; run: Run } {
+  runEnd(tag: string, outcome: RunOutcome = 'completed', end?: RunEnd): { doc: OrderDoc; run: Run } {
     return this.retry(() => {
       if (!RUN_OUTCOMES.includes(outcome)) fail('Unknown outcome "{outcome}". Allowed: {allowed}.', { outcome, allowed: RUN_OUTCOMES.join(', ') });
       const doc = this.get(tag);
@@ -359,7 +359,8 @@ export class Orders {
       if (!run) fail('{tag} has no open run.', { tag: doc.order.tag });
       run.ended = this.now();
       run.outcome = outcome;
-      this.save(doc, 'run-end', { run: run.id, outcome });
+      if (end) run.end = end;
+      this.save(doc, 'run-end', { run: run.id, outcome, ...(end ?? {}) });
       return { doc, run };
     });
   }

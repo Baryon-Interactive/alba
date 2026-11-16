@@ -47,6 +47,8 @@ import { budgetProblem } from '../producer/session-usage.ts';
 import { independentChecks } from '../review/independent.ts';
 import { evidenceOf, pruneSeen, watchRun } from '../run/watch.ts';
 import { compareDispatchOrder, planTick, type OrderActivity, type TickInput, type TickOrder, type TickReport, type WorkerState } from './plan.ts';
+import { isSilentEnd } from '../run/end-reason.ts';
+import type { Finish } from '../run/finish.ts';
 import { editorPoolsOf, editorSlots, runMachine } from '../editors/pool.ts';
 
 /** Everything the tick reads from the outside world, so tests and dry runs can substitute it. */
@@ -277,7 +279,7 @@ function readSources(file: WorkersFile, names: Set<string>, probes: Probes, at: 
 
 export interface TickOptions { /** Open runs of the other projects that share the workers file, by worker id: they use the same concurrency. */ peers?: Map<string, number>; record: boolean; /** Producer preview only: planned orders compete for the same slots, without launching. */ includePlanned?: boolean; /** A real tick may write one commit reminder. A dry run only reads reminders already sent. */ nudge?: boolean; finishes?: { tag: string; run: string; outcome: string; why: string }[] }
 
-export interface TickResult { report: TickReport; quotas: QuotaReading[]; workers: WorkerState[]; activity: Record<string, OrderActivity>; history: QuotaReading[]; dispatchOrder: string[] }
+export interface TickResult { report: TickReport; quotas: QuotaReading[]; workers: WorkerState[]; activity: Record<string, OrderActivity>; history: QuotaReading[]; dispatchOrder: string[]; silentEnds?: Finish[] }
 
 // Raw CLI/routing/API probes also use a non-blocking cache, without a board wrapper.
 const endpointCaches = new WeakMap<Probes, ReturnType<typeof cachedEndpointProbe>>();
@@ -418,6 +420,9 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
       ...(stage === 'queued' && project.resources ? { uses: usesOf(project, d) } : {}),
       ...(stage === 'queued' && project.editors ? editorPoolOf(project, d) : {}),
       endedWithoutReport: stage === 'idle' && lastRun?.outcome === 'completed' && !d.reports.some(r => r.seq > lastRun.seq),
+      ...(!open && lastRun?.ended && isSilentEnd(lastRun.end?.kind) && !['merged', 'cancelled', 'awaiting-review'].includes(stage) && !d.actions.some(a => a.seq > lastRun.seq && !a.bounce)
+        ? { silentEnd: { run: lastRun.id, kind: lastRun.end!.kind, detail: lastRun.end!.detail, ...(lastRun.end!.wip_ref ? { wipRef: lastRun.end!.wip_ref } : {}) } }
+        : {}),
       runStartedAt: open && !open.imported ? open.started : undefined,
     };
   });
