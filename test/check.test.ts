@@ -162,7 +162,7 @@ function waitFixture(over: Partial<Probes> = {}, imported = false) {
   orders.runStart('T1', imported ? { worker: 'w' } : { worker: 'w', extra: { pid: 4242, log: path.join(dir, 'T1.log') } }, imported);
   let clock = Date.parse('2026-01-01T12:00:00Z');
   const sleeps: number[] = [];
-  const probes = { fileTime: () => undefined, readText: () => undefined, isAlive: () => true, tail: () => '', gitActivity: () => ({}), ...over } as unknown as Probes;
+  const probes = { now: () => new Date(), fileTime: () => undefined, readText: () => undefined, isAlive: () => true, tail: () => '', gitActivity: () => ({}), ...over } as unknown as Probes;
   const deps: WaitDeps = { now: () => clock, sleep: async (ms: number) => { sleeps.push(ms); clock += ms; }, print: () => {}, git: { worktrees: () => [], facts: () => undefined } };
   return { orders, project, probes, deps, sleeps, ctx: { project, orders, workers: { workers: [], quota_sources: {}, file: '' }, probes } };
 }
