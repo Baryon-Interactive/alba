@@ -12,7 +12,7 @@ import { REPORT_STATUSES } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
 import { startedAtForCheck, type Probes } from '../tick/gather.ts';
 import { trailingTransientFailures } from './launch.ts';
-import { parseStreamLog } from '../workers/adapters/index.ts';
+import { parseStreamLog, workerAdapter } from '../workers/adapters/index.ts';
 import { parseUsage, type RunUsage } from '../usage/usage.ts';
 import { MAX_RESUMES, isLimitError, isLostSessionError, isTransientError } from './transient.ts';
 import { deliveredReport, earlierReport, type EarlierReport } from './lingering.ts';
@@ -182,6 +182,16 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       continue;
     }
     const endText = [stderr, eventErrors(eventTail), stream.events ? stream.errors.slice(-5).join('\n') : tail].join('\n');
+    // What the engine itself says stopped it (agy: signed out, region block, unknown model, quota): a reason of its own, not "no report block".
+    const engine = worker?.engine ?? run.engine;
+    const stop = engine ? workerAdapter(engine).failure?.(endText, worker) : undefined;
+    if (stop?.limit && worker?.on_limit === 'rotate') { push({ outcome: 'capacity', limit: 'quota', why: t('the usage window or balance is used up; the order will be handed to another worker') }); continue; }
+    if (stop?.retry) {
+      const maxResumes = worker?.max_resumes ?? MAX_RESUMES;
+      const failures = trailingTransientFailures(doc.runs, run.worker) + 1;
+      if (failures <= maxResumes) { push({ outcome: 'capacity', limit: 'capacity', why: t('{why}; resume {k} of {n} will follow', { why: stop.why, k: failures, n: maxResumes }) }); continue; }
+    }
+    if (stop) { failed(stop.summary, stop.why, stop.question, 'blocked'); continue; }
     // A worker set to `on_limit: rotate` that ran out of its usage window: the order is handed over like a capacity error (without it that is a failure a person looks at).
     if (worker?.on_limit === 'rotate' && !isTransientError(endText) && isLimitError(endText)) {
       push({ outcome: 'capacity', limit: 'quota', why: t('the usage window or balance is used up; the order will be handed to another worker') });

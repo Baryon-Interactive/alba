@@ -157,6 +157,7 @@ Where each engine reads (each found by running that engine on a worktree with on
 | `codex-cli` | `.agents/skills`, `.codex/skills` | `.agents/skills` | Also reads the user's own skills and plugins; see isolation below. |
 | `claude-cli` | `.claude/skills`, `$CLAUDE_CONFIG_DIR/skills` | Both the worktree's `.claude/skills` and the worker's isolated config `skills/` | Alba supplies a separate config directory and only explicitly named environment values; see [003](003-workers-and-quota.md#an-isolated-claude-cli-worker). |
 | `grok-cli` | `.agents/skills`, `.grok/skills` | `.agents/skills` | Only in a folder it **trusts**: without `--trust` it reads none of them. The worker's `launch.args` need `--trust` for skills to arrive (the worktree is one alba made for this order). |
+| `agy-cli` | `.agents/skills` (not yet confirmed with the probe skill) | `.agents/skills` | |
 | `opencode` | `.agents/skills`, `.claude/skills`, `.opencode/skills` | `.opencode/skills` | `.agents` and `.claude` are "external" and can be switched off; `.opencode` stays. |
 | `claude` (cards) | – | – | A person starts the session; the card lists the skills. |
 
@@ -331,6 +332,7 @@ Only environment variable **names** belong in `env_from`. Missing variables fail
 | `codex-cli` | `-c mcp_servers.<server>.command=...`, `.args=...`, `.env_vars=["NAME"]`; values stay out of argv | `codex --help`, [configuration reference](https://developers.openai.com/codex/config-reference/) |
 | `opencode` | Ignored `.opencode/opencode.json`, current v2 `mcp.servers` local command/environment schema, `{env:NAME}` references | [config locations](https://opencode.ai/docs/config/), [MCP servers](https://opencode.ai/docs/mcp-servers/) |
 | `grok-cli` | Servers skipped; run-start warning `role X: MCP servers not mounted for engine Y` | `grok --help` and `grok mcp add --help` expose persistent config; a per-run config flag/schema was not confirmed |
+| `agy-cli` | Servers skipped with the same warning | `agy mcp` manages persistent config only; no per-run flag |
 | Other / card engines | Unknown mechanisms are skipped with the same warning; cards are started by a person | No guessed flags |
 
 A server's optional `engines` list limits it to those engines; absent or empty means all. Filtering out a server produces no unsupported-engine warning. OpenCode generation refuses an existing unmanaged config instead of replacing it. A checksum identifies the generated file; the next launch removes it (also when the next run has no role), and refuses to remove a file that was edited. Claude's ignored JSON is passed explicitly, so a later run without a role does not load it through the adapter. Existing engine/user configuration still follows each engine's normal loading rules.

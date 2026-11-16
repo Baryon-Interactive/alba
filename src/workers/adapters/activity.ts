@@ -2,6 +2,7 @@ import type { LiveActivity, LiveCurrent, LiveState, TokenCounts } from '../../ap
 import { claudeContent, eventText, toolResultText } from './claude-protocol.ts';
 import { UsageFold, totalUsage } from './usage-fold.ts';
 import { isLongCommand } from '../../run/loops.ts';
+import { agyEvent, type AgyEvent } from './agy-protocol.ts';
 const string = (v: unknown): string => typeof v === 'string' ? v : '';
 const number = (v: unknown): number => typeof v === 'number' && Number.isFinite(v) ? v : 0;
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' ? v as Record<string, any> : {};
@@ -20,6 +21,8 @@ export class LiveFold {
 
   event(raw: unknown, observedAt: string): void {
     const e = object(raw), item = object(e.item), part = object(e.part);
+    const agy = agyEvent(e);
+    if (agy) { this.agy(agy, e, string(e.alba_at) || observedAt); return; }
     if (!string(e.type)) return;
     const timestamp = e.timestamp;
     const at = string(e.alba_at) || (typeof timestamp === 'number' ? new Date(timestamp).toISOString() : string(timestamp)) || string(e.at) || observedAt;
@@ -88,6 +91,45 @@ export class LiveFold {
       if (usage?.source === 'claude-json') this.state.usage = { input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, cached_input_tokens: usage.cached_tokens ?? 0, turns: usage.turns ?? 0, per_turn: this.accounting.turns.map(t => ({ input_tokens: t.usage.input_tokens ?? 0, output_tokens: t.usage.output_tokens ?? 0, cached_input_tokens: t.usage.cached_tokens ?? 0 })) };
     }
     if (type === 'content' && typeof e.content === 'string') this.message(at, e.content);
+  }
+
+  /** Antigravity stream-json: steps by index; a tool step goes ACTIVE then DONE (any other end state is a failure), agent text comes in deltas. */
+  private agyText = new Map<number, string>();
+  private agy(ev: AgyEvent, raw: Record<string, any>, at: string): void {
+    this.accounting.event(raw, at);
+    this.state.last_event_at = at;
+    if (ev.kind === 'init') this.state.phase = 'thinking';
+    if (ev.kind === 'step') {
+      const s = ev.step, id = `agy-${s.index}`;
+      if (s.type === 'tool') {
+        const kind = s.tool === 'run_command' ? 'command_execution' : 'tool', command = s.command ?? s.tool ?? 'tool';
+        if (s.target && /write|replace|edit|sed_file/i.test(s.tool ?? '')) { this.files.add(s.target); this.state.files_changed = [...this.files]; }
+        if (s.state === 'ACTIVE') this.start(id, kind, command, at);
+        else this.end(id, kind, command, at, undefined, s.state !== 'DONE', s.output ?? '');
+      }
+      if (s.type === 'agent_response') {
+        this.state.phase = 'thinking';
+        if (s.textDelta) this.agyText.set(s.index, (this.agyText.get(s.index) ?? '') + s.textDelta);
+        if (s.state !== 'ACTIVE') {
+          const text = this.agyText.get(s.index)?.trim();
+          this.agyText.delete(s.index);
+          if (text) this.message(at, text);
+          if (s.usage) {
+            const c = { input_tokens: number(s.usage.input_tokens), cached_input_tokens: number(s.usage.cache_read_tokens), output_tokens: number(s.usage.output_tokens) };
+            this.state.usage.per_turn.push(c);
+            this.state.usage.turns++;
+            for (const k of ['input_tokens', 'cached_input_tokens', 'output_tokens'] as const) this.state.usage[k] += c[k];
+          }
+        }
+      }
+      if (s.type === 'error_message') this.add({ at, kind: 'error', summary: 'agy error step' });
+    }
+    if (ev.kind === 'result') {
+      this.state.phase = 'idle';
+      const r = ev.result;
+      if (r.response.trim() && this.state.messages.at(-1)?.text !== r.response.trim()) this.message(at, r.response.trim());
+      if (r.status !== 'SUCCESS') this.add({ at, kind: 'error', summary: oneLine(r.error || `agy ended with status ${r.status || 'unknown'}`) });
+    }
   }
 
   private add(a: LiveActivity): void { this.state.recent.push(a); this.state.recent = this.state.recent.slice(-30); }

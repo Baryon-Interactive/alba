@@ -113,15 +113,46 @@ Next to worker limits, the project's `dispatch` section holds the limits of the 
 
 ## Engines
 
-The `engine` of a worker says what program the launch template starts. The tool knows five kinds. What differs between them is how a run is started, how it is continued after a drop, and what keeps it from doing more than it should.
+The `engine` of a worker says what program the launch template starts. The tool knows six kinds. What differs between them is how a run is started, how it is continued after a drop, and what keeps it from doing more than it should.
 
 | Engine | Started by | Continuing after a transient error | Permissions |
 |---|---|---|---|
 | `codex-cli` | `codex exec -C <worktree> ... -o <last file> "Read the UTF-8 file <prompt> ..."` in the background | After a service error: a new run in the same worktree with the recovery note (a resumed session was once reset by the same network fault). After a person's answer (document 005): `exec resume <session id>` when the template has `session` arguments, see "A Codex template that can resume". | The template's sandbox settings. A sandboxed run needs write access to the repository's git directories to commit from a worktree (`{git_dir}`, `{worktree_git_dir}`); see document 005. |
 | `opencode` | `opencode run --dir <worktree> -m <provider/model> --format json ...` with the prompt pointer as the message | A new run with the recovery note. OpenCode has sessions (`-s <id>`) but chooses their ids itself, and the tool does not read them yet. | Per the program's own permission settings. Its "auto" switch approves everything that is not denied; do not put it in a template. |
 | `grok-cli` | `grok --prompt-file <prompt> --cwd <worktree> -m <model> --output-format streaming-json ...`; the output goes to the run's log | The same conversation: the template's `session.resume` arguments (`-r <session id>`) with the recovery note. The tool chooses the session id before the start (`-s <id>`, recorded on the run) and also reads it from the log's end event. | `--permission-mode acceptEdits` and one `--allow 'Bash(...)'` rule per command the work needs (git status, diff, log, add, commit, the project's own build scripts). Never `--always-approve` and never `bypassPermissions`. A command that is not allowed is refused and the run stops there: see below. |
+| `agy-cli` | The Antigravity CLI itself, detached: `agy -p "Read the UTF-8 file <prompt> ..." --output-format stream-json --dangerously-skip-permissions --print-timeout 8h --model <model> --add-dir <prompt folder>`, in the order's worktree | `--conversation <id>` after a service failure or a person's answer/message; the id comes from the stream | The account the CLI is signed in with on this machine; tool permissions are skipped as for a headless coding worker. See "An Antigravity worker" below. |
 | `claude-session` | Not started by the tool: a person starts it from a card | Not applicable: the person decides | The session's own approvals |
 | `claude-cli` | Detached `claude -p --output-format stream-json --verbose --model <model> --permission-mode bypassPermissions`, with the prompt-file pointer, in the order's worktree | `--resume <session>` after a service failure or a person's answer/message; the session id comes from the stream | Runs with the explicitly configured worker environment and its own Claude config directory; bypasses interactive permissions as a headless coding worker. |
+
+### An Antigravity worker
+
+Engine `agy-cli` starts the official Antigravity CLI (`agy`, 1.5.x) directly, with the Google account a person signed it in with (`agy` once in a terminal). Nothing sits between: no gateway, no OpenCode, no other agent CLI. Alba never signs it in.
+
+```yaml
+workers:
+  - id: agy-direct
+    engine: agy-cli
+    capabilities: [shell, edit, git, web, fast, cheap]
+    concurrency: 1          # one account
+    launch:
+      template: agy-direct-v1
+      program: agy            # or the full path of agy.exe
+      model: <an id that `agy models` lists>
+      args: []              # the engine adds -p, --output-format stream-json, --dangerously-skip-permissions, --print-timeout 8h, --model, --add-dir
+```
+
+Flags the template already has are kept (`--print-timeout 2h`); `--output-format` and `--model` are always set by the engine. agy reads its flags like Go's `flag` package, so a template must not put a bare argument before them.
+
+The stream's lines are keyed by `event` (`init`, `step_update`, `result`); the final message is the `result`'s `response` (or the text after the last tool step), the conversation id resumes the run, and per-step usage is the run's usage (`agy-json`). When agy cannot work, the run ends with a reason of its own instead of "no report block":
+
+| agy says | The run |
+|---|---|
+| `User location is not supported` (the proxy's exit node is in a region Gemini does not serve) | Resumed like after a transient error; when the resumes run out, blocked with the question to move the exit node |
+| not signed in / `UNAUTHENTICATED` | Blocked: sign agy in, then queue again |
+| `invalid model selection ... not recognized` | Blocked: set the worker's model to one `agy models` lists |
+| quota used up | Blocked, or handed to another worker with `on_limit: rotate` |
+
+Other errors in the result (`503`, `429` without a quota message) are transient errors as for every engine.
 
 ### An isolated Claude CLI worker
 

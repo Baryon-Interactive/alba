@@ -13,6 +13,7 @@ import type { SelectedSkill } from './registry.ts';
 export const ENGINE_MOUNTS: Record<string, string[]> = {
   'codex-cli': ['.agents/skills'],
   'grok-cli': ['.agents/skills'],
+  'agy-cli': ['.agents/skills'],
   'claude-cli': ['.claude/skills'],
   opencode: ['.opencode/skills'],
 };

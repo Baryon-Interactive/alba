@@ -1,4 +1,5 @@
 import { claudeContent, eventText } from './claude-protocol.ts';
+import { agyEvent, type AgyEvent } from './agy-protocol.ts';
 
 /**
  * Reads the log of a headless run of an agent CLI that prints newline-delimited JSON events
@@ -37,9 +38,11 @@ export function parseStreamLog(text: string, options: { cut?: boolean } = {}): S
     const line = raw.trim();
     if (!line) continue;
     let event: Record<string, unknown> | undefined;
+    let agy: AgyEvent | undefined;
     if (line.startsWith('{')) {
-      try { const v = JSON.parse(line) as unknown; if (typeof v === 'object' && v !== null && typeof (v as { type?: unknown }).type === 'string') event = v as Record<string, unknown>; } catch { /* not an event */ }
+      try { const v = JSON.parse(line) as unknown; if (typeof v === 'object' && v !== null && typeof (v as { type?: unknown }).type === 'string') event = v as Record<string, unknown>; else agy = agyEvent(v); } catch { /* not an event */ }
     }
+    if (agy) { log.events++; agyStep(log, agy); continue; }
     if (!event) {
       const blocked = PERMISSION.exec(line);
       if (blocked) log.blockedCommand = (blocked[1] && blocked[1] !== 'Execute' ? `${blocked[1]} ` : '') + blocked[2].replace(/^`|`$/g, '');
@@ -80,4 +83,31 @@ export function parseStreamLog(text: string, options: { cut?: boolean } = {}): S
     }
   }
   return log;
+}
+
+/** Antigravity (`agy --output-format stream-json`): events keyed by `event`; the text of agent_response steps after the last tool is the final message. */
+function agyStep(log: StreamLog, e: AgyEvent): void {
+  log.ended = e.kind === 'result';
+  if (e.kind === 'init' && e.conversationId) log.sessionId = e.conversationId;
+  if (e.kind === 'step') {
+    const s = e.step;
+    if (s.conversationId) log.sessionId = s.conversationId;
+    if (s.type === 'tool') log.finalText = '';
+    if (s.type === 'agent_response' && s.textDelta) log.finalText += s.textDelta;
+  }
+  if (e.kind === 'result') {
+    const r = e.result;
+    if (r.conversationId) log.sessionId = r.conversationId;
+    if (r.turns !== undefined) log.turns = r.turns;
+    if (r.usage) {
+      log.tokens = r.usage.total_tokens;
+      log.usage = { input: r.usage.input_tokens, output: r.usage.output_tokens, cached: r.usage.cache_read_tokens };
+    }
+    if (r.status === 'SUCCESS') { if (r.response) log.finalText = r.response; }
+    else {
+      log.finalText = '';
+      if (r.error) log.errors.push(r.error);
+      if (r.status) log.stopReason = r.status.toLowerCase();
+    }
+  }
 }
