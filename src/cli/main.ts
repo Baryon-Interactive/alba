@@ -82,7 +82,7 @@ import { producerSessionStatus, startProducerSession, startProducerSessionDetach
 import { runProducerMcp } from '../producer/mcp.ts';
 import { createIntake, runDesignDocs, runIntake } from './intake.ts';
 import { listNamedLocks, runNamedLock, usage as lockUsage } from '../run/named-lock.mjs';
-import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance, type PixelRegion } from '../verify/png.ts';
+import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance, regionError, type PixelRegion } from '../verify/png.ts';
 
 /** What a person needs to open the console: the sign-in link (it carries this start's key) and the file programs read the key from. */
 const signInLines = (port: number, key: string): string => t('Sign in: {url}\nKey file (for programs of this account): {file}', { url: `http://127.0.0.1:${port}/login?key=${key}`, file: keyFile(port) });
@@ -420,7 +420,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
     const parseRegion = (): PixelRegion | undefined => {
       if (values.region === undefined) return undefined;
       const parts = values.region.split(',').map(Number);
-      if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0) || parts[2] <= 0 || parts[3] <= 0) return undefined;
+      if (parts.length !== 4 || parts.some(n => !Number.isInteger(n)) || parts[2] <= 0 || parts[3] <= 0) return undefined;
       return parts as PixelRegion;
     };
     const region = parseRegion();
@@ -431,9 +431,13 @@ ${editorLines(editors, projects.length > 1)}` : body;
     const read = (file: string) => { try { return decodePng(readFileSync(path.resolve(file))); } catch (e) { return { status: 'unsupported' as const, reason: (e as Error).message }; } };
     const first = read(rest[0]!);
     if (first.status !== 'ok') { exitCode = 3; return `alba: ${rest[0]}: ${first.reason}`; }
+    const firstRegionProblem = regionError(first.image, region);
+    if (firstRegionProblem) return bad(`${rest[0]}: ${firstRegionProblem}`);
     if (command === 'lum') { const value = meanLuminance(first.image, region); return values.json ? JSON.stringify({ file: path.resolve(rest[0]!), width: first.image.width, height: first.image.height, mean_luminance: value, ...(region ? { region } : {}) }) : value.toFixed(6); }
     const second = read(rest[1]!);
     if (second.status !== 'ok') { exitCode = 3; return `alba: ${rest[1]}: ${second.reason}`; }
+    const secondRegionProblem = regionError(second.image, region);
+    if (secondRegionProblem) return bad(`${rest[1]}: ${secondRegionProblem}`);
     try { const value = meanAbsoluteLuminanceDifference(first.image, second.image, region); return values.json ? JSON.stringify({ a: path.resolve(rest[0]!), b: path.resolve(rest[1]!), width: first.image.width, height: first.image.height, mean_difference: value, ...(region ? { region } : {}) }) : value.toFixed(6); }
     catch (e) { exitCode = 3; return `alba: ${(e as Error).message}`; }
   }
