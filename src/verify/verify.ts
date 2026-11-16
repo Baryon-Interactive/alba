@@ -12,7 +12,8 @@ import { findOrderFile } from '../run/prompt.ts';
 import { orderBaseRef, mergeReadiness, systemReadiness } from '../review/readiness.ts';
 import { planWorktree } from '../run/worktree.ts';
 import { t } from '../i18n.ts';
-import { decodePng, imageFormat, summarizePng, type ImageFormat, type ImageSummary } from './png.ts';
+import { decodePng, imageFormat, meanAbsoluteLuminanceDifference, meanLuminance, summarizePng, type DecodedPng, type ImageFormat, type ImageSummary, type PixelRegion } from './png.ts';
+import type { LuminanceGate, MotionGate } from '../config.ts';
 import { decodeJpegBlocks } from './jpeg.ts';
 
 export type VerifyStatus = 'pass' | 'fail' | 'warn';
@@ -170,10 +171,31 @@ interface ScreenshotFile {
   bytes: number;
   hash: string;
   summary?: ImageSummary;
+  image?: DecodedPng;
   state: 'decoded' | 'not decoded' | 'mismatch' | 'skipped';
   format: ImageFormat;
   reason?: string;
 }
+
+function screenshotNames(file: string, worktree: string, projectRoot: string): string[] {
+  return [...new Set([file.replace(/\\/g, '/'), path.relative(worktree, file), path.relative(projectRoot, file)].map(x => x.replace(/\\/g, '/').replace(/^\.\//, '')))].filter(Boolean);
+}
+function namedGlob(glob: string): RegExp {
+  const g = glob.replace(/\\/g, '/').replace(/^\.\//, ''); let out = '';
+  for (let i = 0; i < g.length; i++) {
+    if (g.startsWith('{name}', i)) { out += '(.+)'; i += 5; continue; }
+    const c = g[i];
+    if (c === '*' && g[i + 1] === '*') { out += g[i + 2] === '/' ? '(?:.*/)?' : '.*'; if (g[i + 2] === '/') i += 2; else i++; }
+    else if (c === '*') out += '[^/]*';
+    else if (c === '?') out += '[^/]';
+    else out += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${out}$`);
+}
+const matchesScreenshot = (file: ScreenshotFile, glob: string, worktree: string, projectRoot: string): boolean => screenshotNames(file.path, worktree, projectRoot).some(name => globToRegExp(glob).test(name));
+const matchNamed = (file: ScreenshotFile, glob: string, worktree: string, projectRoot: string): string | undefined => {
+  const re = namedGlob(glob); for (const name of screenshotNames(file.path, worktree, projectRoot)) { const m = re.exec(name); if (m) return m[1] ?? ''; } return undefined;
+};
 
 function screenshotGate(project: ProjectConfig, worktree: string, sections: OrderSections, report: Report): VerifyItem | undefined {
   const config = project.verify.screenshots;
@@ -198,7 +220,7 @@ function screenshotGate(project: ProjectConfig, worktree: string, sections: Orde
     if (bytes > MAX_PNG_BYTES) return { path: file, bytes, hash, format, state: 'skipped' };
     // A JPEG is read at one value per 8x8 block (its DC coefficients): enough for the blank, dark and duplicate checks.
     const decoded = format === 'JPEG' ? decodeJpegBlocks(readFileSync(file)) : decodePng(readFileSync(file));
-    return decoded.status === 'ok' ? { path: file, bytes, hash, format, summary: summarizePng(decoded.image), state: 'decoded' } : { path: file, bytes, hash, format, state: 'not decoded', reason: `not decoded (${decoded.reason})` };
+    return decoded.status === 'ok' ? { path: file, bytes, hash, format, image: decoded.image, summary: summarizePng(decoded.image), state: 'decoded' } : { path: file, bytes, hash, format, state: 'not decoded', reason: `not decoded (${decoded.reason})` };
   });
   const detailFiles = entries.map(e => ({ path: e.path, bytes: e.bytes, format: e.format, state: e.state, ...(e.reason ? { reason: e.reason } : {}), ...(e.summary ? { mean_luminance: e.summary.meanLuminance, luminance_stddev: e.summary.luminanceStddev, dark_fraction: e.summary.darkFraction } : {}) }));
   const duplicatePairs: string[] = [];
@@ -222,7 +244,35 @@ function screenshotGate(project: ProjectConfig, worktree: string, sections: Orde
   if (dark.length) reasons.push(t('Dark screenshots: {files}.', { files: dark.map(e => `${e.path} (mean ${e.summary!.meanLuminance.toFixed(4)}, dark ${((e.summary!.darkFraction) * 100).toFixed(1)}%)`).join(', ') }));
   if (skipped.length) reasons.push(t('Skipped PNGs over 64 MB: {files}.', { files: skipped.map(e => e.path).join(', ') }));
   for (const entry of undecoded) reasons.push(`${entry.path}: ${entry.reason}.`);
-  const status: VerifyStatus = mismatches.length || duplicatePairs.length || blank.length ? 'fail' : dark.length || skipped.length || undecoded.some(e => e.format === 'PNG') ? 'warn' : 'pass';
+  const gateWarnings: string[] = [], gateFailures: string[] = [];
+  const luminanceRules: LuminanceGate[] = config.luminance ?? [];
+  for (const rule of luminanceRules) {
+    const selected = entries.filter(e => matchesScreenshot(e, rule.match, worktree, project.root));
+    if (!selected.length) { gateWarnings.push(`Luminance rule ${rule.match} matched no image.`); continue; }
+    for (const entry of selected) {
+      if (!entry.image) { gateWarnings.push(`${entry.path}: luminance could not be measured (${entry.reason ?? 'image was not decoded'}).`); continue; }
+      const value = meanLuminance(entry.image, rule.region as PixelRegion | undefined);
+      if (rule.mean_min !== undefined && value < rule.mean_min) gateFailures.push(`${entry.path}: mean luminance ${value.toFixed(4)} is below ${rule.mean_min}.`);
+      if (rule.mean_max !== undefined && value > rule.mean_max) gateFailures.push(`${entry.path}: mean luminance ${value.toFixed(4)} is above ${rule.mean_max}.`);
+    }
+  }
+  const motionRules: MotionGate[] = config.motion ?? [];
+  for (const rule of motionRules) {
+    const as = entries.map(e => ({ e, name: matchNamed(e, rule.a, worktree, project.root) })).filter(x => x.name !== undefined);
+    if (!as.length) { gateWarnings.push(`Motion rule ${rule.a} / ${rule.b} matched no image.`); continue; }
+    for (const { e: a, name } of as) {
+      const b = entries.find(candidate => matchNamed(candidate, rule.b, worktree, project.root) === name);
+      if (!b) { gateWarnings.push(`Motion rule ${rule.a} / ${rule.b} has no pair for ${a.path}.`); continue; }
+      if (!a.image || !b.image) { gateWarnings.push(`${a.path} / ${b.path}: motion could not be measured (${a.reason ?? b.reason ?? 'image was not decoded'}).`); continue; }
+      let value: number;
+      try { value = meanAbsoluteLuminanceDifference(a.image, b.image, rule.region as PixelRegion | undefined); }
+      catch (error) { gateFailures.push(`${a.path} / ${b.path}: ${(error as Error).message}.`); continue; }
+      if (rule.min !== undefined && value < rule.min) gateFailures.push(`${a.path} / ${b.path}: motion ${value.toFixed(4)} is below ${rule.min}.`);
+      if (rule.max !== undefined && value > rule.max) gateFailures.push(`${a.path} / ${b.path}: motion ${value.toFixed(4)} is above ${rule.max}.`);
+    }
+  }
+  reasons.push(...gateFailures, ...gateWarnings);
+  const status: VerifyStatus = mismatches.length || duplicatePairs.length || blank.length || gateFailures.length ? 'fail' : dark.length || skipped.length || undecoded.some(e => e.format === 'PNG') || gateWarnings.length ? 'warn' : 'pass';
   const reason = [t('Checked {count} screenshot image(s).', { count: entries.length }), ...reasons].join(' ');
   return { name: 'screenshots', status, reason, details: { files: detailFiles, ...(duplicatePairs.length ? { duplicate_pairs: duplicatePairs } : {}) } };
 }

@@ -104,7 +104,11 @@ export interface ScreenshotVerifyConfig {
   blank_std: number;
   dark_mean: number;
   dark_fraction: number;
+  luminance?: LuminanceGate[];
+  motion?: MotionGate[];
 }
+export interface LuminanceGate { match: string; mean_min?: number; mean_max?: number; region?: [number, number, number, number] }
+export interface MotionGate { a: string; b: string; min?: number; max?: number; region?: [number, number, number, number] }
 export const DEFAULT_SCREENSHOT_THRESHOLDS: ScreenshotVerifyConfig = { duplicate_diff: 0.015, blank_std: 0.02, dark_mean: 0.12, dark_fraction: 0.85 };
 export interface VerifyConfig { protected_gates: string[]; screenshots: ScreenshotVerifyConfig | 'off' }
 
@@ -975,17 +979,50 @@ function validateVerify(raw: unknown, file: string): VerifyConfig {
   if (screenshots === 'off') return { protected_gates: protectedGates, screenshots: 'off' };
   if (screenshots !== undefined && !isRecord(screenshots)) fail('{file}: "verify.screenshots" must be a mapping or "off".', { file });
   const source = (screenshots ?? {}) as Record<string, unknown>;
-  const unknownScreenshots = Object.keys(source).filter(k => !['duplicate_diff', 'blank_std', 'dark_mean', 'dark_fraction'].includes(k));
+  const unknownScreenshots = Object.keys(source).filter(k => !['duplicate_diff', 'blank_std', 'dark_mean', 'dark_fraction', 'luminance', 'motion'].includes(k));
   if (unknownScreenshots.length) fail('{file}: unknown key(s) under "verify.screenshots": {keys}.', { file, keys: unknownScreenshots.join(', ') });
   const thresholds = { ...DEFAULT_SCREENSHOT_THRESHOLDS };
   for (const key of Object.keys(thresholds) as (keyof ScreenshotVerifyConfig)[]) {
+    if (key === 'luminance' || key === 'motion') continue;
     const v = source[key];
     if (v !== undefined) {
       if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) fail('{file}: "verify.screenshots.{key}" must be a number between 0 and 1.', { file, key });
       thresholds[key] = v;
     }
   }
-  return { protected_gates: protectedGates, screenshots: thresholds };
+  const parseRegion = (v: unknown, key: string): [number, number, number, number] | undefined => {
+    if (v === undefined) return undefined;
+    if (!Array.isArray(v) || v.length !== 4 || v.some(n => typeof n !== 'number' || !Number.isInteger(n) || n < 0) || (v as number[])[2] <= 0 || (v as number[])[3] <= 0) fail('{file}: "verify.screenshots.{key}.region" must be [x, y, w, h] with positive whole dimensions.', { file, key });
+    return v as [number, number, number, number];
+  };
+  const bound = (v: unknown, key: string, unit: boolean): number | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || (unit && v > 1)) fail('{file}: "verify.screenshots.{key}" has an invalid bound.', { file, key });
+    return v;
+  };
+  const luminance = source.luminance === undefined ? [] : (() => {
+    if (!Array.isArray(source.luminance)) fail('{file}: "verify.screenshots.luminance" must be a list.', { file });
+    return source.luminance.map((raw, i) => {
+      if (!isRecord(raw) || typeof raw.match !== 'string' || !raw.match.trim()) fail('{file}: "verify.screenshots.luminance[{i}]" needs a match.', { file, i });
+      const mean_min = bound(raw.mean_min, `luminance[${i}].mean_min`, true), mean_max = bound(raw.mean_max, `luminance[${i}].mean_max`, true);
+      if (mean_min === undefined && mean_max === undefined) fail('{file}: "verify.screenshots.luminance[{i}]" needs mean_min or mean_max.', { file, i });
+      if (mean_min !== undefined && mean_max !== undefined && mean_min > mean_max) fail('{file}: luminance rule {i} has mean_min above mean_max.', { file, i });
+      const region = parseRegion(raw.region, `luminance[${i}]`);
+      return { match: raw.match, ...(mean_min !== undefined ? { mean_min } : {}), ...(mean_max !== undefined ? { mean_max } : {}), ...(region ? { region } : {}) };
+    });
+  })();
+  const motion = source.motion === undefined ? [] : (() => {
+    if (!Array.isArray(source.motion)) fail('{file}: "verify.screenshots.motion" must be a list.', { file });
+    return source.motion.map((raw, i) => {
+      if (!isRecord(raw) || typeof raw.a !== 'string' || typeof raw.b !== 'string' || !raw.a.trim() || !raw.b.trim()) fail('{file}: "verify.screenshots.motion[{i}]" needs a and b.', { file, i });
+      const min = bound(raw.min, `motion[${i}].min`, false), max = bound(raw.max, `motion[${i}].max`, false);
+      if (min === undefined && max === undefined) fail('{file}: "verify.screenshots.motion[{i}]" needs min or max.', { file, i });
+      if (min !== undefined && max !== undefined && min > max) fail('{file}: motion rule {i} has min above max.', { file, i });
+      const region = parseRegion(raw.region, `motion[${i}]`);
+      return { a: raw.a, b: raw.b, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), ...(region ? { region } : {}) };
+    });
+  })();
+  return { protected_gates: protectedGates, screenshots: { ...thresholds, ...(source.luminance !== undefined ? { luminance } : {}), ...(source.motion !== undefined ? { motion } : {}) } };
 }
 
 function validateSync(raw: unknown, file: string): SyncRules {

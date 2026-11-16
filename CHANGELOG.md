@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Built-in tool `audio-studio` ([031](docs/workers/031-tool-plugins.md#audio-studio-music-and-sound-effects)): music, instrument loops and sound effects from Stable Audio 3 on the machine's GPU through audio-studio-mcp. Workers of an order that uses it get the `audio` server (generate, edit, process, unload) and a skill; Alba runs the operations `generate`, `edit` and `process` itself, one server process per job writing into the job folder. It holds `audio-gpu` (1 slot). Agent sessions no longer need the server in their own MCP configuration.
+- Add machine-wide named locks, measured luminance and motion screenshot gates, image measurement commands, and streamed acceptance artifact receipts.
 
 - Delivery lint `base_intact` ([009](docs/workflow/009-checks-and-waiting.md#optional-delivery-lint)): fails a branch whose HEAD puts files the base changed after the branch forked back to their fork-point content, the trace of merging `dispatch.base_ref` and then reverting that merge (`git revert -m 1`). Such a branch passed `base_merged`, because the base commits stay reachable, but merging it would delete work already merged. The finding (and the lint rework note) lists the files and the revert commits. It is on wherever `base_merged` is on; `base_intact: false` turns it off, `base_intact: true` turns it on alone.
 

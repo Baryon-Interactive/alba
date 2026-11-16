@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { acceptDesignChanges, DesignAcceptanceError, pinnedDesignChanges } from '../design/worker.ts';
@@ -34,7 +34,8 @@ function acceptConfigFor(project: ProjectConfig, kind: string): NonNullable<Proj
   };
 }
 
-export interface AcceptStepResult { name: string; status: 'passed' | 'failed' | 'skipped'; duration_ms: number; code?: number | null; tail: string; log?: string; issues?: string[]; classified?: number; blocks?: number }
+export interface ArtifactReceipt { path: string; size: number; sha256: string; modified: string; status?: 'refused'; reason?: string }
+export interface AcceptStepResult { name: string; status: 'passed' | 'failed' | 'skipped'; duration_ms: number; code?: number | null; tail: string; log?: string; issues?: string[]; classified?: number; blocks?: number; artifacts?: ArtifactReceipt[]; artifact_warnings?: string[]; truncated?: boolean }
 export interface AcceptanceTrial {
   id: string;
   fingerprint: string;
@@ -49,6 +50,7 @@ export interface AcceptanceTrial {
   reason?: string;
   retryable?: boolean;
   log_dir?: string;
+  artifacts?: ArtifactReceipt[];
 }
 export interface AcceptanceCard {
   pipelineRequired?: boolean;
@@ -247,6 +249,49 @@ function runCommand(command: string[], cwd: string, minutes: number, log: string
   } finally { closeSync(fd); }
 }
 
+export const ARTIFACT_CAPS = { maxFiles: 200, maxBytes: 2 * 1024 * 1024 * 1024 };
+const artifactHash = (file: string): string => {
+  const hash = createHash('sha256'), fd = openSync(file, 'r'), buffer = Buffer.allocUnsafe(1024 * 1024);
+  try { let offset = 0; for (;;) { const n = readSync(fd, buffer, 0, buffer.length, offset); if (!n) break; hash.update(buffer.subarray(0, n)); offset += n; } }
+  finally { closeSync(fd); }
+  return hash.digest('hex');
+};
+function artifactMatches(root: string, glob: string): string[] {
+  const normalized = glob.replace(/\\/g, '/'), wildcard = normalized.search(/[*?[]/), base = wildcard < 0 ? path.dirname(normalized) : normalized.slice(0, normalized.lastIndexOf('/', wildcard) + 1), start = path.resolve(root, base || '.');
+  const out: string[] = [], walk = (dir: string) => {
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name), rel = path.relative(root, file).replace(/\\/g, '/');
+      if (entry.isDirectory() || entry.isSymbolicLink()) {
+        try { if (statSync(file).isDirectory()) { walk(file); continue; } } catch { /* the receipt records an unresolved link below */ }
+      }
+      if (globToRegExp(normalized).test(rel)) out.push(file);
+    }
+  };
+  if (wildcard < 0) { const file = path.resolve(root, normalized); if (existsSync(file) && statSync(file).isFile()) out.push(file); }
+  else walk(start);
+  return out;
+}
+export function collectArtifacts(step: { artifacts?: string[]; artifacts_required?: boolean }, cwd: string, projectRoot: string): { receipts: ArtifactReceipt[]; warnings: string[]; truncated: boolean; requiredFailure?: string } {
+  const receipts: ArtifactReceipt[] = [], warnings: string[] = []; let bytes = 0, truncated = false;
+  for (const glob of step.artifacts ?? []) {
+    let root = cwd, matches = artifactMatches(root, glob);
+    if (!matches.length && !path.isAbsolute(glob)) { root = projectRoot; matches = artifactMatches(root, glob); }
+    if (!matches.length) { const warning = `Artifact glob matched no files: ${glob}`; warnings.push(warning); if (step.artifacts_required) return { receipts, warnings, truncated, requiredFailure: warning }; continue; }
+    for (const file of [...new Set(matches)].sort()) {
+      if (receipts.length >= ARTIFACT_CAPS.maxFiles || bytes >= ARTIFACT_CAPS.maxBytes) { truncated = true; break; }
+      let real: string;
+      try { real = realpathSync(file); } catch (error) { receipts.push({ path: path.relative(cwd, file).replace(/\\/g, '/'), size: 0, sha256: '', modified: '', status: 'refused', reason: `could not resolve path: ${(error as Error).message}` }); continue; }
+      const allowed = path.resolve(root), relative = path.relative(allowed, real);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) { receipts.push({ path: path.relative(root, file).replace(/\\/g, '/'), size: 0, sha256: '', modified: '', status: 'refused', reason: 'real path is outside the allowed root' }); continue; }
+      const info = statSync(real); if (bytes + info.size > ARTIFACT_CAPS.maxBytes) { truncated = true; break; }
+      receipts.push({ path: relative.replace(/\\/g, '/'), size: info.size, sha256: artifactHash(real), modified: new Date(info.mtimeMs).toISOString() }); bytes += info.size;
+    }
+    if (truncated) break;
+  }
+  return { receipts, warnings, truncated, ...(step.artifacts_required && warnings.length ? { requiredFailure: warnings[0] } : {}) };
+}
+
 function runIntakeCheck(project: ProjectConfig, orders: Orders, scratch: string, log: string): AcceptStepResult {
   const started = Date.now();
   try {
@@ -288,7 +333,7 @@ export function trialAcceptance(project: ProjectConfig, orders: Orders, tag: str
   if (!force && previous?.fingerprint === input.key && previous.status !== 'waiting') {
     if (!previous.retryable || (retryIntervalMs > 0 && Date.now() - Date.parse(previous.at) < retryIntervalMs)) return previous;
   }
-  const result: AcceptanceTrial = { id: randomUUID(), fingerprint: input.key, report: input.report.seq, base: input.base, branch: input.branch, status: 'waiting', at: new Date().toISOString(), changed: input.changed, conflicts: [], steps: [] };
+  const result: AcceptanceTrial = { id: randomUUID(), fingerprint: input.key, report: input.report.seq, base: input.base, branch: input.branch, status: 'waiting', at: new Date().toISOString(), changed: input.changed, conflicts: [], steps: [], artifacts: [] };
   const record = () => { if (result.status !== 'waiting' || previous?.reason !== result.reason || previous?.fingerprint !== result.fingerprint) orders.record(tag, 'accept-trial', { ...result }); return result; };
   const lint = deliveryChecks(project, input.doc, input.doc.order.worktree ?? project.root);
   if (lint.some(i => !i.ok)) { result.reason = 'Delivery lint must pass before a trial.'; return record(); }
@@ -312,9 +357,15 @@ export function trialAcceptance(project: ProjectConfig, orders: Orders, tag: str
     else {
       const steps = input.doc.order.kind === 'intake' ? [{ name: 'intake-check', command: [], timeout_minutes: 1 }, ...input.accept.steps] : input.accept.steps;
       for (const [index, step] of steps.entries()) {
-        const stepResult: AcceptStepResult = step.when_changed && !input.changed.some(f => matches(f, step.when_changed!))
+        let stepResult: AcceptStepResult = step.when_changed && !input.changed.some(f => matches(f, step.when_changed!))
           ? { name: step.name, status: 'skipped', duration_ms: 0, tail: 'No matching changed paths.' }
           : step.name === 'intake-check' ? runIntakeCheck(project, orders, scratch, path.join(logs, `step-${index + 1}.log`)) : runCommand(step.command, scratch, step.timeout_minutes, path.join(logs, `step-${index + 1}.log`), step.name);
+        if (stepResult.status === 'passed' && step.artifacts?.length) {
+          const collected = collectArtifacts(step, scratch, project.root);
+          stepResult = { ...stepResult, ...(collected.receipts.length ? { artifacts: collected.receipts } : {}), ...(collected.warnings.length ? { artifact_warnings: collected.warnings } : {}), ...(collected.truncated ? { truncated: true } : {}) };
+          result.artifacts!.push(...collected.receipts);
+          if (collected.requiredFailure) { stepResult = { ...stepResult, status: 'failed', tail: `${stepResult.tail}\n${collected.requiredFailure}` }; }
+        }
         result.steps.push(stepResult);
         orders.record(tag, 'accept-step', { trial: result.id, ...stepResult });
         if (stepResult.status === 'failed') { result.status = 'failed'; result.reason = `Step ${step.name} failed: ${stepResult.tail}`; break; }

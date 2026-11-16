@@ -81,6 +81,8 @@ import { activityLine } from '../producer/activity-format.ts';
 import { producerSessionStatus, startProducerSession, startProducerSessionDetached, stopProducerSession } from '../producer/session.ts';
 import { runProducerMcp } from '../producer/mcp.ts';
 import { createIntake, runDesignDocs, runIntake } from './intake.ts';
+import { listNamedLocks, runNamedLock, usage as lockUsage } from '../run/named-lock.mjs';
+import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance, type PixelRegion } from '../verify/png.ts';
 
 /** What a person needs to open the console: the sign-in link (it carries this start's key) and the file programs read the key from. */
 const signInLines = (port: number, key: string): string => t('Sign in: {url}\nKey file (for programs of this account): {file}', { url: `http://127.0.0.1:${port}/login?key=${key}`, file: keyFile(port) });
@@ -98,9 +100,9 @@ const options = {
   docs: { type: 'string' }, dir: { type: 'string' }, accept: { type: 'string' }, reject: { type: 'string' }, drop: { type: 'string' }, version: { type: 'string' },
   intent: { type: 'string' }, 'body-file': { type: 'string' }, slug: { type: 'string' }, queue: { type: 'boolean' }, override: { type: 'boolean' }, model: { type: 'boolean' }, skills: { type: 'string' }, check: { type: 'boolean' }, topic: { type: 'string' },
   results: { type: 'string', multiple: true }, tag: { type: 'string' }, from: { type: 'string' }, names: { type: 'string' }, source: { type: 'string' }, every: { type: 'string' },
-  'stall-minutes': { type: 'string' }, 'timeout-minutes': { type: 'string' }, 'poll-minutes': { type: 'string' },
+  'stall-minutes': { type: 'string' }, 'timeout-minutes': { type: 'string' }, 'poll-minutes': { type: 'string' }, 'wait-minutes': { type: 'string' },
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
-  page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' },
+  page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -201,6 +203,8 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   settings [list] | settings approve <id> [--note t] [--who n]   confirm the text of a setting (its section of the Markdown file, by sha256); no picture is made before that
   spend [list] [--json] | spend approve <quote id> --cap N [--note t] [--who n]   the quote and spend files of "credits: dir" with balance chain and cap checks; approve a quote file up to a cap
   usage [--since 24h|7d|30d|date] [--by day|worker|project|order|kind] [--top N] [--json]   run tokens and estimates; --days N selects external tool ledgers
+  lock <name> [--wait-minutes 60] -- <program> [args...] | lock list   run one command under a machine-wide named lock
+  image lum <png> [--region x,y,w,h] [--json] | image motion <a.png> <b.png> [--region x,y,w,h] [--json]   measure screenshot brightness or frame motion
   producer [status|cases|actions|would-do|log [--since <time>]|usage [--days N]|pause|resume|act <CASE> <ACTION>|session status|start|stop|mcp] [--json]   observe cases and policy-gated actions
 
   machines [--json] | machines check [id]     machine health, services and last probe; check probes now
@@ -293,6 +297,8 @@ function show(orders: Orders, tag: string): string {
   if (waiting.length) out.push('', t('Notes still waiting:'), ...waiting.map(n => `  ${n.at}  ${n.kind}  ${n.text}`));
   const actions = doc.actions;
   if (actions.length) out.push('', t('Actions:'), ...actions.map(a => `  ${a.at}  ${a.kind}${a.note ? '  ' + a.note : ''}`));
+  const artifacts = orders.store.events({ tag: o.tag }).filter(e => e.type === 'accept-trial' && Array.isArray(e.data?.artifacts)).at(-1)?.data?.artifacts as { path?: string; sha256?: string; size?: number }[] | undefined;
+  if (artifacts?.length) out.push('', 'Artifacts:', ...artifacts.map(a => `  ${a.path ?? '-'}  ${a.sha256 ?? '-'}  ${a.size ?? 0} bytes`));
   out.push('', t('Last events:'));
   const events = orders.store.events({ tag: o.tag, limit: 10 });
   out.push(...(events.length ? events.map(e => `  ${e.at}  ${e.type}${e.by ? ` (${e.by})` : ''}${e.data && Object.values(e.data).some(v => v !== undefined) ? '  ' + JSON.stringify(e.data) : ''}`) : ['  ' + t('(none)')]));
@@ -398,6 +404,38 @@ async function run(argv: string[]): Promise<string> {
 
 ${editorLines(editors, projects.length > 1)}` : body;
     });
+  }
+  if (group === 'lock') {
+    if (command === 'list') {
+      if (rest.length) fail(lockUsage());
+      const locks = listNamedLocks();
+      return values.json ? JSON.stringify(locks, null, 2) : (locks.length ? locks.map(l => `${l.name}  ${l.stale ? 'STALE ' : ''}pid ${l.holder ?? '?'}  held ${l.heldMinutes} min  ${l.cwd ?? '-'}  ${l.command ?? '-'}`).join('\n') : '(no named locks)');
+    }
+    if (!command) fail(lockUsage());
+    const args = [command, ...(values['wait-minutes'] !== undefined ? ['--wait-minutes', values['wait-minutes']] : []), '--', ...rest];
+    const code = await runNamedLock(args); exitCode = code; return '';
+  }
+  if (group === 'image') {
+    const bad = (message: string) => { exitCode = 2; return `alba: ${message}`; };
+    const parseRegion = (): PixelRegion | undefined => {
+      if (values.region === undefined) return undefined;
+      const parts = values.region.split(',').map(Number);
+      if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0) || parts[2] <= 0 || parts[3] <= 0) return undefined;
+      return parts as PixelRegion;
+    };
+    const region = parseRegion();
+    if (values.region !== undefined && !region) return bad('--region must be x,y,w,h with positive whole dimensions.');
+    if (command !== 'lum' && command !== 'motion') return bad('Usage: alba image lum <png> [--region x,y,w,h] [--json] | image motion <a.png> <b.png> [--region x,y,w,h] [--json]');
+    const need = command === 'lum' ? 1 : 2;
+    if (rest.length !== need) return bad('The image command has the wrong number of files.');
+    const read = (file: string) => { try { return decodePng(readFileSync(path.resolve(file))); } catch (e) { return { status: 'unsupported' as const, reason: (e as Error).message }; } };
+    const first = read(rest[0]!);
+    if (first.status !== 'ok') { exitCode = 3; return `alba: ${rest[0]}: ${first.reason}`; }
+    if (command === 'lum') { const value = meanLuminance(first.image, region); return values.json ? JSON.stringify({ file: path.resolve(rest[0]!), width: first.image.width, height: first.image.height, mean_luminance: value, ...(region ? { region } : {}) }) : value.toFixed(6); }
+    const second = read(rest[1]!);
+    if (second.status !== 'ok') { exitCode = 3; return `alba: ${rest[1]}: ${second.reason}`; }
+    try { const value = meanAbsoluteLuminanceDifference(first.image, second.image, region); return values.json ? JSON.stringify({ a: path.resolve(rest[0]!), b: path.resolve(rest[1]!), width: first.image.width, height: first.image.height, mean_difference: value, ...(region ? { region } : {}) }) : value.toFixed(6); }
+    catch (e) { exitCode = 3; return `alba: ${(e as Error).message}`; }
   }
   const { cfg, orders } = projectOf(values.project);
   if (group === 'design-docs') return runDesignDocs(cfg, command, rest, { json: values.json, out: values.out, id: values.id, order: values.version ?? values.order, status: values.status });
@@ -541,9 +579,12 @@ ${editorLines(editors, projects.length > 1)}` : body;
     }
     if (group === 'leases' && command !== undefined && command !== 'list') fail('Usage: alba resources | alba leases [list] | alba leases release <resource> <TAG>');
     const views = resourceViews(cfg, orders, now);
-    if (values.json) return JSON.stringify(views, null, 2);
-    if (!views.length) return t('This project declares no resources (resources: in the project file).');
-    return views.map(r => [`${r.name}  ${r.used}/${r.slots}${r.exclusive ? ' ' + t('exclusive (keeps out {kinds})', { kinds: r.blocks.join('/') }) : ''}${r.note ? '  ' + r.note : ''}`, ...r.leases.map(l => `  ${l.tag}  ${t('held {min} min', { min: l.heldMinutes })}${l.expired ? '  ' + t('LEASE EXPIRED') : ''}`)].join('\n')).join('\n');
+    const locks = listNamedLocks(now.getTime());
+    if (values.json) return JSON.stringify({ resources: views, locks }, null, 2);
+    const resourceText = views.map(r => [`${r.name}  ${r.used}/${r.slots}${r.exclusive ? ' ' + t('exclusive (keeps out {kinds})', { kinds: r.blocks.join('/') }) : ''}${r.note ? '  ' + r.note : ''}`, ...r.leases.map(l => `  ${l.tag}  ${t('held {min} min', { min: l.heldMinutes })}${l.expired ? '  ' + t('LEASE EXPIRED') : ''}`)].join('\n'));
+    const lockText = locks.length ? ['Named locks:', ...locks.map(l => `  ${l.name}  ${l.stale ? 'STALE ' : ''}pid ${l.holder ?? '?'}  ${t('held {min} min', { min: l.heldMinutes })}  ${l.cwd ?? '-'}  ${l.command ?? '-'}`)] : [];
+    if (!views.length && !locks.length) return t('This project declares no resources (resources: in the project file).');
+    return [...resourceText, ...lockText].join('\n');
   }
 
   if (group === 'orders') {
