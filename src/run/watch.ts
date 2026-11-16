@@ -6,6 +6,7 @@ import type { Probes } from '../tick/gather.ts';
 import { t } from '../i18n.ts';
 import { findLoops, isLongCommand, lastCommand, parseActions, type LoopFinding } from './loops.ts';
 import { readStateJson, writeStateFile, stateTransaction } from '../orders/state-files.ts';
+import { saveWipSnapshot } from './wip.ts';
 
 /** What the tick saw of a run's log the last time commands were counted: used to tell "output still grows, nothing new is done". */
 interface Seen { execs: number; bytes: number; changed_at: string }
@@ -65,9 +66,11 @@ export function stopLoopingRun(_project: ProjectConfig, orders: Orders, probes: 
     const stopped = !run.imported ? probes.kill?.(run.pid, run.process_started_at, run.started) : [];
     if (!stopped?.includes(run.pid)) return t('Refusing to stop process {pid} of {tag}: it is not the process this run started.', { pid: run.pid, tag });
   }
-  orders.runEnd(tag, 'stalled');
   const summary = t('stopped by alba: the run was going round in circles ({evidence})', { evidence: evidence.join('; ') });
-  orders.report(tag, { status: 'failed', summary: summary.replace(/\n/g, ' '), evidence: run.log ? [run.log] : [], commits: [] }, 'tick');
+  const cleanSummary = summary.replace(/\n/g, ' ');
+  const wip = saveWipSnapshot(doc.order.worktree ?? run.cwd, { tag: doc.order.tag, runId: run.id, kind: 'killed-by-alba' });
+  orders.runEnd(tag, 'stalled', { kind: 'killed-by-alba', detail: 'stopped by alba (loop-stopped)', why: cleanSummary, ...wip });
+  orders.report(tag, { status: 'failed', summary: cleanSummary, evidence: run.log ? [run.log] : [], commits: [] }, 'tick');
   orders.record(tag, 'loop-stopped', { run: run.id, evidence });
   return t('{tag}: stopped run {run} (going round in circles)', { tag, run: run.id });
 }

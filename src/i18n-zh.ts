@@ -926,6 +926,13 @@ export const zh: Record<string, string> = {
   'The "{set}" foundations are not ready ({missing}); held back until they are: {tags}.': '“{set}”底座文档未就绪（{missing}）；就绪之前暂不开工：{tags}。',
   'The "{set}" foundations are not ready ({missing}); going ahead without them: {tags}.': '“{set}”底座文档未就绪（{missing}）；这些工单照常开工：{tags}。',
   '{file} has no "foundations:" section; orders start without foundation documents.': '{file} 没有 “foundations:” 一节；工单开工前不检查底座文档。',
+  // end receipts and WIP snapshots
+  'the worker stopped at the output token limit: {detail}': '工人在输出令牌上限处停止：{detail}',
+  'the worker stopped at the context limit: {detail}': '工人在上下文窗口上限处停止：{detail}',
+  ' (saved at {ref})': '（已保存于 {ref}）',
+  '{tag}: run {run} ended silently ({kind}): {detail}{wip}': '{tag}：派工 {run} 无声结束（{kind}）：{detail}{wip}',
+  'WIP snapshot': '未提交快照',
+  'restore': '恢复',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

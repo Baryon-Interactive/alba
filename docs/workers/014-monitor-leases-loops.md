@@ -161,3 +161,18 @@ If a run has no receipt written after it began and no commit since it began, aft
 ## 7. Named locks and resources
 
 Use `alba lock <name> -- <program>` when two orders must take turns at one machine-wide thing, such as one game window or one screenshot capture. A lock is a short mutual-exclusion turn and does not consume a project capacity. Use a project resource when the work consumes a counted machine or service slot, needs a lease in the console, or must block a class of work. `alba resources` shows both resource leases and held named locks; named locks include the holder, command, folder, minutes held and a stale flag. `alba lock list` shows the same machine-wide lock directory without loading a project.
+
+## 8. WIP refs for abnormal ends
+
+When a run ends with any `end.kind` other than `report` (document 005, [How a run ended](../workflow/005-run-and-resume.md#how-a-run-ended)) and its worktree has uncommitted or untracked (not ignored) changes, Alba snapshots that work into `refs/alba/wip/<TAG>-<run>` without touching the working tree, the real index, or `HEAD`:
+
+1. A temporary `GIT_INDEX_FILE` is seeded with `git read-tree HEAD`.
+2. Modified and untracked paths are staged into that temporary index (`git add -A`), skipping any single file over 50 MB and stopping once total staged bytes would pass 500 MB (`wip_skipped: true`, with up to 20 skipped paths recorded in `wip_skipped_paths`).
+3. `git write-tree` and `git commit-tree` create a commit parented on `HEAD` naming the order, run, and `end.kind`, and `git update-ref` points `refs/alba/wip/<TAG>-<run>` at it.
+
+Alba never runs `git stash`, never deletes `refs/alba/wip/*` automatically (including during `alba clean`), and never fails a run finish if the snapshot fails (recording `wip_error` on `Run.end` instead). `alba orders show <TAG>` prints the ref, file count, and how to inspect or restore paths from it:
+
+```
+git show --stat refs/alba/wip/<TAG>-<run>
+git checkout refs/alba/wip/<TAG>-<run> -- <path>
+```

@@ -6,7 +6,9 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { UserError, t } from '../i18n.ts';
-import type { Run, RunOutcome } from '../orders/model.ts';
+import type { Run, RunEnd, RunOutcome } from '../orders/model.ts';
+import { probesTailReader, readRunEndReason } from './end-reason.ts';
+import { saveWipSnapshot, type SaveWipOptions } from './wip.ts';
 import { parseReportBlock, parseReportFile, REPORT_BEGIN, REPORT_END, type ReportInput } from '../orders/report.ts';
 import { REPORT_STATUSES } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
@@ -51,6 +53,7 @@ export interface Finish {
   report_from?: { where: 'earlier-message' | 'written-file'; file?: string };
   /** A malformed or missing report was sent back once for repair instead of failing the delivery. */
   bounce?: { error?: string; final_message?: boolean; prompt: string };
+  end?: RunEnd;
   why: string;
 }
 
@@ -96,7 +99,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     // A run Alba started (it wrote the run's prompt file) that never got a pid: ended after the grace period instead of staying open forever.
     // A run a person opened by hand (`alba orders run-start`, for a card) has no prompt file and stays open until they end it.
     if (run && !run.pid && !run.imported && run.prompt_file && probes.now().getTime() - Date.parse(run.started) > LAUNCH_GRACE_MINUTES * 60000) {
-      out.push({ tag: doc.order.tag, run: run.id, outcome: 'failed', missing_report: true, report: { status: 'failed', summary: t('the worker process was never recorded as started'), evidence: run.log ? [run.log] : [], commits: [] }, why: t('no process was recorded for the run within {min} min of its start', { min: LAUNCH_GRACE_MINUTES }) });
+      const why = t('no process was recorded for the run within {min} min of its start', { min: LAUNCH_GRACE_MINUTES });
+      out.push({ tag: doc.order.tag, run: run.id, outcome: 'failed', missing_report: true, report: { status: 'failed', summary: t('the worker process was never recorded as started'), evidence: run.log ? [run.log] : [], commits: [] }, end: { kind: 'vanished', detail: 'no process was recorded for the run', why }, why });
       continue;
     }
     if (!run?.pid || run.imported || stillOurs(run, probes)) continue;
@@ -117,8 +121,26 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     const found = stream.sessionId ?? parseStreamLog(eventHead).sessionId ?? textSessionId(run.log ? probes.head?.(run.log, 4096) ?? probes.readText(run.log)?.slice(0, 4096) ?? '' : '');
     const session = found && found !== run.session ? found : undefined;
     const usage = totalUsage(liveRuns.accounting(run)?.turns ?? []) ?? (summary?.turns ? { source: 'codex-log' as const, total_tokens: summary.input_tokens + summary.output_tokens, input_tokens: summary.input_tokens, cached_tokens: summary.cached_input_tokens, output_tokens: summary.output_tokens, turns: summary.turns } : run.log ? parseUsage(/step[-_]finish/.test(tail) ? probes.readText(run.events_file ?? run.log) ?? tail : tail, { cut: Buffer.byteLength(tail) >= TAIL_BYTES && !/step[-_]finish/.test(tail) }) : undefined);
+    const worker = workers?.workers.find(w => w.id === run.worker);
+    const priorEvents = orders.store.events({ tag: doc.order.tag });
     let readReport = false;
-    const push = (f: Omit<Finish, 'tag' | 'run' | 'session' | 'usage'>) => out.push({ tag: doc.order.tag, run: run.id, live_summary: summary, ...(!readReport ? { missing_report: true } : {}), ...(session ? { session } : {}), ...(usage ? { usage } : {}), ...f });
+    let cachedReason: ReturnType<typeof readRunEndReason> | undefined;
+    const endReason = (reportStatus?: string, hasFinalOrBroken?: boolean) => cachedReason ??= readRunEndReason({
+      run: { ...run, ...(session ? { session } : {}) },
+      worker,
+      albaEvents: priorEvents,
+      hasReport: readReport,
+      reportStatus,
+      hasFinalOrBrokenReport: hasFinalOrBroken,
+      usageTotal: usage?.total_tokens,
+      codexHome: worker?.launch?.env?.CODEX_HOME,
+      now: typeof probes.now === 'function' ? probes.now() : new Date(), // some callers pass partial probes
+      reader: probesTailReader(probes),
+    });
+    const push = (f: Omit<Finish, 'tag' | 'run' | 'session' | 'usage'>, hasFinalOrBroken = false) => {
+      const end = f.end ?? { ...endReason(f.report?.status, hasFinalOrBroken), why: f.why };
+      out.push({ tag: doc.order.tag, run: run.id, live_summary: summary, ...(!readReport ? { missing_report: true } : {}), ...(session ? { session } : {}), ...(usage ? { usage } : {}), ...f, end });
+    };
     const failed = (summary: string, why: string, question?: string, status: 'failed' | 'blocked' = 'failed') =>
       push({ outcome: 'failed', report: { status, summary, ...(question ? { question } : {}), evidence: run.log ? [run.log] : [], commits: [] }, why });
 
@@ -152,12 +174,10 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       if (printed) { report = printed; if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = stream.finalText || tail; from = path.basename(run.log); fromLog = true; }
     }
     if (report) { readReport = true; push({ outcome: 'completed', report, from, ...(writeLast ? { writeLast } : {}), ...(earlier ? { report_from: { where: earlier.where, ...(earlier.file ? { file: earlier.file } : {}) } } : {}), why: earlier?.where === 'earlier-message' ? t('process ended, report block read from an earlier message (the last message had none)') : earlier ? t('process ended, report block read from a file the worker wrote ({file})', { file: earlier.file ?? '' }) : fromLog ? t('process ended, report block read from the log') : t('process ended, report block read') }); continue; }
-    const worker = workers?.workers.find(w => w.id === run.worker);
-    const priorEvents = orders.store.events({ tag: doc.order.tag });
     const lastBounce = [...priorEvents].map((e, i) => ({ e, i })).reverse().find(x => x.e.type === 'report-bounced');
     const hadUnfollowedBounce = !!lastBounce && !priorEvents.slice(lastBounce.i + 1).some(e => e.type === 'report' || (e.type === 'run-end' && e.data?.outcome === 'cancelled'));
     if (!hadUnfollowedBounce && (broken || stream.finalText.trim())) {
-      push({ outcome: 'completed', bounce: { ...(broken ? { error: broken } : {}), ...(stream.finalText.trim() ? { final_message: true } : {}), prompt: bouncePrompt(broken, !!stream.finalText.trim()) }, why: broken ? t('the report block is invalid; it will be sent back once for repair') : t('no report block in the final message; it will be sent back once for repair') });
+      push({ outcome: 'completed', bounce: { ...(broken ? { error: broken } : {}), ...(stream.finalText.trim() ? { final_message: true } : {}), prompt: bouncePrompt(broken, !!stream.finalText.trim()) }, why: broken ? t('the report block is invalid; it will be sent back once for repair') : t('no report block in the final message; it will be sent back once for repair') }, true);
       continue;
     }
     // A remote host that refused to start the worker (its checkout is unusable, e.g. LFS files left as pointers) says why in the log.
@@ -173,6 +193,15 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       continue;
     }
     if (stream.stopReason === 'max_turn_requests') { failed(t('the run used up its turn limit without a report block'), t('stopped at the turn limit')); continue; }
+    const detected = endReason(undefined, Boolean(broken || stream.finalText.trim()));
+    if (detected.kind === 'output-limit') {
+      failed(t('the worker stopped at the output token limit: {detail}', { detail: detected.detail }), detected.detail);
+      continue;
+    }
+    if (detected.kind === 'context-limit') {
+      failed(t('the worker stopped at the context limit: {detail}', { detail: detected.detail }), detected.detail);
+      continue;
+    }
     const verdict = classifyEndpoint({ events: eventTail || stderr, log: stderr, cut: Buffer.byteLength(eventTail || stderr) >= TAIL_BYTES, usageTotal: usage?.total_tokens, worker });
     // Only actual failed runs count. A tick held by the background probe creates no run.
     if (verdict.kind === 'unreachable') {
@@ -193,7 +222,7 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     }
     if (stop) { failed(stop.summary, stop.why, stop.question, 'blocked'); continue; }
     // A worker set to `on_limit: rotate` that ran out of its usage window: the order is handed over like a capacity error (without it that is a failure a person looks at).
-    if (worker?.on_limit === 'rotate' && !isTransientError(endText) && isLimitError(endText)) {
+    if (worker?.on_limit === 'rotate' && !isTransientError(endText) && (isLimitError(endText) || detected.kind === 'quota')) {
       push({ outcome: 'capacity', limit: 'quota', why: t('the usage window or balance is used up; the order will be handed to another worker') });
       continue;
     }
@@ -210,12 +239,23 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
 }
 
 
-export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig): void {
+export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, wipOptions?: Pick<SaveWipOptions, 'maxFileBytes' | 'maxTotalBytes' | 'runGit'>): void {
+  const before = orders.get(f.tag);
+  const storedRun = before.runs.find(r => r.id === f.run);
+  const worktree = before.order.worktree ?? storedRun?.cwd;
+  const baseEnd: RunEnd = f.end ?? (f.report && !f.missing_report
+    ? { kind: 'report', detail: `report block read (${f.report.status})`, why: f.why }
+    : { kind: f.outcome === 'completed' ? 'exit-0-no-report' : 'nonzero-exit', detail: f.why || f.outcome, why: f.why });
+  const wip = baseEnd.kind !== 'report'
+    ? saveWipSnapshot(worktree, { tag: before.order.tag, runId: f.run, kind: baseEnd.kind, ...wipOptions })
+    : {};
+  const end: RunEnd = { ...baseEnd, ...wip };
+  f.end = end;
   if (f.live_summary) orders.patchRun(f.tag, f.run, { live_summary: f.live_summary });
   if (f.missing_report) orders.patchRun(f.tag, f.run, { missing_report: true });
   if (f.report_from) { orders.patchRun(f.tag, f.run, { report_from: f.report_from.where }); orders.record(f.tag, 'report-from-earlier', { run: f.run, ...f.report_from }); }
   if (f.session || f.usage || f.limit || f.lost_session) orders.patchRun(f.tag, f.run, { ...(f.session ? { session: f.session } : {}), ...(f.usage ? { usage: f.usage } : {}), ...(f.limit ? { limit: f.limit } : {}), ...(f.lost_session ? { lost_session: true } : {}) });
-  orders.runEnd(f.tag, f.outcome);
+  orders.runEnd(f.tag, f.outcome, end);
   if (f.writeLast) writeFileSync(f.writeLast.file, f.writeLast.text, 'utf8');
   if (f.bounce) {
     orders.record(f.tag, 'report-bounced', { run: f.run, ...(f.bounce.error ? { error: f.bounce.error } : {}), ...(f.bounce.final_message ? { final_message: true } : {}) });

@@ -6,6 +6,7 @@ import type { WorkersFile } from '../workers/config.ts';
 import { totalUsage } from '../usage/fold.ts';
 import { liveRuns, liveSummary } from './live.ts';
 import { parseStreamLog } from '../workers/adapters/index.ts';
+import { saveWipSnapshot } from './wip.ts';
 
 /** Enforce observed usage at dispatcher passes, including a process that exited between passes. */
 export function stopTokenCappedRuns(project: ProjectConfig, orders: Orders, workers: WorkersFile, probes: Probes): string[] {
@@ -28,9 +29,10 @@ export function stopTokenCappedRuns(project: ProjectConfig, orders: Orders, work
     }
     const file = run.events_file ?? run.log;
     const session = file ? parseStreamLog(probes.head?.(file, 65536) ?? probes.readText(file)?.slice(0, 65536) ?? '').sessionId : undefined;
-    orders.patchRun(doc.order.tag, run.id, { usage, live_summary: liveSummary(live), ...(session ? { session } : {}) });
-    orders.runEnd(doc.order.tag, 'failed');
     const summary = `Stopped by alba: max_tokens_per_run exceeded (${usage!.total_tokens} > ${cap}).`;
+    const wip = saveWipSnapshot(doc.order.worktree ?? run.cwd, { tag: doc.order.tag, runId: run.id, kind: 'killed-by-alba' });
+    orders.patchRun(doc.order.tag, run.id, { usage, live_summary: liveSummary(live), ...(session ? { session } : {}) });
+    orders.runEnd(doc.order.tag, 'failed', { kind: 'killed-by-alba', detail: 'stopped by alba (token-cap-stopped)', why: summary, ...wip });
     orders.report(doc.order.tag, { status: 'failed', summary, evidence: file ? [file] : [], commits: [] }, 'tick');
     orders.record(doc.order.tag, 'token-cap-stopped', { run: run.id, cap, total_tokens: usage!.total_tokens });
     done.push(`${doc.order.tag}: ${summary}`);

@@ -1,0 +1,4 @@
+{"timestamp":"2026-11-14T18:23:01.000Z","type":"session_meta","payload":{"id":"019a0000-0000-7000-8000-000000000001"}}
+{"timestamp":"2026-11-14T18:23:02.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn_1"}}
+{"timestamp":"2026-11-14T18:23:06.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"turn_1","item":{"type":"Reasoning","id":"r_1"}}}
+{"timestamp":"2026-11-14T18:23:07.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1200,"cached_input_tokens":400,"output_tokens":300,"total_tokens":1500}}}}
