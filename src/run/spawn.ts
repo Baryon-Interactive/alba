@@ -32,11 +32,14 @@ child.on('spawn', () => { fs.writeSync(1, 'PID ' + child.pid); child.unref(); pr
  * pid and exits: the program's recorded parent is then gone, and it survives the end of the process that asked for it (for
  * instance `alba serve`). The pid returned is the program's own, not the helper's.
  */
+export const exitFileOf = (eventsFile: string): string =>
+  eventsFile.replace(/\.events\.jsonl$/i, '').replace(/\.jsonl$/i, '') + '.exit.json';
+
 export function spawnDetachedProgram(program: string, args: string[], options: DetachedOptions): number {
   mkdirSync(path.dirname(options.logFile), { recursive: true });
   if (options.eventsFile) {
     mkdirSync(path.dirname(options.eventsFile), { recursive: true });
-    args = [fileURLToPath(new URL('./capture.mjs', import.meta.url)), JSON.stringify([program, args])];
+    args = [fileURLToPath(new URL('./capture.mjs', import.meta.url)), JSON.stringify([program, args, options.eventsFile])];
     program = process.execPath;
   }
   const env = workerEnvironment(process.env, options.env, options.envUnset);

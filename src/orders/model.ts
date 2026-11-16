@@ -97,6 +97,7 @@ export interface Run {
   role_warnings?: string[];
   engine?: string; model?: string; continuation?: boolean;
   events_file?: string;
+  exit_file?: string;
   live_summary?: LiveSummary;
   id: string;
   seq: number;

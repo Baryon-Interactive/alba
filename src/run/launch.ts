@@ -32,6 +32,7 @@ import { MAX_RESUMES } from './transient.ts';
 import { baseRefOf, checkBaseRef, commonGitDir, ensureWorktree, mainCheckoutState, planWorktree, worktreeGitDir } from './worktree.ts';
 import { installBaseGuard, RUN_ENV } from './ref-guard.ts';
 import { bindEditor, dropEditor, editorPoolsOf, editorPortProblem, editorPrompt, editorSlots, runMachine, takeEditor } from '../editors/pool.ts';
+import { exitFileOf } from './spawn.ts';
 import type { ResolvedRole } from '../roles/config.ts';
 
 /** The role with the run's editor as an HTTP MCP server. */
@@ -336,7 +337,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
     if (editor) bindEditor(project, doc.order.tag, editor.slot.pool, run.id);
     if (attemptsBrief && reroute) orders.patchRun(doc.order.tag, run.id, { previous_attempts: attemptsBrief, reroute: reroute.id });
     if (role.id) orders.record(doc.order.tag, 'run-role', { run: run.id, role: role.id, source: role.source, effort: role.definition?.effort, reasoning: role.definition?.reasoning, servers: roleMount.servers, warnings: roleMount.warnings });
-    if (eventsFile) orders.patchRun(doc.order.tag, run.id, { events_file: eventsFile });
+    if (eventsFile) orders.patchRun(doc.order.tag, run.id, { events_file: eventsFile, exit_file: exitFileOf(eventsFile) });
     const started = remote ? writeRemoteSpec({ target: remote, worker, id: `${doc.order.tag}-${run.id}`.toLowerCase(), branch: plan.branch, localWorktree: plan.path, promptFile, lastFile,
       orderFiles: [findOrderFile(project.work_orders, doc.order.tag), ...(handoff ? [handoff] : [])], overlayRoots: ['.alba', ...skillPlan.mounts, '.opencode/opencode.json'],
       program: command.program, args: command.args, env: environment.env, envUnset: environment.envUnset, specFile: path.join(runsDir, `${doc.order.tag}-${run.id}.remote.json`) }) : command;
