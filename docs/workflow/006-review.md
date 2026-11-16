@@ -56,7 +56,7 @@ verify:
       - { a: "**/{name}-t0.png", b: "**/{name}-t1.png", region: [20, 560, 1600, 160], min: 0.5 }
 ```
 
-Luminance uses Rec.709 weights and a whole image or pixel region. Motion compares paired frames on a 0 to 255 mean absolute luminance scale; different sizes fail. A rule matching no image is a warning, and an image that cannot be decoded is also a warning. The same measurements are available to scripts as `alba image lum <png> [--region x,y,w,h] [--json]` and `alba image motion <a.png> <b.png> [--region x,y,w,h] [--json]`. These gates measure; they do not replace a person opening the image.
+Luminance uses Rec.709 weights and a whole image or pixel region; a region must fit inside the image and names its size when it does not. Motion compares paired frames on a 0 to 255 mean absolute luminance scale; different sizes fail. A rule matching no image is a warning, and an image that cannot be decoded is also a warning. The same measurements are available to scripts as `alba image lum <png> [--region x,y,w,h] [--json]` and `alba image motion <a.png> <b.png> [--region x,y,w,h] [--json]`. These gates measure; they do not replace a person opening the image.
 
 An acceptance step can declare `artifacts: ["dist/Development/Windows/*.exe", "artifacts/package-receipt-*.json"]`. Passing steps record each matched file's relative path, size, SHA-256 and modified time in the `accept-step` event and `trial.json`; the `accept-trial` event and `alba orders show <TAG>` carry the same hashes. Missing globs warn unless `artifacts_required: true`; links whose real path leaves the trial or project root are recorded as `refused` and do not fail the step. Hashing is streamed and capped at 200 files and 2 GB, with `truncated: true` when a cap is reached.
 

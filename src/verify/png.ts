@@ -30,6 +30,14 @@ export interface ImageSummary {
 }
 
 export type PixelRegion = [number, number, number, number];
+export function regionError(image: DecodedPng, region?: PixelRegion): string | undefined {
+  if (!region) return undefined;
+  const [x, y, w, h] = region;
+  if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > image.width || y + h > image.height) {
+    return `region [${region.join(', ')}] is outside image size ${image.width}x${image.height}`;
+  }
+  return undefined;
+}
 function regionBounds(image: DecodedPng, region?: PixelRegion): [number, number, number, number] {
   const [x, y, w, h] = region ?? [0, 0, image.width, image.height];
   const left = Math.max(0, Math.min(image.width, x)), top = Math.max(0, Math.min(image.height, y));

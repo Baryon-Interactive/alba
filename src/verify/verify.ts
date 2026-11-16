@@ -12,7 +12,7 @@ import { findOrderFile } from '../run/prompt.ts';
 import { orderBaseRef, mergeReadiness, systemReadiness } from '../review/readiness.ts';
 import { planWorktree } from '../run/worktree.ts';
 import { t } from '../i18n.ts';
-import { decodePng, imageFormat, meanAbsoluteLuminanceDifference, meanLuminance, summarizePng, type DecodedPng, type ImageFormat, type ImageSummary, type PixelRegion } from './png.ts';
+import { decodePng, imageFormat, meanAbsoluteLuminanceDifference, meanLuminance, regionError, summarizePng, type DecodedPng, type ImageFormat, type ImageSummary, type PixelRegion } from './png.ts';
 import type { LuminanceGate, MotionGate } from '../config.ts';
 import { decodeJpegBlocks } from './jpeg.ts';
 
@@ -244,14 +244,17 @@ function screenshotGate(project: ProjectConfig, worktree: string, sections: Orde
   if (dark.length) reasons.push(t('Dark screenshots: {files}.', { files: dark.map(e => `${e.path} (mean ${e.summary!.meanLuminance.toFixed(4)}, dark ${((e.summary!.darkFraction) * 100).toFixed(1)}%)`).join(', ') }));
   if (skipped.length) reasons.push(t('Skipped PNGs over 64 MB: {files}.', { files: skipped.map(e => e.path).join(', ') }));
   for (const entry of undecoded) reasons.push(`${entry.path}: ${entry.reason}.`);
-  const gateWarnings: string[] = [], gateFailures: string[] = [];
+  const gateWarnings: string[] = [], gateFailures: string[] = [], gateMeasurements: string[] = [];
   const luminanceRules: LuminanceGate[] = config.luminance ?? [];
   for (const rule of luminanceRules) {
     const selected = entries.filter(e => matchesScreenshot(e, rule.match, worktree, project.root));
     if (!selected.length) { gateWarnings.push(`Luminance rule ${rule.match} matched no image.`); continue; }
     for (const entry of selected) {
       if (!entry.image) { gateWarnings.push(`${entry.path}: luminance could not be measured (${entry.reason ?? 'image was not decoded'}).`); continue; }
+      const regionProblem = regionError(entry.image, rule.region as PixelRegion | undefined);
+      if (regionProblem) { gateFailures.push(`${entry.path}: ${regionProblem}.`); continue; }
       const value = meanLuminance(entry.image, rule.region as PixelRegion | undefined);
+      gateMeasurements.push(`${entry.path}: mean luminance ${value.toFixed(4)}${rule.mean_min !== undefined ? ` (minimum ${rule.mean_min})` : ''}${rule.mean_max !== undefined ? ` (maximum ${rule.mean_max})` : ''}.`);
       if (rule.mean_min !== undefined && value < rule.mean_min) gateFailures.push(`${entry.path}: mean luminance ${value.toFixed(4)} is below ${rule.mean_min}.`);
       if (rule.mean_max !== undefined && value > rule.mean_max) gateFailures.push(`${entry.path}: mean luminance ${value.toFixed(4)} is above ${rule.mean_max}.`);
     }
@@ -264,14 +267,17 @@ function screenshotGate(project: ProjectConfig, worktree: string, sections: Orde
       const b = entries.find(candidate => matchNamed(candidate, rule.b, worktree, project.root) === name);
       if (!b) { gateWarnings.push(`Motion rule ${rule.a} / ${rule.b} has no pair for ${a.path}.`); continue; }
       if (!a.image || !b.image) { gateWarnings.push(`${a.path} / ${b.path}: motion could not be measured (${a.reason ?? b.reason ?? 'image was not decoded'}).`); continue; }
+      const regionProblem = regionError(a.image, rule.region as PixelRegion | undefined) ?? regionError(b.image, rule.region as PixelRegion | undefined);
+      if (regionProblem) { gateFailures.push(`${a.path} / ${b.path}: ${regionProblem}.`); continue; }
       let value: number;
       try { value = meanAbsoluteLuminanceDifference(a.image, b.image, rule.region as PixelRegion | undefined); }
       catch (error) { gateFailures.push(`${a.path} / ${b.path}: ${(error as Error).message}.`); continue; }
+      gateMeasurements.push(`${a.path} / ${b.path}: motion ${value.toFixed(4)}${rule.min !== undefined ? ` (minimum ${rule.min})` : ''}${rule.max !== undefined ? ` (maximum ${rule.max})` : ''}.`);
       if (rule.min !== undefined && value < rule.min) gateFailures.push(`${a.path} / ${b.path}: motion ${value.toFixed(4)} is below ${rule.min}.`);
       if (rule.max !== undefined && value > rule.max) gateFailures.push(`${a.path} / ${b.path}: motion ${value.toFixed(4)} is above ${rule.max}.`);
     }
   }
-  reasons.push(...gateFailures, ...gateWarnings);
+  reasons.push(...gateFailures, ...gateWarnings, ...gateMeasurements);
   const status: VerifyStatus = mismatches.length || duplicatePairs.length || blank.length || gateFailures.length ? 'fail' : dark.length || skipped.length || undecoded.some(e => e.format === 'PNG') || gateWarnings.length ? 'warn' : 'pass';
   const reason = [t('Checked {count} screenshot image(s).', { count: entries.length }), ...reasons].join(' ');
   return { name: 'screenshots', status, reason, details: { files: detailFiles, ...(duplicatePairs.length ? { duplicate_pairs: duplicatePairs } : {}) } };

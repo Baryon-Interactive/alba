@@ -272,19 +272,19 @@ function artifactMatches(root: string, glob: string): string[] {
   else walk(start);
   return out;
 }
-export function collectArtifacts(step: { artifacts?: string[]; artifacts_required?: boolean }, cwd: string, projectRoot: string): { receipts: ArtifactReceipt[]; warnings: string[]; truncated: boolean; requiredFailure?: string } {
+export function collectArtifacts(step: { artifacts?: string[]; artifacts_required?: boolean }, cwd: string, projectRoot: string, caps: typeof ARTIFACT_CAPS = ARTIFACT_CAPS): { receipts: ArtifactReceipt[]; warnings: string[]; truncated: boolean; requiredFailure?: string } {
   const receipts: ArtifactReceipt[] = [], warnings: string[] = []; let bytes = 0, truncated = false;
   for (const glob of step.artifacts ?? []) {
     let root = cwd, matches = artifactMatches(root, glob);
     if (!matches.length && !path.isAbsolute(glob)) { root = projectRoot; matches = artifactMatches(root, glob); }
     if (!matches.length) { const warning = `Artifact glob matched no files: ${glob}`; warnings.push(warning); if (step.artifacts_required) return { receipts, warnings, truncated, requiredFailure: warning }; continue; }
     for (const file of [...new Set(matches)].sort()) {
-      if (receipts.length >= ARTIFACT_CAPS.maxFiles || bytes >= ARTIFACT_CAPS.maxBytes) { truncated = true; break; }
+      if (receipts.length >= caps.maxFiles || bytes >= caps.maxBytes) { truncated = true; break; }
       let real: string;
       try { real = realpathSync(file); } catch (error) { receipts.push({ path: path.relative(cwd, file).replace(/\\/g, '/'), size: 0, sha256: '', modified: '', status: 'refused', reason: `could not resolve path: ${(error as Error).message}` }); continue; }
       const allowed = path.resolve(root), relative = path.relative(allowed, real);
       if (relative.startsWith('..') || path.isAbsolute(relative)) { receipts.push({ path: path.relative(root, file).replace(/\\/g, '/'), size: 0, sha256: '', modified: '', status: 'refused', reason: 'real path is outside the allowed root' }); continue; }
-      const info = statSync(real); if (bytes + info.size > ARTIFACT_CAPS.maxBytes) { truncated = true; break; }
+      const info = statSync(real); if (bytes + info.size > caps.maxBytes) { truncated = true; break; }
       receipts.push({ path: relative.replace(/\\/g, '/'), size: info.size, sha256: artifactHash(real), modified: new Date(info.mtimeMs).toISOString() }); bytes += info.size;
     }
     if (truncated) break;
