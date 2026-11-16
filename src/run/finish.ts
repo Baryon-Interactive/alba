@@ -134,7 +134,7 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       hasFinalOrBrokenReport: hasFinalOrBroken,
       usageTotal: usage?.total_tokens,
       codexHome: worker?.launch?.env?.CODEX_HOME,
-      now: probes.now(),
+      now: typeof probes.now === 'function' ? probes.now() : new Date(), // some callers pass partial probes
       reader: probesTailReader(probes),
     });
     const push = (f: Omit<Finish, 'tag' | 'run' | 'session' | 'usage'>, hasFinalOrBroken = false) => {
