@@ -69,6 +69,27 @@ A final-message file older than the run is ignored. A run that is still alive is
 
 The [continuation repair tests](../../test/continuation.test.ts) links the three complete prompt examples checked by fake-engine tests.
 
+## How a run ended
+
+For every structured run owned by the detached capture wrapper (`src/run/capture.mjs`), `Run.exit_file` names `<state_dir>/runs/<TAG>-<run>.exit.json`. When the worker child closes, fails to spawn, or exits after a `SIGTERM` forwarded by Alba, `capture.mjs` writes that receipt atomically (temporary file plus rename) with `code`, `signal`, `ended_at`, `lines`, `last_event` (`{ type, at }`), `open_turn`, and up to five `open_items` (each `command` capped at 300 characters).
+
+When the tick or `alba serve` records a finished run, `src/run/end-reason.ts` classifies how the run ended by reading bounded tails only (never whole log or rollout files): the exit receipt, the events tail, the stderr tail, and, for Codex runs without a report, at most the last 256 KB of the session rollout found in `sessions/YYYY/MM/DD` day folders between the run's start and end. Each ended run stores `Run.end` (`{ kind, detail, why, exit_code?, signal?, last_event?, open_turn?, open_items?, wip_ref?, wip_files?, wip_skipped?, wip_skipped_paths?, wip_error? }`), and the `run-end` event carries the same fields alongside `{ run, outcome }`. `RUN_OUTCOMES` is unchanged.
+
+| `end.kind` | Where it comes from |
+|---|---|
+| `report` | A valid report block was read from the final-message file, `<TAG>.report.json`, an earlier message, or the end of the log. |
+| `exit-0-no-report` | Receipt shows exit code `0` with no open turn and no report block, or a final message had no valid report block. |
+| `nonzero-exit` | Receipt shows a non-zero exit code or termination signal (with no more specific limit/cut-off), or stderr/events name an explicit start or tool failure. |
+| `stream-cut-mid-turn` | Turn opened (`turn.started` / rollout `task_started`) and the stream ended mid-turn without `turn.completed`, `turn.failed`, or a report block. |
+| `output-limit` | Codex rollout `event_msg` (`response_incomplete` / `max_output_tokens` / `incomplete_details.reason`), event stream stop reason, or stderr shows the model hit its output token limit. |
+| `context-limit` | Rollout `context_window_exceeded`, event stream error, or stderr shows the prompt or turn exceeded the model context window. |
+| `quota` | Rollout usage/quota error or rate-limit abort, worker adapter limit check, or stderr/events show a depleted usage window or balance. |
+| `unreachable` | Endpoint classification (`classifyEndpoint`) found status-less retries with zero output or a connection failure to the worker's configured host and port. |
+| `killed-by-alba` | Alba recorded its own `loop-stopped`, `lingering-stopped`, or `token-cap-stopped` event for this run. |
+| `vanished` | No exit receipt exists, no mid-turn stream or report was left behind, and the worker pid is gone (or was never recorded within `LAUNCH_GRACE_MINUTES`). |
+
+`alba orders show <TAG>` prints one end line per run (kind, exit code or signal, last event and its age, WIP ref, and detail), and `alba status --json` includes `end` on runs that ended in the last 24 hours. The four silent kinds (`stream-cut-mid-turn`, `vanished`, `output-limit`, `context-limit`) show an alert banner on the console's Run page with the detail and WIP ref, raise a `silent-end` tick problem, and emit an immediate `serve.notice` (`kind: "silent-end"`) from `alba serve`'s 5-second process-gone check without waiting for the scheduled tick. Uncommitted work from any non-`report` end is saved to a WIP ref (document 014, section 8).
+
 ## When the model endpoint is unreachable
 
 A local gateway or relay with nothing listening is not the provider being full. The tick still records outcome `capacity`, and sets `limit` to `unreachable`, when either of these is true:
