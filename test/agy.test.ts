@@ -143,3 +143,18 @@ test('detached agy: each way agy refuses to work ends the run with its own reaso
   const q = finishOf(rotate);
   assert.equal(q.outcome, 'capacity'); assert.equal(q.limit, 'quota');
 });
+
+test('order model: an order names its model for its own worker; a worker the order does not name keeps its own', async () => {
+  const ctx = setup('ok');
+  ctx.orders.update('T1', { worker: 'agy-direct', model: 'gemini-4-carbon-high' });
+  const run = await ran(ctx);
+  const proof = JSON.parse(readFileSync(ctx.proof, 'utf8'));
+  assert.equal(proof.args[proof.args.indexOf('--model') + 1], 'gemini-4-carbon-high');
+  assert.equal(run.model, 'gemini-4-carbon-high');
+  // Routed (not named, not started by a person): the worker's own model.
+  const other = setup('ok');
+  other.orders.update('T1', { worker: 'someone-else', model: 'gemini-4-carbon-high' });
+  await ran(other);
+  const theirs = JSON.parse(readFileSync(other.proof, 'utf8'));
+  assert.equal(theirs.args[theirs.args.indexOf('--model') + 1], 'gemini-test');
+});

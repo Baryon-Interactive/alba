@@ -154,6 +154,10 @@ The stream's lines are keyed by `event` (`init`, `step_update`, `result`); the f
 
 Other errors in the result (`503`, `429` without a quota message) are transient errors as for every engine.
 
+### One order on another model
+
+An order can name the model it runs with: `alba orders add <TAG> ... --worker agy-direct --run-model gemini-4-carbon-high`, `alba orders set <TAG> --run-model <id>` (an empty value goes back to the worker's), or the field `model` of `POST /api/orders` and `POST /api/orders/<TAG>/fields`. It replaces the worker's `model` (the `{model}` of its template, and `--model` of the engines that set it) on the worker the order names, or the one a person starts it on with `alba run <TAG> --worker <id>`; a worker routing picks instead keeps its own, since another engine would not know the id. The run records the model it ran with. One worker, so one concurrency slot, can try several models this way.
+
 ### An isolated Claude CLI worker
 
 ```yaml

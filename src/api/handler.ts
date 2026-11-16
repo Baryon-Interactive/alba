@@ -891,7 +891,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       for (const key of ORDER_FIELD_NAMES) if (body[key] !== undefined) fields[key] = body[key];
       if (!Object.keys(fields).length) throw new ApiFailure(400, 'bad_request', describeFields());
       for (const key of ['title', 'kind', 'role', 'intent'] as const) if (fields[key] !== undefined && typeof fields[key] !== 'string') throw new ApiFailure(400, 'bad_request', `"${key}" must be text.`);
-      for (const key of ['worker', 'heavy', 'condition'] as const) if (fields[key] !== undefined && fields[key] !== null && typeof fields[key] !== 'string') throw new ApiFailure(400, 'bad_request', `"${key}" must be text or null.`);
+      for (const key of ['worker', 'model', 'heavy', 'condition'] as const) if (fields[key] !== undefined && fields[key] !== null && typeof fields[key] !== 'string') throw new ApiFailure(400, 'bad_request', `"${key}" must be text or null.`);
       for (const key of ['needs', 'tags', 'skills', 'uses', 'tools'] as const) if (fields[key] !== undefined && !(Array.isArray(fields[key]) && (fields[key] as unknown[]).every(x => typeof x === 'string'))) throw new ApiFailure(400, 'bad_request', `"${key}" must be a list of text.`);
       if (fields.priority !== undefined && fields.priority !== null && !Number.isInteger(fields.priority)) throw new ApiFailure(400, 'bad_request', '"priority" must be a whole number or null.');
       if (fields.check !== undefined && fields.check !== 'independent' && fields.check !== 'none') throw new ApiFailure(400, 'bad_request', '"check" is independent or none.');
@@ -926,7 +926,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (mandate !== undefined && (typeof mandate !== 'object' || mandate === null || Array.isArray(mandate))) throw new ApiFailure(400, 'bad_request', '"mandate" must be an object.');
       const role = str(body, 'role');
       if (role) resolveRole(effectiveRoles(view.config, ctx.workers), { role, kind: str(body, 'kind') ?? '' });
-      const made = createOrder(view.config, view.orders, { tag, title, kind: str(body, 'kind'), role, needs: strList(body, 'needs'), worker: str(body, 'worker'), heavy: str(body, 'heavy'), base_ref: str(body, 'base_ref'), tags: strList(body, 'tags'), skills: strList(body, 'skills'), mandate: mandate as never, body: str(body, 'body'), slug: str(body, 'slug'), queue: body.queue === true }, ctx.probes.now());
+      const made = createOrder(view.config, view.orders, { tag, title, kind: str(body, 'kind'), role, needs: strList(body, 'needs'), worker: str(body, 'worker'), model: str(body, 'model'), heavy: str(body, 'heavy'), base_ref: str(body, 'base_ref'), tags: strList(body, 'tags'), skills: strList(body, 'skills'), mandate: mandate as never, body: str(body, 'body'), slug: str(body, 'slug'), queue: body.queue === true }, ctx.probes.now());
       const stage = view.orders.stage(made.doc);
       return done<A.NewOrderResult>(201, { order: summaryOf(view.config, made.doc, stage, env()), ...(made.file ? { file: made.file } : {}), tableRow: made.tableRow, ...(made.tableWarning ? { tableWarning: made.tableWarning } : {}), ...(made.foundationWarning ? { foundationWarning: made.foundationWarning } : {}) });
     }

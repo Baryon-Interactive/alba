@@ -91,7 +91,7 @@ const options = {
   now: { type: 'boolean' }, gate: { type: 'string' },
   project: { type: 'string', multiple: true }, port: { type: 'string' }, stage: { type: 'string' }, json: { type: 'boolean' }, all: { type: 'boolean' }, out: { type: 'string' },
   worker: { type: 'string' }, target: { type: 'string' }, session: { type: 'string' }, outcome: { type: 'string' }, note: { type: 'string' }, file: { type: 'string' },
-  title: { type: 'string' }, kind: { type: 'string' }, role: { type: 'string' }, review: { type: 'string' }, needs: { type: 'string' }, heavy: { type: 'string' }, branch: { type: 'string' }, 'base-ref': { type: 'string' }, worktree: { type: 'string' }, uses: { type: 'string' }, tools: { type: 'string' },
+  title: { type: 'string' }, kind: { type: 'string' }, role: { type: 'string' }, review: { type: 'string' }, needs: { type: 'string' }, heavy: { type: 'string' }, 'run-model': { type: 'string' }, branch: { type: 'string' }, 'base-ref': { type: 'string' }, worktree: { type: 'string' }, uses: { type: 'string' }, tools: { type: 'string' },
   quote: { type: 'string' }, decisions: { type: 'string' }, 'spend-cap': { type: 'string' }, protect: { type: 'string' }, help: { type: 'boolean', short: 'h' },
   workers: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'over-cap': { type: 'boolean' }, write: { type: 'boolean' }, 'no-record': { type: 'boolean' }, 'max-dispatch': { type: 'string' },
   'allow-origin': { type: 'string', multiple: true }, 'sign-in': { type: 'boolean' }, applicable: { type: 'boolean' }, text: { type: 'string' }, restart: { type: 'boolean' }, reply: { type: 'string' }, choice: { type: 'string' }, tags: { type: 'string' }, who: { type: 'string' },
@@ -126,7 +126,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   orders plan <TAG> --title t --kind k --needs A,B --intent text [--role role]
   orders edit-plan <TAG> [--title t] [--kind k] [--needs A,B] [--intent text] [--role role]
   orders cancel <TAG>
-  orders add <TAG> [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--heavy h] [--branch b] [--base-ref local-branch] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
+  orders add <TAG> [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--run-model m] [--heavy h] [--branch b] [--base-ref local-branch] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
   orders check <TAG>   start a separate read-only verifier (or show the active check)
                     [--quote text] [--decisions text] [--spend-cap n] [--protect a,b]
   orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b] [--override]   --override approves a failed, awaiting-user (with report), blocked or idle delivery with a note of at least 10 characters
@@ -276,7 +276,7 @@ function show(orders: Orders, tag: string): string {
   const { stage, why } = orders.stage(doc);
   const out: string[] = [`${o.tag}  ${o.title}`, `${t('stage')}: ${stage}  (${why})`];
   const field = (label: string, value: string | undefined) => { if (value) out.push(`${label}: ${value}`); };
-  field(t('kind'), o.kind); field(t('heavy'), o.heavy); field(t('worker'), o.worker); field(t('needs'), o.needs.join(', ')); field(t('condition'), o.condition);
+  field(t('kind'), o.kind); field(t('heavy'), o.heavy); field(t('worker'), o.worker); field(t('model'), o.model); field(t('needs'), o.needs.join(', ')); field(t('condition'), o.condition);
   field(t('branch'), o.branch); field(t('starts from'), o.base_ref); field(t('worktree'), o.worktree); field(t('uses'), o.uses?.join(', ')); field(t('tools'), o.tools?.join(', '));
   if (o.mandate) {
     out.push(t('mandate:'));
@@ -622,7 +622,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         };
         const body = values['body-file'] ? readFileSync(resolveFile(values['body-file'], cfg), 'utf8') : undefined;
         if (values.role) resolveRole(effectiveRoles(cfg, values.workers || process.env.ALBA_WORKERS || cfg.workers ? workersOf(values.workers, cfg) : undefined), { role: values.role, kind: values.kind ?? '' });
-        const made = createOrder(cfg, orders, { check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
+        const made = createOrder(cfg, orders, { check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, model: values['run-model'], heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
         return [tagLine(made.doc), made.file ? t('wrote {file}', { file: made.file }) : '', made.tableRow ? t('added a row to the dispatch table') : '', made.tableWarning ?? '', made.foundationWarning ?? ''].filter(Boolean).join('\n');
       }
       case 'act': {
@@ -632,8 +632,8 @@ ${editorLines(editors, projects.length > 1)}` : body;
         return tagLine(orders.get(rest[0]));
       }
       case 'set': {
-        need(1, 'alba orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--uses res,res] [--tools id,id] [--worker id]');
-        if (values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined) fail('orders set needs --branch, --worktree, --base-ref, --uses, --tools, --role or --worker.');
+        need(1, 'alba orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--uses res,res] [--tools id,id] [--worker id] [--run-model m]');
+        if (values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --uses, --tools, --role, --worker or --run-model.');
         const before = orders.get(rest[0]).order;
         if (values.worker !== undefined) {
           const known = workersOf(values.workers, cfg).workers;
@@ -652,12 +652,14 @@ ${editorLines(editors, projects.length > 1)}` : body;
           orders.update(rest[0], { uses: names });
         }
         if (values.tools !== undefined) orders.update(rest[0], { tools: enabledTools(cfg, values.tools) });
+        if (values['run-model'] !== undefined) orders.update(rest[0], { model: values['run-model'].trim() || undefined });
         const doc = values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined ? orders.get(rest[0]) : orders.setGit(rest[0], { branch: values.branch, worktree: values.worktree, base_ref: values['base-ref'] });
         const o = doc.order;
         const fields = (['branch', 'worktree', 'base_ref'] as const).filter(k => o[k] !== before[k]);
         const usesLine = [
           ...(values.uses !== undefined && JSON.stringify(o.uses ?? []) !== JSON.stringify(before.uses ?? []) ? [`  uses: ${(before.uses ?? []).join(',') || '-'} -> ${(o.uses ?? []).join(',') || '-'}`] : []),
           ...(values.tools !== undefined && JSON.stringify(o.tools ?? []) !== JSON.stringify(before.tools ?? []) ? [`  tools: ${(before.tools ?? []).join(',') || '-'} -> ${(o.tools ?? []).join(',') || '-'}`] : []),
+          ...(values['run-model'] !== undefined ? [`  model: ${before.model || '-'} -> ${o.model || '- (the worker\'s)'}`] : []),
         ];
         return [tagLine(doc), ...fields.map(k => `  ${k}: ${before[k] ?? '-'} -> ${o[k]}`), ...usesLine, ...(values.role !== undefined ? [`  role: ${before.role || '-'} -> ${o.role || '- (from kind)'}`] : []), ...(values.worker !== undefined ? [`  worker: ${before.worker || '-'} -> ${o.worker}`] : []), fields.length || usesLine.length || values.role !== undefined || values.worker !== undefined ? '' : t('nothing changed')].filter(Boolean).join('\n');
       }

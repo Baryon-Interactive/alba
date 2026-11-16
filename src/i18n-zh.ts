@@ -171,7 +171,7 @@ export const zh: Record<string, string> = {
   '{name} cannot be empty.': '{name} 不能为空。',
   '"{value}" is not a branch name.': '“{value}”不是分支名。',
   '--branch only goes with approve (to record a branch on its own: alba orders set <TAG> --branch b).': '--branch 只能和 approve 一起用（单独记录分支：alba orders set <TAG> --branch b）。',
-  'orders set needs --branch, --worktree, --base-ref, --uses, --tools, --role or --worker.': 'orders set 需要 --branch、--worktree、--base-ref、--uses、--tools、--role 或 --worker。',
+  'orders set needs --branch, --worktree, --base-ref, --uses, --tools, --role, --worker or --run-model.': 'orders set 需要 --branch、--worktree、--base-ref、--uses、--tools、--role、--worker 或 --run-model。',
   'nothing changed': '没有变化',
   'Branch "{branch}" is not in {base} yet. Merge it yourself first (merging is manual in this version), then approve.': '分支“{branch}”还不在 {base} 里。请先自己合并（这个版本合并是手动的），再验收通过。',
   'no accept command configured': '没有配置验收命令',
