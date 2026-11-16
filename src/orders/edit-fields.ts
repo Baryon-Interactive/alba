@@ -10,7 +10,7 @@ import type { Orders } from './service.ts';
 
 /** The fields of an order a person may change from the console after it is made (the git place has its own command). */
 export interface OrderFields {
-  title?: string; kind?: string; priority?: number | null; worker?: string | null; role?: string; needs?: string[]; tags?: string[]; skills?: string[];
+  title?: string; kind?: string; priority?: number | null; worker?: string | null; model?: string | null; role?: string; needs?: string[]; tags?: string[]; skills?: string[];
   uses?: string[]; tools?: string[]; heavy?: string | null; condition?: string | null; check?: 'independent' | 'none'; review?: 'manual' | 'auto'; intent?: string;
 }
 
@@ -33,6 +33,7 @@ export function editOrderFields(project: ProjectConfig, orders: Orders, workers:
       patch.worker = fields.worker;
     } else patch.worker = undefined;
   }
+  if (fields.model !== undefined) patch.model = fields.model?.trim() || undefined;
   if (fields.role !== undefined) {
     if (fields.role) resolveRole(effectiveRoles(project, workers), { role: fields.role, kind: fields.kind ?? before.kind });
     patch.role = fields.role;
@@ -78,5 +79,5 @@ export function editOrderBody(project: ProjectConfig, orders: Orders, tag: strin
   return file;
 }
 
-export const ORDER_FIELD_NAMES = ['title', 'kind', 'priority', 'worker', 'role', 'needs', 'tags', 'skills', 'uses', 'tools', 'heavy', 'condition', 'check', 'review', 'intent'] as const;
+export const ORDER_FIELD_NAMES = ['title', 'kind', 'priority', 'worker', 'model', 'role', 'needs', 'tags', 'skills', 'uses', 'tools', 'heavy', 'condition', 'check', 'review', 'intent'] as const;
 export const describeFields = () => t('Fields: {names}.', { names: ORDER_FIELD_NAMES.join(', ') });

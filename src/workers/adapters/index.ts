@@ -2,11 +2,12 @@ import { codex } from './codex.ts';
 import { claude } from './claude.ts';
 import { opencode } from './opencode.ts';
 import { grok } from './grok.ts';
+import { agy } from './agy.ts';
 import { script } from './script.ts';
 import { generic } from './generic.ts';
 import type { WorkerAdapter } from './types.ts';
-export type { WorkerAdapter, LaunchContext } from './types.ts';
-export const adapters: readonly WorkerAdapter[] = [codex, claude, opencode, grok, script];
+export type { WorkerAdapter, LaunchContext, EngineFailure } from './types.ts';
+export const adapters: readonly WorkerAdapter[] = [codex, claude, opencode, agy, grok, script];
 /** Unknown engines use an explicit launch template and plain report files. */
 export const workerAdapter = (id: string): WorkerAdapter => adapters.find(a => a.id === id) ?? generic;
 

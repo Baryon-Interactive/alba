@@ -4,6 +4,7 @@ import { t } from '../../i18n.ts';
 import type { RunUsage } from '../../api/types.ts';
 import type { UsageSignal, WasteRules } from '../../usage/types.ts';
 import { claudeContent, toolResultText } from './claude-protocol.ts';
+import { agyEvent, type AgyEvent, type AgyUsage } from './agy-protocol.ts';
 
 const n = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
 export interface Turn { turn: number; at: string; usage: RunUsage; raw: Record<string, unknown> }
@@ -39,6 +40,8 @@ export class UsageFold {
   private claudeMessages = new Map<string, Turn>();
   event(e: any, at: string): void {
     if (Number.isFinite(Date.parse(at))) at = new Date(at).toISOString();
+    const agy = agyEvent(e);
+    if (agy) { this.agy(agy, e, at); return; }
     const p = e.part ?? {}, type = e.type;
     // Claude may emit several content blocks for one message, with updated usage.
     if (type === 'assistant' && e.message?.id) {
@@ -96,6 +99,27 @@ export class UsageFold {
       if (match) { const list = this.reads.get(match[1]) ?? []; list.push(turn); this.reads.set(match[1], list); }
     }
   }
+  /** Antigravity: each finished agent_response step has its own usage; the result's usage is their sum (used only when no step had any). Commands go through the Codex shape. */
+  private agy(ev: AgyEvent, raw: Record<string, any>, at: string): void {
+    const turn = (u: AgyUsage, id: string | undefined, turns?: number) => {
+      if (id && this.seen.has(id)) return;
+      if (id) this.seen.add(id);
+      const usage = tokenUsage({ input_tokens: u.input_tokens, output_tokens: u.output_tokens, cached_input_tokens: u.cache_read_tokens, reasoning_tokens: u.thinking_tokens, total_tokens: u.total_tokens }, 'agy-json');
+      if (turns !== undefined) usage.turns = turns;
+      this.turns.push({ turn: id ? this.turns.length + 1 : 0, at, usage, raw: structuredClone(raw) });
+      if (this.pendingCommit) { this.committedTokens = this.turns.reduce((sum, t) => sum + (t.usage.total_tokens ?? 0), 0); this.pendingCommit = false; }
+    };
+    if (ev.kind === 'step') {
+      const s = ev.step, id = `agy:${s.conversationId ?? ''}:${s.index}`;
+      if (s.type === 'agent_response' && s.state === 'DONE' && s.usage) turn(s.usage, id);
+      if (s.type === 'tool' && s.tool === 'run_command') {
+        if (s.state === 'ACTIVE') this.event({ type: 'item.started', item: { type: 'command_execution', id, command: s.command ?? '' } }, at);
+        else this.event({ type: 'item.completed', item: { type: 'command_execution', id, command: s.command ?? this.active.get(id) ?? '', aggregated_output: s.output ?? '', status: s.state === 'DONE' ? 'completed' : 'failed' } }, at);
+      }
+    }
+    if (ev.kind === 'result' && ev.result.usage && !this.turns.some(t => t.usage.source === 'agy-json')) turn(ev.result.usage, undefined, ev.result.turns);
+  }
+
   signals(order: string, run: string, kind: string, rules: WasteRules = {}): UsageSignal[] {
     const out: UsageSignal[] = [], end = Math.max(1, this.turns.length);
     const add = (key: string, text: string, start = 1, last = end, more: Partial<UsageSignal> = {}) => out.push({ kind: key, order, run, turns: [start, last], text, ...more });

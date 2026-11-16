@@ -126,7 +126,7 @@ export class Orders {
     }
   }
 
-  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; tag: string; title: string; kind: string; needs?: string[]; worker?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; condition?: string; source?: Order['source'] }): OrderDoc {
+  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; condition?: string; source?: Order['source'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -150,6 +150,7 @@ export class Orders {
       if (input.intent) order.intent = input.intent;
       if (input.role) { if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(input.role)) fail('Invalid role identifier.'); order.role = input.role; }
       if (input.worker) order.worker = input.worker;
+      if (input.model?.trim()) order.model = input.model.trim();
       if (input.heavy) order.heavy = input.heavy;
       if (input.mandate && Object.keys(input.mandate).length) order.mandate = input.mandate;
       if (input.tags?.length) order.tags = [...new Set(input.tags.map(x => x.trim().toLowerCase()).filter(Boolean))];
@@ -169,7 +170,7 @@ export class Orders {
   }
 
   /** Changes definition fields (not facts). Used when a table is imported again. */
-  update(tag: string, patch: Partial<Pick<Order, 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
+  update(tag: string, patch: Partial<Pick<Order, 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
     return this.retry(() => {
       const doc = this.get(tag);
       if (patch.check !== undefined && !['independent', 'none'].includes(patch.check)) fail('Check must be independent or none.');

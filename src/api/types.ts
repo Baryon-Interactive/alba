@@ -171,7 +171,7 @@ export interface Mandate {
 /** Tokens and cost of one run (or the sum of several), read from the run's log. */
 export interface RunUsage {
   /** Where the numbers came from; `unknown` when the log has none (nothing is guessed). */
-  source: 'codex-log' | 'codex-json' | 'codex-rollout' | 'claude-json' | 'grok-end' | 'opencode-json' | 'unknown';
+  source: 'codex-log' | 'codex-json' | 'codex-rollout' | 'claude-json' | 'grok-end' | 'opencode-json' | 'agy-json' | 'unknown';
   cache_write_tokens?: number; reasoning_tokens?: number;
   total_tokens?: number;
   input_tokens?: number;

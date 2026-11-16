@@ -1,3 +1,4 @@
+import { agyEvent, agyResultError } from '../workers/adapters/agy-protocol.ts';
 /** Retries after errors that usually go away by themselves (an overloaded model service, a dropped connection). */
 export const MAX_RESUMES = 3;
 /** Minutes to wait before resume number 1, 2, 3. */
@@ -28,6 +29,8 @@ export function eventErrors(events: string): string {
   return events.split(/\r?\n/).flatMap(line => {
     try {
       const e = JSON.parse(line);
+      const agy = agyResultError(agyEvent(e));
+      if (agy) return [agy];
       return e.type === 'error' || e.type === 'turn.failed' ? [typeof e.message === 'string' ? e.message : JSON.stringify(e.error ?? e)] : [];
     } catch { return []; }
   }).slice(-TAIL_LINES).join('\n');

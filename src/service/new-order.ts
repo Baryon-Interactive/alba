@@ -18,6 +18,8 @@ export interface NewOrderInput {
   kind?: string;
   needs?: string[];
   worker?: string;
+  /** The model the order runs with on its own worker (see `Order.model`). */
+  model?: string;
   heavy?: string;
   mandate?: Mandate;
   branch?: string;
@@ -93,7 +95,7 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
     const at = now.toISOString();
     const draft: OrderDoc = { version: 1, order: { tag: input.tag, title: input.title.trim(), kind: input.kind?.trim() || 'task', needs: [], ...(input.tags?.length ? { tags: input.tags.map(x => x.trim().toLowerCase()) } : {}), created: at, updated: at }, runs: [], reports: [], actions: [] };
     const routing = project.kinds?.length ? classifyByRules(project, draft, orderText(project, input.tag), at) : undefined;
-    doc = orders.add({ check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree });
+    doc = orders.add({ check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, model: input.model, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree });
   } catch (e) {
     if (file) rmSync(file, { force: true });     // the order was refused (no title, a need on itself): leave no file behind
     throw e;

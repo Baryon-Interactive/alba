@@ -68,6 +68,7 @@ export interface Order {
   needs: string[];           // tags that must be merged first
   condition?: string;        // free text from the table's needs column, shown as-is
   worker?: string;           // preferred worker, free text until the worker registry exists
+  model?: string;            // the model this order runs with on the worker it names (`worker`, or the one a person starts it on); any other worker uses its own
   mandate?: Mandate;
   tags?: string[];           // words that pick lessons from the project's library for this order's prompt, and skills
   skills?: string[];         // skills (names from the registry) the order always gets

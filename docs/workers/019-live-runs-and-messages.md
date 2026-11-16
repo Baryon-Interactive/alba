@@ -8,6 +8,7 @@ The run page shows a live phase, current command and elapsed time, plan, token c
 | `opencode` | `opencode run --format json`: tool uses, text and step token usage when emitted. |
 | `claude-cli` | `--output-format stream-json --verbose`: assistant text, tool calls/results, session ids, input/output/cache usage and final reports. Repeated failing tools feed the loop detector. |
 | `grok-cli` | `--output-format streaming-json`: tool calls, text, end usage and errors when emitted. |
+| `agy-cli` | `--output-format stream-json`: tool steps (`run_command` counts as a command), agent text, per-step usage, the conversation id and the result's error. |
 | `claude-session` | A person starts this card-only session; alba cannot redirect its output. Where a stream file is supplied, assistant/tool events can be read; otherwise the log tail and growth, and the progress receipt, are used. |
 
 The installed command help was checked for each engine. JSON event lines get a receipt timestamp because Codex does not provide one. Unknown events are ignored apart from liveness. A partial last line is held until its newline arrives. Older plain-text logs remain supported. Transient and quota classifiers inspect stderr and JSON error events; loop detection prefers events when present. A configured `dispatch.long_commands` match is waiting for that command until it completes, without being classified as a stall. Other commands do not get this exemption.
