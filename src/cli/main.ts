@@ -69,7 +69,7 @@ import { runRouting } from './routing.ts';
 import { planSkills } from '../skills/plan.ts';
 import { routingOf, classifyOrders } from '../routing/classify.ts';
 import { table } from './format.ts';
-import { releaseLease, resourceViews } from '../resources/leases.ts';
+import { ordinal, releaseLease, releaseMachineLease, resourceViews } from '../resources/leases.ts';
 import { loopsReport } from './loops.ts';
 import { runLibrary } from './library.ts';
 import { machinesEdit } from './machines.ts';
@@ -432,14 +432,57 @@ ${editorLines(editors, projects.length > 1)}` : body;
     });
   }
   if (group === 'lock') {
+    type LockWithQueue = ReturnType<typeof listNamedLocks>[number] & { run?: string; queue?: { position: number; pid?: number; run?: string; cwd?: string; command?: string; since: string; waitMinutes?: number }[] };
     if (command === 'list') {
       if (rest.length) fail(lockUsage());
-      const locks = listNamedLocks();
-      return values.json ? JSON.stringify(locks, null, 2) : (locks.length ? locks.map(l => `${l.name}  ${l.stale ? 'STALE ' : ''}pid ${l.holder ?? '?'}  held ${l.heldMinutes} min  ${l.cwd ?? '-'}  ${l.command ?? '-'}`).join('\n') : '(no named locks)');
+      const locks = listNamedLocks() as LockWithQueue[];
+      return values.json ? JSON.stringify(locks, null, 2) : (locks.length ? locks.flatMap(l => [
+        `${l.name}  ${l.stale ? 'STALE ' : ''}pid ${l.holder ?? '?'}${l.run ? ` (${l.run})` : ''}  held ${l.heldMinutes} min  ${l.cwd ?? '-'}  ${l.command ?? '-'}`,
+        ...(l.queue ?? []).map(q => `  queue #${q.position} (${ordinal(q.position)})  pid ${q.pid ?? '?'}${q.run ? ` (${q.run})` : ''}  waiting ${q.waitMinutes ?? 0} min  ${q.cwd ?? '-'}  ${q.command ?? '-'}`),
+      ]).join('\n') : '(no named locks)');
     }
     if (!command) fail(lockUsage());
     const args = [command, ...(values['wait-minutes'] !== undefined ? ['--wait-minutes', values['wait-minutes']] : []), '--', ...rest];
     const code = await runNamedLock(args); exitCode = code; return '';
+  }
+  if (group === 'resources' || group === 'leases') {
+    type LockWithQueue = ReturnType<typeof listNamedLocks>[number] & { run?: string; queue?: { position: number; pid?: number; run?: string; cwd?: string; command?: string; since: string; waitMinutes?: number }[] };
+    const now = new Date();
+    if (group === 'leases' && command === 'release') {
+      need(2, 'alba leases release <resource> <TAG> [--project id]');
+      const given = values.project ?? [];
+      let configFiles: string[] | undefined = values.project;
+      let targetProject: string | undefined;
+      if (given.length >= 2) {
+        configFiles = [given[0]];
+        targetProject = given.at(-1);
+      } else if (given.length === 1 && !existsSync(given[0])) {
+        targetProject = given[0];
+        configFiles = undefined;
+      }
+      const hasEnvProject = Boolean((process.env.ALBA_PROJECT ?? '').split(path.delimiter).filter(Boolean).length);
+      const ok = !configFiles && targetProject && !hasEnvProject
+        ? releaseMachineLease(rest[0], rest[1], targetProject, t('a person took it back (cli)'), now)
+        : (() => { const { cfg, orders } = projectOf(configFiles); return releaseLease(cfg, orders, rest[0], rest[1], t('a person took it back (cli)'), now, targetProject); })();
+      return ok ? t('{tag}: released {resource}.', { tag: rest[1], resource: rest[0] }) : t('{tag} holds no lease on {resource}.', { tag: rest[1], resource: rest[0] });
+    }
+    if (group === 'leases' && command !== undefined && command !== 'list') fail('Usage: alba resources | alba leases [list] | alba leases release <resource> <TAG> [--project id]');
+    const { cfg, orders } = projectOf(values.project);
+    const views = resourceViews(cfg, orders, now);
+    const locks = listNamedLocks(now.getTime()) as LockWithQueue[];
+    if (values.json) return JSON.stringify({ resources: views, locks }, null, 2);
+    const resourceText = views.map(r => [
+      `${r.name}  ${r.used}/${r.slots}${r.exclusive ? ' ' + t('exclusive (keeps out {kinds})', { kinds: r.blocks.join('/') }) : ''}${r.note ? '  ' + r.note : ''}  [${r.scope ?? 'project'}]`,
+      ...(r.slotMismatch ? [`  ${r.slotMismatch}`] : []),
+      ...r.leases.map(l => `  ${l.project ? `${l.project}:${l.tag}` : l.tag}${l.run ? ` (${l.run})` : ''}  since ${l.since}  ${t('held {min} min', { min: l.heldMinutes })}${l.expired ? '  ' + t('LEASE EXPIRED') : ''}`),
+      ...(r.queue ?? []).map(q => `  queue #${q.position} (${ordinal(q.position)})  ${q.project}:${q.tag}  [${q.priority}]  ${q.etaMinutes !== undefined ? t('about {min} min', { min: q.etaMinutes }) : t('unknown')}  since ${q.enqueuedAt}`),
+    ].join('\n'));
+    const lockText = locks.length ? ['Named locks:', ...locks.flatMap(l => [
+      `  ${l.name}  ${l.stale ? 'STALE ' : ''}pid ${l.holder ?? '?'}${l.run ? ` (${l.run})` : ''}  ${t('held {min} min', { min: l.heldMinutes })}  ${l.cwd ?? '-'}  ${l.command ?? '-'}`,
+      ...(l.queue ?? []).map(q => `    queue #${q.position} (${ordinal(q.position)})  pid ${q.pid ?? '?'}${q.run ? ` (${q.run})` : ''}  waiting ${q.waitMinutes ?? 0} min  ${q.cwd ?? '-'}  ${q.command ?? '-'}`),
+    ])] : [];
+    if (!views.length && !locks.length) return t('This project declares no resources (resources: in the project file).');
+    return [...resourceText, ...lockText].join('\n');
   }
   if (group === 'image') {
     const bad = (message: string) => { exitCode = 2; return `alba: ${message}`; };
@@ -599,23 +642,6 @@ ${editorLines(editors, projects.length > 1)}` : body;
   if (library !== undefined) return library;
 
   if (group === 'loops') return loopsReport(cfg, orders, { tag: command, all: values.all === true });
-
-  if (group === 'resources' || group === 'leases') {
-    const now = new Date();
-    if (group === 'leases' && command === 'release') {
-      need(2, 'alba leases release <resource> <TAG>');
-      const ok = releaseLease(cfg, orders, rest[0], rest[1], t('a person took it back (cli)'), now);
-      return ok ? t('{tag}: released {resource}.', { tag: rest[1], resource: rest[0] }) : t('{tag} holds no lease on {resource}.', { tag: rest[1], resource: rest[0] });
-    }
-    if (group === 'leases' && command !== undefined && command !== 'list') fail('Usage: alba resources | alba leases [list] | alba leases release <resource> <TAG>');
-    const views = resourceViews(cfg, orders, now);
-    const locks = listNamedLocks(now.getTime());
-    if (values.json) return JSON.stringify({ resources: views, locks }, null, 2);
-    const resourceText = views.map(r => [`${r.name}  ${r.used}/${r.slots}${r.exclusive ? ' ' + t('exclusive (keeps out {kinds})', { kinds: r.blocks.join('/') }) : ''}${r.note ? '  ' + r.note : ''}`, ...r.leases.map(l => `  ${l.tag}  ${t('held {min} min', { min: l.heldMinutes })}${l.expired ? '  ' + t('LEASE EXPIRED') : ''}`)].join('\n'));
-    const lockText = locks.length ? ['Named locks:', ...locks.map(l => `  ${l.name}  ${l.stale ? 'STALE ' : ''}pid ${l.holder ?? '?'}  ${t('held {min} min', { min: l.heldMinutes })}  ${l.cwd ?? '-'}  ${l.command ?? '-'}`)] : [];
-    if (!views.length && !locks.length) return t('This project declares no resources (resources: in the project file).');
-    return [...resourceText, ...lockText].join('\n');
-  }
 
   if (group === 'orders') {
     switch (command) {

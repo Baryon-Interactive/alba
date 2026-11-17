@@ -27,6 +27,7 @@ import { runMeasurements } from '../design/measure.ts';
 import { runNightlyGates } from '../gates/runner.ts';
 import { tick } from '../tick/gather.ts';
 import { peerRunning, useFleetLock } from './fleet.ts';
+import { bindProjectMachineStore, closeMachineStores, machineStorePath, unbindProjectMachineStore } from '../resources/machine-store.ts';
 
 export interface ServeOptions extends Omit<ServerOptions, 'loop' | 'workers'> {
   workers: WorkersFile;
@@ -75,6 +76,8 @@ export interface Serve {
  */
 export function startCoordinator(options: ServeOptions, board: Board): Serve {
   useFleetLock(options.fleetLock);
+  const machineStoreFile = machineStorePath();
+  for (const project of options.projects) bindProjectMachineStore(project, { file: machineStoreFile, everyMinutes: options.everyMinutes, print: options.print });
   const state: { lastTickAt?: string; lastExitCode?: number } = {};
   const ordersFor = (p: ProjectConfig) => new Orders(stateStore(p), () => options.probes.now().toISOString(), 'serve');
   const sessions = new Map<string, ReturnType<typeof producerSession>>();
@@ -357,6 +360,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
         if (next.id !== w.id) throw new Error(t('the project id changed ({a} to {b}); restart alba serve for that', { a: w.id, b: next.id }));
         if (next.state.backend !== options.projects[w.index].state.backend) throw new Error(t('State backend changed; restart alba serve for that.'));
         if (path.resolve(next.state_dir) !== path.resolve(w.stateDir)) throw new Error(t('state_dir changed; restart alba serve for that'));
+        bindProjectMachineStore(next, { file: machineStoreFile, everyMinutes: options.everyMinutes, print: options.print });
         options.projects[w.index] = next;
         configProblems.delete(key);
         notice(w.id, 'config-reloaded', t('{file} changed: reloaded.', { file: path.basename(w.watched.file) }));
@@ -409,7 +413,10 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
     board.hub.stop();
     board.server.closeAllConnections();
     board.server.close();
-    return Promise.allSettled([...stoppedSessions, ...measuring.values(), ...gating.values()]).then(() => {});
+    return Promise.allSettled([...stoppedSessions, ...measuring.values(), ...gating.values()]).then(() => {
+      for (const project of options.projects) unbindProjectMachineStore(project);
+      closeMachineStores();
+    });
   };
   return { board, server: board.server, tickNow, pollNow, recordEnds, sessionControl, stop };
 }

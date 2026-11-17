@@ -1273,6 +1273,7 @@ export interface ProgressView {
 /** A hold on part of a shared resource (`resources` in the project file) by one order. It is kept while the order runs or is monitored, and released when it ends. */
 export interface Lease {
   resource: string;
+  project?: string;
   tag: string;
   run?: string;
   since: string;
@@ -1282,9 +1283,21 @@ export interface Lease {
   heldMinutes: number;
 }
 
+export interface ResourceQueueEntry {
+  project: string;
+  tag: string;
+  priority: 'rework' | 'new';
+  enqueuedAt: string;
+  position: number;
+  etaMinutes?: number;
+}
+
 export interface ResourceView {
   name: string;
+  scope?: 'project' | 'machine';
   slots: number;
+  /** Shown when live machine-scope declarations disagree on `slots`. */
+  slotMismatch?: string;
   /** Leases held now. */
   used: number;
   note?: string;
@@ -1292,13 +1305,14 @@ export interface ResourceView {
   exclusive: boolean;
   blocks: string[];
   leases: Lease[];
+  queue?: ResourceQueueEntry[];
 }
 
 /** `GET /api/resources?project=` */
 export interface ResourceList { project: string; resources: ResourceView[] }
 
 /** `POST /api/leases/release`: a person takes back a lease (one that was not released, a run that is gone). Records a `lease-released` event. */
-export interface LeaseReleaseRequest { project?: string; resource: string; tag: string }
+export interface LeaseReleaseRequest { project?: string; resource: string; tag: string; holderProject?: string }
 export interface LeaseReleaseResult { ok: true; resource: string; tag: string; released: boolean }
 
 // ---------------------------------------------------------------------------------------------------------------- art library, project-level picks, imported spend, outside usage ()

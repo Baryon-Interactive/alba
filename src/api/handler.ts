@@ -1108,7 +1108,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const resource = str(body, 'resource', true)!;
       const tag = str(body, 'tag', true)!;
       if (!view.config.resources?.[resource]) throw new ApiFailure(404, 'not_found', `No resource "${resource}".`);
-      const released = releaseLease(view.config, view.orders, resource, tag, t('a person took it back (web)'), ctx.probes.now());
+      const released = releaseLease(view.config, view.orders, resource, tag, t('a person took it back (web)'), ctx.probes.now(), str(body, 'holderProject'));
       ctx.invalidate();
       return done<A.LeaseReleaseResult>(200, { ok: true, resource, tag, released });
     }

@@ -70,11 +70,29 @@ A lease is **taken when the run starts**, in the same state transaction that che
 A lease that outlived `lease_minutes` while the order is still running or monitored is listed as a `lease-expired` problem. The console's resources area (next to the workers) shows each resource with its slots and holders, and a **Reclaim** button on an expired lease; the same from the command line:
 
 ```
-alba resources                            # slots, holders, held minutes
-alba leases release <resource> <TAG>      # a person takes a lease back
+alba resources                                          # scope, slots, holders, queue, named locks
+alba leases release <resource> <TAG> [--project id]     # a person takes a lease back
 ```
 
 `GET /api/resources` and `POST /api/leases/release` are the interface (document 010). Releasing records a `lease-released` event. There is no remote executor: a resource is a name to count against, not a place a job is sent to.
+
+### Machine-wide resources
+
+By default a resource has `scope: project`: its leases live in that project's own state, so two projects declaring `unity-main` count separately. When several projects share one workstation—one Unreal `RunUAT` mutex, one game-capture desktop, or one shared `tripo-wallet` account—set `scope: machine`:
+
+```yaml
+resources:
+  ue-package:   { slots: 1, scope: machine, match: "RunUAT|BuildCookRun|package" }
+  game-capture: { slots: 1, scope: machine }
+  tripo-wallet: { slots: 3, scope: machine }
+```
+
+- **Scope and matching.** `scope` is `project` (default) or `machine`. Machine resources match **by name** across every project run by this OS user; project-scope resources of the same name stay separate. `exclusive: true` cannot be machine-scoped yet and is refused when loading the project file.
+- **Store location.** Machine leases, waiters, recent hold durations and declared slot counts live in one SQLite database (`machine.sqlite`, WAL mode, `busy_timeout` 5000, every write in `BEGIN IMMEDIATE`) under `ALBA_MACHINE_DIR` when set, else `%LOCALAPPDATA%\alba\machine` on Windows, else `$XDG_STATE_HOME/alba/machine` or `~/.local/state/alba/machine`. Opening is lazy: a project without a `scope: machine` resource never creates the file. There is no network sharing; a remote machine ([028](../operations/028-machines.md)) running its own Alba keeps its own store.
+- **Effective slots and mismatch.** Each project records its declared `slots` in `declared`. When two projects share one Tripo account (`tripo-wallet`) and `studio-a` declares `slots: 3` while `studio-b` declares `slots: 2`, Alba enforces the smallest live declaration (`2`) so neither overruns the tighter cap, and shows `tripo-wallet: studio-a says 3, studio-b says 2; using 2` in `alba resources` and the console.
+- **Atomic take and release.** Dispatch, acceptance, tool and nightly lease helpers in `leases.ts` route machine-scoped resources to `machine.sqlite` and keep project-scoped ones in project state. Checking free slots and taking the lease happen in one `BEGIN IMMEDIATE` transaction inside `acquireLeases`; if another project took the last slot meanwhile, the start throws the usual `cannot start now` refusal and the launch transaction rolls back without recording a run. Releasing (`releaseLease`, `reconcileLeases`, or `alba leases release <resource> <TAG> --project <id>`) removes the lease, records its duration in `holds` (keeping the last 50 per resource), and writes `lease-acquired` / `lease-released` with `scope: "machine"` in the project event log.
+- **Queue, priority and wait estimate.** On every real tick, `reconcileLeases` upserts each queued order that needs a machine resource it does not already hold (preserving its first `enqueued_at`) and removes orders that stopped waiting. Priority is `rework` when the order's last action is `rework`, `answer` or `monitor`, otherwise `new`; `rework` goes ahead of `new`, then FIFO by `enqueued_at`. `startBlocked` refuses when free slots are less than or equal to the waiters ahead of the order, reporting `waiting for ue-package slot (2nd in queue, about 25 min; held by studio-b:B1 for 40 min)`. The estimate uses the median of the last 20 `holds` of that resource (at least 3, else `unknown`): for queue position `k` with `s` effective slots, `max(0, median - longest current hold so far) + floor((k-1)/s) * median`, rounded up to 5 minutes.
+- **Stale recovery.** Any process touching the store removes a lease whose recorded holder process is gone or now has another creation time (the same identity check as `acceptanceLeaseActive`), or a dispatch lease whose heartbeat is older than `max(30 min, 3 * --every)` and whose run PID is gone or unknown, printing a recovery line. A waiter not refreshed for 10 minutes is dropped.
 
 ## 3. Loops and idle runs
 
@@ -165,7 +183,7 @@ If a run has no receipt written after it began and no commit since it began, aft
 
 ## 7. Named locks and resources
 
-Use `alba lock <name> -- <program>` when two orders must take turns at one machine-wide thing, such as one game window or one screenshot capture. A lock is a short mutual-exclusion turn and does not consume a project capacity. Use a project resource when the work consumes a counted machine or service slot, needs a lease in the console, or must block a class of work. `alba resources` shows both resource leases and held named locks; named locks include the holder, command, folder, minutes held and a stale flag. `alba lock list` shows the same machine-wide lock directory without loading a project.
+Use `alba lock <name> -- <program>` (or `node .alba/bin/lock.mjs <name> -- <program>` inside a worktree) when runs must take turns at one machine-wide thing, such as one game window or one screenshot capture. A lock is a short mutual-exclusion turn and does not consume a project capacity. Waiters join a standalone FIFO queue in `<lockdir>/<name>.queue/<since>-<pid>-<token>.json` (recording PID, process start time, `ALBA_RUN` when set, working directory and command) and may take `<name>.lock` only when first among live entries; dead entries are cleaned with the same PID + start-time staleness check, and a waiter removes its own entry on exit, signal or `--wait-minutes` timeout (exit codes: child exit code, `2` usage, `75` timeout, `130` stopped). While waiting, the helper prints `[lock] waiting for "<name>" (2nd in queue)`. Use a `scope: machine` resource instead when the work consumes counted slots across projects, needs console visibility and rework priority, or holds across `monitoring`. `alba resources` shows both resource leases/queues and held named locks with `run` and `queue`; `alba lock list` shows the lock directory and its queues without loading a project.
 
 ## 8. WIP refs for abnormal ends
 

@@ -160,7 +160,7 @@ export function planTick(input: TickInput): TickReport {
   for (const down of endpointDown) report.problems.push({ kind: 'launch', text: t('{worker}: endpoint unreachable', { worker: down.worker }) });
   const downOf = (id?: string) => endpointDown.find(d => d.worker === id);
   for (const l of input.leases ?? []) {
-    if (now.getTime() <= Date.parse(l.expires)) continue;
+    if (l.foreign || l.queued || now.getTime() <= Date.parse(l.expires)) continue;
     report.problems.push({ kind: 'lease-expired', tag: l.tag, text: t('{tag}: has held {resource} for {min} min, longer than its lease ({limit} min); release it if the run is gone.', { tag: l.tag, resource: l.resource, min: Math.round((now.getTime() - Date.parse(l.since)) / 60000), limit: Math.round((Date.parse(l.expires) - Date.parse(l.since)) / 60000) }) });
   }
   for (const w of workers) if (!w.available) report.unavailable.push({ worker: w.config.id, reasons: w.reasons });

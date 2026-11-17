@@ -532,7 +532,7 @@ export const zh: Record<string, string> = {
   "{looked} run logs read, {n} findings": "读了 {looked} 份运行日志，{n} 条发现",
   "{tag}: released {resource}.": "{tag}：已释放 {resource}。",
   "{tag} holds no lease on {resource}.": "{tag} 没有占用 {resource}。",
-  "Usage: alba resources | alba leases [list] | alba leases release <resource> <TAG>": "用法：alba resources | alba leases [list] | alba leases release <资源> <TAG>",
+  "Usage: alba resources | alba leases [list] | alba leases release <resource> <TAG> [--project id]": "用法：alba resources | alba leases [list] | alba leases release <资源> <TAG> [--project id]",
   "This project declares no resources (resources: in the project file).": "本项目没有声明共享资源（项目文件里的 resources:）。",
   "LEASE EXPIRED": "租约已过期",
   "The project does not declare the resource(s): {names}. Declared: {known}.": "项目没有声明这些资源：{names}。已声明：{known}。",
@@ -979,6 +979,16 @@ export const zh: Record<string, string> = {
   'Invalid --since value "{value}" (expected 30d, 7d, 24h, all or YYYY-MM-DD).': '无效的 --since 参数“{value}”（应为 30d、7d、24h、all 或 YYYY-MM-DD）。',
   'Lessons stats ({scope}):': '经验库统计（{scope}）：',
   'Usage: alba lessons [--tag a,b] [--order TAG] [--all] [--json] | alba lessons stats [--since 30d] [--kind k] [--json]': '用法：alba lessons [--tag a,b] [--order TAG] [--all] [--json] | alba lessons stats [--since 30d] [--kind k] [--json]',
+  // machine-wide resources and queue
+  'unknown': '未知',
+  '{file}: "{at}.scope" must be "project" or "machine".': '{file}：“{at}.scope”必须是 "project" 或 "machine"。',
+  '{file}: "{at}": exclusive cannot be machine-scoped yet.': '{file}：“{at}”：独占资源暂不支持设为机器范围（machine）。',
+  'Machine store schema {version} is newer than this program supports.': '机器状态库结构版本 {version} 超出此程序支持的版本。',
+  'No. {n} in queue': '排队第 {n} 位',
+  'about {min} min': '约 {min} 分钟',
+  '{holder} for {min} min': '{holder} 已占用 {min} 分钟',
+  'waiting for {name} slot ({place}, {eta})': '等待 {name} 槽位（{place}，预计 {eta}）',
+  'waiting for {name} slot ({place}, {eta}; held by {who})': '等待 {name} 槽位（{place}，预计 {eta}；当前占用：{who}）',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

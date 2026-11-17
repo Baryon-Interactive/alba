@@ -1665,4 +1665,6 @@ export const zh: Record<string, string> = {
   "Alba's captures": 'Alba 自抓截图',
   "Worker's pictures (secondary)": '工人提交的截图（次要）',
   'revision': '提交版本',
+  'machine': '机器',
+  'about {time}': '约 {time}',
 };
