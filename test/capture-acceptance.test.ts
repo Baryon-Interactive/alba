@@ -333,7 +333,7 @@ test('CLI alba capture exit codes 0/1/2, --dry-run and --json, plus GET /api/ord
       spawnDetached: () => 1234,
     } as unknown as Probes;
     const workers = validateWorkers({ workers: [{ id: 'w1', engine: 'claude-session' }] }, 'w.yaml');
-    const board = createBoard({ projects: [f.project], workers, probes });
+    const board = createBoard({ projects: [f.project], workers, probes, port: 0 });
     await new Promise<void>(resolve => board.server.listen(0, '127.0.0.1', resolve));
     t.after(() => {
       board.hub.stop();
