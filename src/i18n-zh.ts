@@ -4,6 +4,20 @@
 // A text with no entry here comes back in English.
 
 export const zh: Record<string, string> = {
+  '{file}: unknown key(s) under "review": {keys}.': '{file}：“review”下有未知键：{keys}。',
+  '{file}: "review.mode" must be manual or auto.': '{file}：“review.mode”必须是 manual 或 auto。',
+  '{file}: "review.first_pass" must be off, advise or bounce.': '{file}：“review.first_pass”必须是 off、advise 或 bounce。',
+  '{file}: "review.first_pass_kinds" must be a non-empty list of kinds.': '{file}：“review.first_pass_kinds”必须是非空类别列表。',
+  '{file}: "review.first_pass_minutes" must be a positive number.': '{file}：“review.first_pass_minutes”必须是正数。',
+  '{file}: "review" must be manual, auto or a mapping.': '{file}：“review”必须是 manual、auto 或映射。',
+  'Disputing a first-pass bounce requires a note of at least 10 characters (--note).': '质疑初审打回返工需要至少 10 个字符的说明（--note）。',
+  '{tag} has no applied first-pass bounce to dispute.': '{tag} 没有已执行的初审打回返工可供质疑。',
+  'First-pass bounce {id} of {tag} was already disputed.': '{tag} 的初审打回返工 {id} 已被标记为误判。',
+  '--days must be a positive number.': '--days 必须是正数。',
+  '{tag}: recorded first-pass dispute for {id}.': '{tag}：已记录初审打回返工 {id} 的误判申诉。',
+  'not enough cases': '样本不足',
+  'First-pass review statistics ({days} days): {verdicts} verdicts, {decided} decided, rate: {rate}': '初审统计（近 {days} 天）：共 {verdicts} 次结论，已裁定 {decided} 次，一致率：{rate}',
+  'No completed first-pass reviews in window.': '统计窗口内没有已完成的初审记录。',
   "Nothing changed since the last brief.": "自上次简报以来没有变化。",
   "Changes since the last brief:": "自上次简报以来的变化：",
   "Running orders:": "运行中的任务：",

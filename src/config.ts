@@ -234,6 +234,13 @@ export interface OrdersConfig {
   preflight: OrdersPreflightConfig;
 }
 
+export type FirstPassMode = 'off' | 'advise' | 'bounce';
+export interface FirstPassConfig {
+  mode: FirstPassMode;
+  kinds?: string[];
+  minutes: number;
+}
+
 export interface ProjectConfig {
   /** Per-kind order templates and preflight rules (`orders:` in alba.yaml). */
   orders?: OrdersConfig;
@@ -241,6 +248,8 @@ export interface ProjectConfig {
   engine?: string;
   /** Who accepts an order that does not say (`review` of the order wins): `manual`, a person; `auto` (the default), the producer may too. */
   review?: 'manual' | 'auto';
+  /** Cross-model first-pass review settings (`review.first_pass*` in alba.yaml). */
+  first_pass?: FirstPassConfig;
   machines?: string;               // registry path; ALBA_MACHINES wins
   gates?: import('./gates/config.ts').GatesConfig;
   design?: DesignConfig;
@@ -561,8 +570,37 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.clean !== undefined) cfg.clean = validateClean(raw.clean, file, cfg.root);
   if (raw.monitor !== undefined) cfg.monitor = monitorConfig(raw.monitor);
   if (raw.review !== undefined) {
-    if (raw.review !== 'manual' && raw.review !== 'auto') fail('{file}: "review" must be manual or auto.', { file });
-    cfg.review = raw.review;
+    if (typeof raw.review === 'string') {
+      if (raw.review !== 'manual' && raw.review !== 'auto') fail('{file}: "review" must be manual or auto.', { file });
+      cfg.review = raw.review;
+    } else if (isRecord(raw.review)) {
+      const unknownReview = Object.keys(raw.review).filter(k => !['mode', 'first_pass', 'first_pass_kinds', 'first_pass_minutes'].includes(k));
+      if (unknownReview.length) fail('{file}: unknown key(s) under "review": {keys}.', { file, keys: unknownReview.map(k => `review.${k}`).join(', ') });
+      if (raw.review.mode !== undefined) {
+        if (raw.review.mode !== 'manual' && raw.review.mode !== 'auto') fail('{file}: "review.mode" must be manual or auto.', { file });
+        cfg.review = raw.review.mode;
+      }
+      if (raw.review.first_pass !== undefined && !['off', 'advise', 'bounce'].includes(raw.review.first_pass as string)) {
+        fail('{file}: "review.first_pass" must be off, advise or bounce.', { file });
+      }
+      let kinds: string[] | undefined;
+      if (raw.review.first_pass_kinds !== undefined) {
+        if (!Array.isArray(raw.review.first_pass_kinds) || !raw.review.first_pass_kinds.length || raw.review.first_pass_kinds.some(x => typeof x !== 'string' || !x.trim())) {
+          fail('{file}: "review.first_pass_kinds" must be a non-empty list of kinds.', { file });
+        }
+        kinds = [...new Set((raw.review.first_pass_kinds as string[]).map(x => x.trim()))];
+      }
+      let minutes = 30;
+      if (raw.review.first_pass_minutes !== undefined) {
+        if (typeof raw.review.first_pass_minutes !== 'number' || !Number.isFinite(raw.review.first_pass_minutes) || raw.review.first_pass_minutes <= 0) {
+          fail('{file}: "review.first_pass_minutes" must be a positive number.', { file });
+        }
+        minutes = raw.review.first_pass_minutes;
+      }
+      cfg.first_pass = { mode: (raw.review.first_pass as FirstPassMode | undefined) ?? 'off', ...(kinds ? { kinds } : {}), minutes };
+    } else {
+      fail('{file}: "review" must be manual, auto or a mapping.', { file });
+    }
   }
   if (raw.kinds !== undefined) cfg.kinds = validateKinds(raw.kinds, file);
   if (raw.classifier !== undefined) cfg.classifier = validateClassifier(raw.classifier, file);

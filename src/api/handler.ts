@@ -57,6 +57,7 @@ import { readRegistry } from '../skills/registry.ts';
 import { setSkillUse } from '../skills/use.ts';
 import { orderSkillsView, skillsView } from '../skills/view.ts';
 import { mergeReadiness, orderBaseRef, systemReadiness } from '../review/readiness.ts';
+import { computeFirstPassStats, disputeFirstPass } from '../review/first-pass-stats.ts';
 import { verifyOrder } from '../verify/verify.ts';
 import { producerAct, producerPolicy, producerState, currentProducerActions, runProducerAction, rejectProducerAction, editDraftAction, setProducerPaused } from '../producer/producer.ts';
 import { draftPreview } from '../producer/drafting.ts';
@@ -307,6 +308,13 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
   }
 
   if (method === 'GET') {
+    if (parts[0] === 'review' && parts[1] === 'stats' && parts.length === 2) {
+      const view = light(q('project'));
+      const rawDays = q('days');
+      const days = rawDays === undefined ? 30 : Number(rawDays);
+      if (!Number.isFinite(days) || days <= 0) throw new ApiFailure(400, 'bad_request', '"days" must be a positive number.');
+      return json(res, 200, computeFirstPassStats(view.config, view.orders, { days, now: ctx.probes.now() }) satisfies A.FirstPassStats);
+    }
     if (parts[0] === 'producer' && parts[1] === 'log' && parts.length === 2) {
       if (q('since') && !Number.isFinite(Date.parse(q('since')!))) throw new ApiFailure(400, 'bad_request', '"since" must be an ISO time.');
       const view = light(q('project'));
@@ -686,6 +694,21 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       needsWrite(); const body = await readJson(req), view = light(str(body, 'project') ?? q('project')), tag = view.orders.get(parts[1]).order.tag;
       const events = reviewIntakeSystems(view.config, view.orders, tag, { accept: strList(body, 'accept'), reject: strList(body, 'reject'), drop: strList(body, 'drop'), note: str(body, 'note') });
       ctx.invalidate(); return json(res, 200, { project: view.config.id, tag, events });
+    }
+    if (parts[0] === 'orders' && parts[2] === 'first-pass-wrong' && parts.length === 3) {
+      needsWrite();
+      const body = await readJson(req), view = light(str(body, 'project') ?? q('project'));
+      const note = str(body, 'note');
+      try {
+        const result = disputeFirstPass(view.orders, parts[1], note);
+        ctx.invalidate();
+        return json(res, 200, { ok: true, ...result } satisfies A.FirstPassDisputeResult);
+      } catch (e) {
+        if (e instanceof UserError && /has no applied first-pass bounce|was already disputed/.test(e.english)) {
+          throw new ApiFailure(409, 'conflict', e.message);
+        }
+        throw e;
+      }
     }
     if (parts[0] === 'machines' && parts.length >= 2) {
       needsWrite();

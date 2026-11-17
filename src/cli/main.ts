@@ -57,6 +57,7 @@ import { lockHolder, skipLine } from '../serve/lock.ts';
 import { startServe } from '../serve/serve.ts';
 import { hasDeliveryChecks } from '../check/delivery.ts';
 import { startIndependentCheck } from '../review/independent.ts';
+import { computeFirstPassStats, disputeFirstPass, formatFirstPassStats } from '../review/first-pass-stats.ts';
 import { lintDelivery } from '../producer/delivery-lint.ts';
 import { runCheck, formatCheck } from '../check/check.ts';
 import { adopt, loadRefs, parseResults, saveRefs } from '../check/refs.ts';
@@ -159,6 +160,8 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
                                              take values from a result file into the reference values, after a person decided the change is expected
   run <TAG> --worker id [--dry-run] [--over-cap]  start a queued order: worktree, prompt, background process, run record; a held order (for example after "stop") starts on the worker named; a full kind cap refuses unless --over-cap
   stop <TAG> [--note text]                   stop the open run: its process and every process under it (identity checked), close the run as cancelled and hold the order; then "run <TAG> --worker id" moves it to another worker
+  review stats [--days 30] [--json]          agreement, dispute and timing statistics for first-pass reviews by model family and kind
+  review <TAG> first-pass-wrong --note text  record first-pass-disputed for the latest applied first-pass bounce (note of at least 10 characters)
   review <TAG> approve|rework [--note text] [--branch b] [--override]  approve checks the branch is merged and writes <TAG>.accept.md; rework sends it back
   review <TAG> sheet [--out file.png] [--columns 4] [--cell 320] [--json]  a contact sheet of the order's evidence pictures (default <state_dir>/review/<TAG>-sheet.png) and each one's size, mean luminance, spread, dark and highlight share, p5/p95, saturation, and the subject against its surround when <name>.mask.png exists
   serve [--port 4777] [--every 15] [--max-dispatch 1] [--allow-origin url]... [--sign-in] --project f.yaml...
@@ -924,6 +927,16 @@ ${t('Stopped run {run}. The order is held: start it on a worker with "alba run {
   }
 
   if (group === 'review') {
+    if (command === 'stats') {
+      const days = values.days === undefined ? 30 : Number(values.days);
+      if (!Number.isFinite(days) || days <= 0) fail('--days must be a positive number.');
+      const stats = computeFirstPassStats(cfg, orders, { days, now: systemProbes.now() });
+      return values.json ? JSON.stringify(stats, null, 2) : formatFirstPassStats(stats);
+    }
+    if (command && rest[0] === 'first-pass-wrong') {
+      const disputed = disputeFirstPass(orders, command, values.note);
+      return t('{tag}: recorded first-pass dispute for {id}.', { tag: disputed.tag, id: disputed.id });
+    }
     need0(command, 'alba review <TAG> approve|rework [--note text] [--branch b]');
     const action = rest[0];
     if (action === 'approve') {
