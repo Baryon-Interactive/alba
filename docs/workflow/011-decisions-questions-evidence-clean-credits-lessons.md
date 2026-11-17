@@ -104,18 +104,61 @@ Quotes are kept per unit; units are never added together. The order's detail lis
 
 ## Lessons library
 
-Rules learned from mistakes, put into the prompt of every order they apply to.
+Rules learned from mistakes, selected by relevance and size for each run's prompt.
 
 ```yaml
 lessons:
-  dir: ../lessons       # Markdown files
+  dir: docs/lessons
+  packs: [unreal, windows-workers]
+  max_bytes: 6000                     # UTF-8 bytes of the rendered section (0 = no limit)
+  max_items: 15                       # mounted lessons per prompt (0 = no limit)
+  level_order: [rule, checklist]      # optional: rank free-text level words highest first
+  kind_tags: { ue: [engine, build] }
 ```
 
 ```markdown
 ## L012 Never hand-edit generated assets
 - tags: art, ui
+- priority: high
+- added: 2026-11-12
 - rule: Change the source file and export again; never edit the exported image.
 - why: A hand edit was lost at the next export.
 ```
 
-An order lists tags (`alba orders add ... --tags art,ui`, `tags` in `POST /api/orders`). `alba run` and `alba prompt` add a "Lessons from earlier work" section with the id, title and rule of every lesson that shares a tag with the order, and of every lesson tagged `all`. `alba lessons [--tag art]` lists the library or the matches. A session that continues after an answer is not given them again: it has them already. A library in the studio's multi-line format (levels, tags, projects, rules as sub-lists), several folders, a limit on the lines of a rule in a prompt and the mapping of an order's kind to tags are described in document 013.
+An order lists tags (`alba orders add ... --tags art,ui`, `tags` in `POST /api/orders`). Candidates for a run are the project's applicable lessons that match:
+- the order's own tags, kind or classified kind (tag class 3),
+- **run tags** from the chosen worker and machine (tag class 2): the worker's `engine`, that id without `-cli` (`codex-cli` -> `codex`), the worker's `model_family`, and the run machine's `os` (`windows`, `linux`, `macos`),
+- tags mapped from the order's kind by `lessons.kind_tags` (tag class 1), or
+- `all` (tag class 0).
+
+`alba prompt <TAG> [--worker id]` runs the same selection for the worker shown on the order (or no run tags when it has none). `GET /api/lessons`, the order page and `alba lessons [--tag ...] [--order TAG]` keep `lessonsForOrder` (order/kind/`kind_tags`/`all` in ID order). A session resumed directly for an answer, monitor result or message carries no lessons: the conversation already holds them.
+
+### Ranking and budget
+
+Candidates are ranked, first difference winning: (1) `priority: must`, (2) highest matched tag class (`3 > 2 > 1 > 0`), (3) more distinct matched tags, (4) `priority` (`high > normal > low`), (5) `lessons.level_order` when configured, (6) recency (`added` date `YYYY-MM-DD`, else later position within its file), and (7) lesson ID.
+
+Rules are cut at `max_rule_lines` (default 6) and mounted in rank order while the rendered section stays within `max_bytes` (default 6000) and `max_items` (default 15). A lesson that exceeds the remaining byte budget is skipped so smaller ranked lessons after it can still fit. Lessons with `priority: must` are always mounted; if they alone exceed `max_bytes` or `max_items`, `over_budget: true` is recorded. Setting both `max_bytes: 0` and `max_items: 0` opts out completely: every `lessonsForOrder` match is mounted in ID order with no run tags, ranking or file list.
+
+Unmounted candidates are listed at the end of `## Lessons from earlier work` under `Also on file; read the ones that touch your work:`, one line each (`- L-ENG-07 Title (docs/lessons/engine.md)`). Paths inside the project root are written relative to the project with `/`; files outside the project use an absolute path on local runs and `(on the alba machine)` on remote runs. At most 30 lines are printed, followed by `and N more: alba lessons --order <TAG>` when more remain.
+
+### Recording and inspection
+
+Each launched run records `Run.lessons` (`{ mounted, listed, bytes, over_budget? }`) and `Run.prompt_bytes` (`{ rules, lessons, skills, notes, order, alba, total, file: 'prompt' | 'handoff' }`, UTF-8 bytes summing to the written file size; hand-over runs measure the `.handoff.md` continuation file), and emits a `lessons-mounted` event (`{ run, mounted, listed, bytes, over_budget? }`, with `mounted: []` on resumed continuations without lessons).
+
+`alba orders show <TAG>` prints one breakdown line under `Runs:` for each run that has `prompt_bytes`:
+
+```text
+  r3  prompt 11.8 KB: lessons 5.9 (14 in, 32 listed) | rules 0 | skills 1.3 | notes 2.4 | order 0.1 | alba 2.1
+```
+
+### `alba lessons stats [--since 30d] [--kind k] [--json]`
+
+Reports per-lesson outcomes across runs in the window (default `30d`; `--since all` inspects every run). Runs recorded before `Run.lessons` existed are read automatically from `## Lessons from earlier work` in their `prompt_file` when still on disk, and the header prints how many runs came from prompt files.
+
+For each lesson, the command counts runs that carried it, how many were judged (first `approve` or `rework` before the next run, or a `brokenRun` that died without a report), and the share accepted on the first pass (`approve` with no earlier `rework` on the order; a `brokenRun` counts as not accepted), alongside the same numbers for runs **of the same kind** without that lesson, the difference in percentage points, and both sample sizes. Each row gets a plain label:
+- `in every run of this kind` — nothing without it to compare against,
+- `too few runs` — fewer than 5 judged runs on either side,
+- `no effect visible` — absolute difference smaller than `1 / sqrt(smaller n)`, a rough noise bound rather than a significance test,
+- `higher with it` or `lower with it` — difference at or above that bound.
+
+Treat the table as descriptive correlation, never causal proof: teams add lessons *after* failures and during harder milestones, so new lessons often appear on tougher orders first.
