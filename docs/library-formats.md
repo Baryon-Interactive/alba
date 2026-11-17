@@ -11,19 +11,25 @@ credits: { dir: credits, format: alba }
 
 ## Lessons
 
-Markdown files directly inside each configured lesson directory contain sections with an alphanumeric lesson ID and a nonempty `rule`. Fenced examples are ignored. English field names are case insensitive; tags are comma, semicolon or whitespace separated. `projects` is a comma-separated list of project IDs or names; absent or `*` means all projects. `level`, `why` and `check` are optional. Rules can span multiple indented lines. Order tags and kind select lessons; `kind_tags` adds project-defined tags and `all` selects every prompt. `max_rule_lines` is a positive integer, default 6.
+Markdown files directly inside each configured lesson directory contain sections with an alphanumeric lesson ID and a nonempty `rule`. Fenced examples are ignored. English field names are case insensitive; tags are comma, semicolon or whitespace separated. `projects` is a comma-separated list of project IDs or names; absent or `*` means all projects. `level`, `priority` (`must`, `high`, `normal` or `low`, default `normal`), `added` (`YYYY-MM-DD`), `why` and `check` are optional; unknown `priority` words or malformed `added` dates are rejected with the file and lesson ID. Rules can span multiple indented lines. Order tags, kind, run tags (worker engine, engine without `-cli`, `model_family` and run machine OS) and `kind_tags` select and rank lessons; `all` matches every prompt. `max_rule_lines` is a positive integer, default 6. `max_bytes` (whole number >= 0, default 6000; 0 means no byte limit) and `max_items` (whole number >= 0, default 15; 0 means no item limit) cap the rendered prompt section; `must` lessons always go in, and setting both `max_bytes: 0` and `max_items: 0` mounts every order/kind match without run tags, ranking or a trailing file list. Optional `level_order` lists non-empty `level` strings from highest rank to lowest; when absent, levels do not rank.
 
-`packs` adds Alba's built-in lesson packs (`templates/lessons/<pack>/`) after the project's folders; with packs, `dir` may be left out. Pack lessons have ids `ALBA-UE-nn`, `ALBA-WIN-nn`, `ALBA-ART-nn` and `ALBA-SIM-nn`, so they do not collide with a project's own, and use the tags below (map the project's kinds to them with `kind_tags`).
+`packs` adds Alba's built-in lesson packs (`templates/lessons/<pack>/`) after the project's folders; with packs, `dir` may be left out. Pack lessons have ids `ALBA-UE-nn`, `ALBA-WIN-nn`, `ALBA-ART-nn` and `ALBA-SIM-nn`, so they do not collide with a project's own, and use the tags below (map the project's kinds to them with `kind_tags`). In `windows-workers`, `ALBA-WIN-01` and `ALBA-WIN-03` carry `priority: must`.
 
 | Pack | Lessons | Tags |
 |---|---|---|
 | `unreal` | build through the project's scripts, one engine build at a time, rebuild prebuilt libraries, headless content scripts, `/Game` paths from Git Bash, SDK junctions, evidence from the package, instanced-mesh materials | `engine`, `build`, `package`, `accept`, `windows`, `art` |
-| `windows-workers` | non-ASCII through PowerShell pipes, absolute paths and reading scripted edits back, no desktop automation, PowerShell 5.1, the proxy, tests never writing to the real profile | `all`, `windows`, `git` |
+| `windows-workers` | non-ASCII through PowerShell pipes (`must`), absolute paths and reading scripted edits back, no desktop automation (`must`), PowerShell 5.1, the proxy, tests never writing to the real profile | `all`, `windows`, `git` |
 | `art-pipeline` | pictures only through the image tool inside the cap, returned sizes, paid 3D steps one at a time, choosing model settings, headless Blender scripts, judging pieces as the game shows them, provenance, the art bible before content, generation settings that match the shaders, range and subject contrast, consolidating passes, licences, key art against the game | `art`, `image`, `tripo`, `blender`, `engine` |
 | `deterministic-sim` | determinism by construction, a rules library without engine or network, many seeds and output hashes, scenarios that fix inputs and not outcomes | `sim`, `engine`, `accept`, `content` |
 
 ```yaml
-lessons: { dir: docs/lessons, packs: [unreal, windows-workers], kind_tags: { ue: [engine, build, package] } }
+lessons:
+  dir: docs/lessons
+  packs: [unreal, windows-workers]
+  max_bytes: 6000
+  max_items: 15
+  level_order: [rule, checklist, record]
+  kind_tags: { ue: [engine, build, package] }
 ```
 
 ```markdown
@@ -31,6 +37,8 @@ lessons: { dir: docs/lessons, packs: [unreal, windows-workers], kind_tags: { ue:
 - tags: build, engine
 - projects: *
 - level: rule
+- priority: high
+- added: 2026-11-10
 - rule:
   - Acquire the configured build resource.
   - Release it after the build finishes.

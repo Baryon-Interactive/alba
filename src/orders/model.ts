@@ -133,6 +133,8 @@ export interface Run {
   report_from?: 'earlier-message' | 'written-file'; // the report block was not in the last message (see the report-from-earlier event)
   resume_reason?: string;   // why an automatic resume started a new session
   end?: RunEnd;             // why and how the run ended, plus any WIP snapshot ref
+  lessons?: { mounted: string[]; listed: string[]; bytes: number; over_budget?: boolean };
+  prompt_bytes?: { rules: number; lessons: number; skills: number; notes: number; order: number; alba: number; total: number; file: 'prompt' | 'handoff' };
 }
 
 /** One condition of a monitor: exactly one of these keys. */

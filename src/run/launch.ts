@@ -18,7 +18,7 @@ import type { Run } from '../orders/model.ts';
 import { heldStartPlan, type Orders } from '../orders/service.ts';
 import type { Probes } from '../tick/gather.ts';
 import type { WorkersFile } from '../workers/config.ts';
-import { lessonsForOrder } from '../lessons/lessons.ts';
+import { selectLessons, workerLessonRun, type LessonSelection } from '../lessons/select.ts';
 import { routingOf } from '../routing/classify.ts';
 import { acquireLeases, activeLeases, capFull, capHolds, kindOfOrder, occupants, releaseLease, startBlocked, usesOf, type CapHold } from '../resources/leases.ts';
 import { stateTransaction } from '../orders/state-files.ts';
@@ -27,7 +27,7 @@ import { ensureInbox, installLockHelper } from './inbox.ts';
 import { planSkills, skillEnvValues } from '../skills/plan.ts';
 import { checkToolEnvironment, orderTools, toolsPrompt, withToolServers } from '../plugins/tools.ts';
 import { handoffLine, handoffPrompt, writeHandoff } from './handoff.ts';
-import { answerPrompt, findOrderFile, launchArgs, messagePrompt, monitorPrompt, pendingNotes, promptFor } from './prompt.ts';
+import { answerPrompt, findOrderFile, launchArgs, messagePrompt, monitorPrompt, pendingNotes, promptFor, recordRunPrompt } from './prompt.ts';
 import { MAX_RESUMES } from './transient.ts';
 import { baseRefOf, checkBaseRef, commonGitDir, ensureWorktree, mainCheckoutState, planWorktree, worktreeGitDir } from './worktree.ts';
 import { installBaseGuard, RUN_ENV } from './ref-guard.ts';
@@ -262,15 +262,20 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   try { mountedSkills = mountSkills(plan.path, skillPlan.mounts, skillPlan.selection.selected).mounted; } catch { /* the prompt still lists the skills with their source files below */ }
   try { ensureInbox(plan.path); } catch { /* a missing inbox only means the worker finds no messages */ }
   try { installLockHelper(plan.path); } catch { /* the rules say what to do without it */ }
-  const fullPrompt = () => promptFor(project.work_orders, doc, lessonsForOrder(project, doc), skillPlan.listed, project.lessons?.max_rule_lines);
-  const promptText = previous?.missing_report || notes.some(n => n.bounce) ? fullPrompt()
+  const lessonRun = workerLessonRun(project, worker, workers.file, remote?.machine.os);
+  let chosenLessons: LessonSelection | undefined;
+  const getLessons = () => (chosenLessons ??= selectLessons(project, doc, lessonRun));
+  const fullPrompt = () => promptFor(project.work_orders, doc, getLessons(), skillPlan.listed, project.lessons?.max_rule_lines);
+  const promptText = rotating ? '' : previous?.missing_report || notes.some(n => n.bounce) ? fullPrompt()
     : resumeForNote && pending?.kind === 'answer' && notes.length === 1 ? answerPrompt(pending)
     : resumeForNote && pending?.kind === 'monitor' && notes.length === 1 ? monitorPrompt(pending.text)
       : resumeForNote && pending?.kind === 'message' ? messagePrompt(notes)
         : fullPrompt();
   // A handed-over order: the prompt is only the path of the continuation file (what the branch holds, the last report, the questions, the end of the log, the usual instructions).
-  const handoff = rotating ? writeHandoff({ project, doc, from: { worker: rotating.from, run: previous }, to: worker.id, why: rotating.reason, worktree: plan.path, runId, probes: ctx.probes, lessons: lessonsForOrder(project, doc), skills: skillPlan.listed }) : undefined;
-  writeFileSync(promptFile, withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules), 'utf8');
+  const handoff = rotating ? writeHandoff({ project, doc, from: { worker: rotating.from, run: previous }, to: worker.id, why: rotating.reason, worktree: plan.path, runId, probes: ctx.probes, lessons: getLessons(), skills: skillPlan.listed }) : undefined;
+  const writtenPrompt = withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
+  writeFileSync(promptFile, writtenPrompt, 'utf8');
+  const recordedPrompt = recordRunPrompt({ workOrders: project.work_orders, doc, skills: skillPlan.listed, selection: chosenLessons, promptText, writtenPrompt, rules, handoff });
   const sessionId = resumeSession ?? randomUUID();
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = launchArgs(worker.launch, values, resumeSession !== undefined);
@@ -323,7 +328,8 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
         orders.record(doc.order.tag, 'worker-set', { from: from ?? null, to: worker.id, why: 'a person started a run on it' });
       }
       orders.update(doc.order.tag, { branch: plan.branch, worktree: plan.path });
-      const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}) } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
+      const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}), lessons: recordedPrompt.lessons, prompt_bytes: recordedPrompt.prompt_bytes } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
+      orders.record(doc.order.tag, 'lessons-mounted', { run: opened.id, ...recordedPrompt.lessons });
       if (project.resources) acquireLeases(project, orders, orders.get(doc.order.tag), opened.id, ctx.probes.now());
       return opened;
     }));

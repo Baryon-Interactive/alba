@@ -6,6 +6,7 @@ report; these lessons add what is specific to Windows and to shared desktops. Le
 
 ## ALBA-WIN-01 Write non-ASCII text with a file tool, never through a pipe
 - tags: all, windows
+- priority: must
 - rule:
   - Windows PowerShell 5.1 turns every non-ASCII character passed to a native program (argument, stdin, `@'...'@ | python -`) into `?`.
   - Write such files with the editing tool, a UTF-8 `.py` file, or `Set-Content -Encoding utf8`.
@@ -21,6 +22,7 @@ report; these lessons add what is specific to Windows and to shared desktops. Le
 
 ## ALBA-WIN-03 No desktop automation
 - tags: all, windows
+- priority: must
 - rule:
   - Never use computer use, UI automation or simulated keys and mouse on the desktop; a person works on this machine.
   - Verify input through command-line switches, input injection inside the game, or automated tests; otherwise say "not verified".

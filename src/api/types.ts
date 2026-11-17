@@ -1199,8 +1199,14 @@ export interface Lesson {
   why?: string;
   /** The file it is in, relative to the library folder. */
   file: string;
+  /** Full path of the lesson file on disk, set by `readLessons`. */
+  path?: string;
   /** Optional classification label in the Alba lesson format. */
   level?: string;
+  /** Ranking priority in the Alba lesson format (default `normal`). */
+  priority?: 'must' | 'high' | 'normal' | 'low';
+  /** Date the lesson was added (`YYYY-MM-DD`). */
+  added?: string;
   /** The projects it is for (ids or names); absent: every project. */
   projects?: string[];
   /** Whether the lesson applies to this project, by configured project IDs or names. */

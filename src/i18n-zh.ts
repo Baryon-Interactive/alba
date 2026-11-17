@@ -970,6 +970,15 @@ export const zh: Record<string, string> = {
   '{file} has no "capture" recipes configured.': '{file} 没有配置“capture”抓图配方。',
   'Unknown capture recipe "{recipe}" in {file}. Known recipes: {known}.': '{file} 中没有抓图配方“{recipe}”。已知配方：{known}。',
   'No capture recipe in {file} matches order {tag}.': '{file} 中没有匹配工单 {tag} 的抓图配方。',
+  // lessons diet and stats
+  '{file}: "lessons.max_bytes" must be a whole number >= 0.': '{file}：“lessons.max_bytes”必须是大于等于 0 的整数。',
+  '{file}: "lessons.max_items" must be a whole number >= 0.': '{file}：“lessons.max_items”必须是大于等于 0 的整数。',
+  '{file}: "lessons.level_order" must be a list of non-empty strings.': '{file}：“lessons.level_order”必须是非空字符串列表。',
+  '{file} ({id}): "priority" must be must, high, normal or low (got "{value}").': '{file}（{id}）：“priority”必须是 must、high、normal 或 low（收到“{value}”）。',
+  '{file} ({id}): "added" must be YYYY-MM-DD (got "{value}").': '{file}（{id}）：“added”必须是 YYYY-MM-DD 日期（收到“{value}”）。',
+  'Invalid --since value "{value}" (expected 30d, 7d, 24h, all or YYYY-MM-DD).': '无效的 --since 参数“{value}”（应为 30d、7d、24h、all 或 YYYY-MM-DD）。',
+  'Lessons stats ({scope}):': '经验库统计（{scope}）：',
+  'Usage: alba lessons [--tag a,b] [--order TAG] [--all] [--json] | alba lessons stats [--since 30d] [--kind k] [--json]': '用法：alba lessons [--tag a,b] [--order TAG] [--all] [--json] | alba lessons stats [--since 30d] [--kind k] [--json]',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

@@ -2,22 +2,25 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type * as A from '../api/types.ts';
 import type { LessonsConfig, ProjectConfig } from '../config.ts';
-import { t } from '../i18n.ts';
+import { fail, t } from '../i18n.ts';
 import type { OrderDoc } from '../orders/model.ts';
 
-/** Markdown lessons use English fields: tags, projects, level, rule, why and check.
+/** Markdown lessons use English fields: tags, projects, level, priority, added, rule, why and check.
  * See docs/library-formats.md for the complete schema and selection rules. */
 export function readLessons(cfg: LessonsConfig | undefined, project?: Pick<ProjectConfig, 'id' | 'name'>): A.Lesson[] {
   if (!cfg) return [];
-  const raw = readRaw(cfg);
-  return raw.map(l => ({ ...l, appliesToProject: appliesTo(l.projects, project), orders: [] }));
+  return readRaw(cfg).map(({ lesson, full }) => {
+    const item: A.Lesson = { ...lesson, appliesToProject: appliesTo(lesson.projects, project), orders: [] };
+    Object.defineProperty(item, 'path', { value: full, enumerable: false, configurable: true, writable: true });
+    return item;
+  });
 }
 
 // ------------------------------------------------------------------------------------------------------------------ reading, cached until a file changes
 
-const cache = new Map<string, { sig: string; lessons: A.Lesson[] }>();
+const cache = new Map<string, { sig: string; lessons: { lesson: A.Lesson; full: string }[] }>();
 
-function readRaw(cfg: LessonsConfig): A.Lesson[] {
+function readRaw(cfg: LessonsConfig): { lesson: A.Lesson; full: string }[] {
   const files: { file: string; full: string }[] = [];
   for (const dir of cfg.dirs) {
     if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
@@ -27,7 +30,7 @@ function readRaw(cfg: LessonsConfig): A.Lesson[] {
   const key = cfg.dirs.join('|');
   const hit = cache.get(key);
   if (hit && hit.sig === sig) return hit.lessons;
-  const lessons = files.flatMap(f => parseLessons(readFileSync(f.full, 'utf8'), f.file));
+  const lessons = files.flatMap(f => parseLessons(readFileSync(f.full, 'utf8'), f.file).map(lesson => ({ lesson, full: f.full })));
   cache.set(key, { sig, lessons });
   return lessons;
 }
@@ -35,8 +38,15 @@ function readRaw(cfg: LessonsConfig): A.Lesson[] {
 // ------------------------------------------------------------------------------------------------------------------ the alba format
 
 const HEADING = /^#{2,4}\s+([A-Za-z]+(?:-[A-Za-z0-9]+)*-?\d+[A-Za-z]?)\b[\s:.-]*(.*)$/;
-const FIELD = /^[-*]\s*(tags|projects|level|rule|why|check):\s*(.*)$/i;
+const FIELD = /^[-*]\s*(tags|projects|level|priority|added|rule|why|check):\s*(.*)$/i;
+const PRIORITIES = new Set(['must', 'high', 'normal', 'low']);
 const splitTags = (text: string): string[] => text.split(/[,;\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+
+function validDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
 
 /** Fenced examples are ignored. A heading and nonempty rule are required. */
 export function parseLessons(markdown: string, file: string): A.Lesson[] {
@@ -47,9 +57,24 @@ export function parseLessons(markdown: string, file: string): A.Lesson[] {
     if (!cur) return;
     const value = (key: string) => (cur!.fields[key] ?? []).join('\n').trim();
     if (value('rule')) {
+      const id = cur.id.toUpperCase();
+      let priority: A.Lesson['priority'];
+      if ('priority' in cur.fields) {
+        const rawPriority = value('priority');
+        const normalized = rawPriority.toLowerCase();
+        if (!PRIORITIES.has(normalized)) fail('{file} ({id}): "priority" must be must, high, normal or low (got "{value}").', { file, id, value: rawPriority });
+        priority = normalized as A.Lesson['priority'];
+      }
+      let added: string | undefined;
+      if ('added' in cur.fields) {
+        const rawAdded = value('added');
+        if (!validDate(rawAdded)) fail('{file} ({id}): "added" must be YYYY-MM-DD (got "{value}").', { file, id, value: rawAdded });
+        added = rawAdded;
+      }
       const projects = value('projects').split(',').map(s => s.trim()).filter(Boolean);
-      out.push({ id: cur.id.toUpperCase(), title: cur.title.trim() || cur.id, tags: splitTags(value('tags')), rule: value('rule'),
+      out.push({ id, title: cur.title.trim() || cur.id, tags: splitTags(value('tags')), rule: value('rule'),
         ...(value('why') ? { why: value('why') } : {}), ...(value('level') ? { level: value('level') } : {}),
+        ...(priority ? { priority } : {}), ...(added ? { added } : {}),
         ...(projects.length && !projects.includes('*') ? { projects } : {}), file, appliesToProject: true, orders: [] });
     }
     cur = undefined;
@@ -99,8 +124,8 @@ export function lessonsForOrder(project: ProjectConfig, doc: OrderDoc, all?: rea
 }
 
 /** The section of a prompt that carries the lessons. Empty when there are none. A long rule is cut to `maxLines` lines. */
-export function lessonsSection(lessons: readonly A.Lesson[], maxLines = 6): string[] {
-  if (!lessons.length) return [];
+export function lessonsSection(lessons: readonly A.Lesson[], maxLines = 6, also: readonly string[] = []): string[] {
+  if (!lessons.length && !also.length) return [];
   const body = (l: A.Lesson): string[] => {
     const lines = l.rule.split('\n');
     const kept = lines.length > maxLines ? [...lines.slice(0, maxLines), '…'] : lines;
@@ -108,7 +133,10 @@ export function lessonsSection(lessons: readonly A.Lesson[], maxLines = 6): stri
     if (/^\s*(?:[-*]|\d+[.)])\s/.test(kept[0])) return [`- ${l.id} ${l.title}:`, ...kept.map(x => `  ${x}`)];
     return [`- ${l.id} ${l.title}: ${kept[0]}`, ...kept.slice(1).map(x => `  ${x}`)];
   };
-  return ['## Lessons from earlier work', '', 'These rules come from mistakes made before. Follow them.', '', ...lessons.flatMap(body)];
+  const head = lessons.length
+    ? ['## Lessons from earlier work', '', 'These rules come from mistakes made before. Follow them.', '', ...lessons.flatMap(body)]
+    : ['## Lessons from earlier work'];
+  return also.length ? [...head, '', 'Also on file; read the ones that touch your work:', ...also] : head;
 }
 
 export function formatLessons(items: readonly A.Lesson[]): string {
