@@ -140,6 +140,9 @@ export interface LessonsConfig {
   packs: string[];                  // Alba's built-in lesson packs the project uses (templates/lessons/<pack>)
   format: 'alba';
   max_rule_lines: number;           // a long rule is cut to this many lines in a prompt (default 6)
+  max_bytes: number;                // UTF-8 byte budget for the rendered lessons section (default 6000; 0 = no limit)
+  max_items: number;                // maximum mounted lessons in a prompt (default 15; 0 = no limit)
+  level_order?: string[];           // level texts ordered highest first; absent = levels do not rank
   kind_tags: Record<string, string[]>;  // an order's kind also counts as these tags (`build: [build, engine]`); the kind itself always counts
 }
 
@@ -675,7 +678,7 @@ export const lessonPacks = (): string[] => existsSync(LESSON_PACKS) ? readdirSyn
 
 function validateLessons(raw: unknown, file: string, base: string): LessonsConfig {
   if (!isRecord(raw)) fail('{file}: "lessons" must be a mapping.', { file });
-  const unknown = Object.keys(raw).filter(k => !['dir', 'packs', 'format', 'max_rule_lines', 'kind_tags'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['dir', 'packs', 'format', 'max_rule_lines', 'max_bytes', 'max_items', 'level_order', 'kind_tags'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "lessons": {keys}.', { file, keys: unknown.join(', ') });
   const known = lessonPacks();
   const packs = raw.packs === undefined ? [] : raw.packs;
@@ -687,6 +690,15 @@ function validateLessons(raw: unknown, file: string, base: string): LessonsConfi
   if (format !== 'alba') fail('{file}: "lessons.format" must be "alba".', { file });
   const lines = raw.max_rule_lines === undefined ? 6 : raw.max_rule_lines;
   if (typeof lines !== 'number' || !Number.isInteger(lines) || lines < 1) fail('{file}: "lessons.max_rule_lines" must be a whole number >= 1.', { file });
+  const maxBytes = raw.max_bytes === undefined ? 6000 : raw.max_bytes;
+  if (typeof maxBytes !== 'number' || !Number.isSafeInteger(maxBytes) || maxBytes < 0) fail('{file}: "lessons.max_bytes" must be a whole number >= 0.', { file });
+  const maxItems = raw.max_items === undefined ? 15 : raw.max_items;
+  if (typeof maxItems !== 'number' || !Number.isSafeInteger(maxItems) || maxItems < 0) fail('{file}: "lessons.max_items" must be a whole number >= 0.', { file });
+  let levelOrder: string[] | undefined;
+  if (raw.level_order !== undefined) {
+    if (!Array.isArray(raw.level_order) || raw.level_order.some(x => typeof x !== 'string' || !x.trim())) fail('{file}: "lessons.level_order" must be a list of non-empty strings.', { file });
+    levelOrder = (raw.level_order as string[]).map(x => x.trim());
+  }
   const kindTags: Record<string, string[]> = {};
   if (raw.kind_tags !== undefined) {
     if (!isRecord(raw.kind_tags)) fail('{file}: "lessons.kind_tags" must map a kind to a list of tags.', { file });
@@ -695,7 +707,7 @@ function validateLessons(raw: unknown, file: string, base: string): LessonsConfi
       kindTags[kind] = (tags as string[]).map(x => x.trim().toLowerCase());
     }
   }
-  return { dir: dirs[0]!, dirs, packs: packs as string[], format, max_rule_lines: lines, kind_tags: kindTags };
+  return { dir: dirs[0]!, dirs, packs: packs as string[], format, max_rule_lines: lines, max_bytes: maxBytes, max_items: maxItems, ...(levelOrder !== undefined ? { level_order: levelOrder } : {}), kind_tags: kindTags };
 }
 
 /** A path or glob the project file may name: relative to the project root, with no `..` segment. */
