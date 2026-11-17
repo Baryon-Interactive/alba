@@ -137,6 +137,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   orders run-end <TAG> [--outcome ${RUN_OUTCOMES.join('|')}]   ends the record of the open run (the process is not touched; use "stop" for that); --outcome cancelled also holds the order so that no tick starts it again
   orders report <TAG> --file <report.json | TAG.last.txt>
   orders ready [--json]                      queued orders whose needs are all merged
+  orders preflight <TAG> [--json]            check an order before dispatch (sections, paths, needs, optional check commands); exit 1 when held (override: orders act <TAG> queue --override --note "<why>")
   table import [<md file>]                   read the configured dispatch table into state (the file is not changed)
   table render [--out <file>]                write all orders as a Markdown table
   table render --write [--file <copy>]       put the status words back into the one table of the dispatch file (or of a copy): a backup goes to <state_dir>/backups/ first, text outside the table is not touched
@@ -655,6 +656,13 @@ ${editorLines(editors, projects.length > 1)}` : body;
         if (!isHumanAction(rest[1])) fail('Unknown action "{kind}". Allowed: {allowed}.', { kind: rest[1], allowed: HUMAN_ACTIONS.join(', ') });
         humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true);
         return tagLine(orders.get(rest[0]));
+      }
+      case 'preflight': {
+        need(1, 'alba orders preflight <TAG> [--json]');
+        const { formatPreflight, preflight } = await import('../orders/preflight.ts');
+        const result = preflight(cfg, orders, rest[0], { record: true, forceChecks: true });
+        exitCode = result.ok ? 0 : 1;
+        return values.json ? JSON.stringify(result, null, 2) : formatPreflight(result);
       }
       case 'set': {
         need(1, 'alba orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--uses res,res] [--tools id,id] [--worker id] [--run-model m]');

@@ -11,6 +11,7 @@ import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
 import type { OrderDoc, Run } from '../orders/model.ts';
+import { preflight, readOrderFileWithHash } from '../orders/preflight.ts';
 import type { Orders } from '../orders/service.ts';
 import type { QuotaConfig, WorkersFile } from '../workers/config.ts';
 import { availability, failed, parseCommandQuota, staticQuota, type QuotaReading } from '../workers/quota.ts';
@@ -279,7 +280,7 @@ function readSources(file: WorkersFile, names: Set<string>, probes: Probes, at: 
   });
 }
 
-export interface TickOptions { /** Open runs of the other projects that share the workers file, by worker id: they use the same concurrency. */ peers?: Map<string, number>; record: boolean; /** Producer preview only: planned orders compete for the same slots, without launching. */ includePlanned?: boolean; /** A real tick may write one commit reminder. A dry run only reads reminders already sent. */ nudge?: boolean; finishes?: { tag: string; run: string; outcome: string; why: string }[] }
+export interface TickOptions { /** Open runs of the other projects that share the workers file, by worker id: they use the same concurrency. */ peers?: Map<string, number>; record: boolean; /** Producer preview only: planned orders compete for the same slots, without launching. */ includePlanned?: boolean; /** A real tick may write one commit reminder. A dry run only reads reminders already sent. */ nudge?: boolean; /** Explicit real-tick flag for callers outside `executeTick`. */ real?: boolean; finishes?: { tag: string; run: string; outcome: string; why: string }[] }
 
 export interface TickResult { report: TickReport; quotas: QuotaReading[]; workers: WorkerState[]; activity: Record<string, OrderActivity>; history: QuotaReading[]; dispatchOrder: string[]; silentEnds?: Finish[] }
 
@@ -375,6 +376,9 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
   const lingering: Record<string, { status: string; summary: string; quietMinutes: number; ended?: boolean }> = {};
   const pinProblems: TickReport['problems'] = [];
   const foundationSets = project.foundations ? foundationStates(project) : [];
+  const preflightMode = project.orders?.preflight.mode ?? 'hold';
+  const realTick = options.real ?? (options.record && options.nudge === true);
+  let checkBudget = realTick ? 1 : 0;
   const tickOrders: TickOrder[] = docs.map((d, index) => {
     const o = d.order;
     const pinProblem = workerPinProblem(project, d, workersFile);
@@ -408,8 +412,66 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
     const routing = routingOf(project, d, at);
     const effectiveKind = isGenericKind(o.kind) ? routing.kind || o.kind : o.kind;
     const gaps = foundationSets.length && (stage === 'queued' || open) ? foundationGaps(foundationSets, { kind: effectiveKind, tags: [...(o.tags ?? []), ...routing.tags] }) : [];
+    const isResume = bounced || (!!lastRun?.ended && lastRun.outcome !== 'completed' && (lastAction?.seq ?? 0) < lastRun.seq);
+    const isMonitorResume = notes.some(n => n.kind === 'monitor');
+    let orderPreflight: TickOrder['preflight'];
+    let preflightWaiting = false;
+    if (preflightMode !== 'off' && !open && (actualStage === 'waiting-needs' || (actualStage === 'queued' && !isResume && !isMonitorResume))) {
+      const { hash: curHash } = readOrderFileWithHash(project, o.tag);
+      const events = orders.store.events({ tag: o.tag });
+      const overridden = events.some(e => e.type === 'preflight-overridden' && e.data?.hash === curHash);
+      if (!overridden) {
+        const checkedEvents = events.filter(e => e.type === 'preflight-checked');
+        const lastPassing = [...checkedEvents].reverse().find(e => e.data?.ok === true);
+        const shouldCheck = actualStage === 'waiting-needs'
+          || d.runs.length === 0
+          || (checkedEvents.length > 0 && lastPassing?.data?.hash !== curHash);
+        if (shouldCheck) {
+          const hadCachedChecks = checkedEvents.some(e => e.data?.hash === curHash && e.data?.checks_executed === true);
+          const pf = preflight(project, orders, o.tag, {
+            needsOnly: actualStage === 'waiting-needs',
+            runChecks: checkBudget > 0,
+            checkFile: project.orders !== undefined,
+            record: false,
+          });
+          if (pf.checksExecuted && !hadCachedChecks && (pf.checks ?? []).some(c => c.status !== 'skipped')) {
+            checkBudget = Math.max(0, checkBudget - 1);
+          }
+          const holds = pf.problems.filter(p => p.severity === 'hold');
+          if (realTick && !pf.checksWaiting) {
+            const lastChecked = checkedEvents.at(-1);
+            const sameChecked = lastChecked
+              && lastChecked.data?.hash === pf.hash
+              && lastChecked.data?.base_head === pf.baseHead
+              && lastChecked.data?.ok === pf.ok
+              && JSON.stringify(lastChecked.data?.problems ?? []) === JSON.stringify(pf.problems)
+              && JSON.stringify(lastChecked.data?.checks) === JSON.stringify(pf.checks);
+            if (!sameChecked) {
+              orders.record(o.tag, 'preflight-checked', {
+                hash: pf.hash,
+                base_head: pf.baseHead,
+                ok: pf.ok,
+                problems: pf.problems,
+                ...(pf.checks !== undefined ? { checks: pf.checks, checks_executed: pf.checksExecuted === true } : {}),
+              });
+            }
+          }
+          if (realTick && holds.length > 0 && preflightMode === 'hold') {
+            const alreadyHeld = events.some(e => e.type === 'preflight-held' && e.data?.hash === pf.hash && JSON.stringify(e.data?.problems) === JSON.stringify(holds));
+            if (!alreadyHeld) orders.record(o.tag, 'preflight-held', { hash: pf.hash, problems: holds });
+          }
+          if (holds.length > 0) {
+            orderPreflight = holds.map(p => ({ code: p.code, text: p.text, fix: p.fix, mode: preflightMode }));
+          } else if (pf.checksWaiting && realTick) {
+            preflightWaiting = true;
+          }
+        }
+      }
+    }
     return {
       ...(gaps.length ? { foundations: gaps.map(g => ({ set: g.name, mode: g.mode, missing: missingText(g) })) } : {}),
+      ...(orderPreflight ? { preflight: orderPreflight } : {}),
+      ...(preflightWaiting ? { preflightWaiting: true } : {}),
       role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { ...o, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind })),
       tag: o.tag, stage: open ? 'running' : stage, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind, kindTags: routing.tags, heavy: heavyOf(project, d), workerText: o.worker, pinnedWorker: pinProblem ? undefined : o.next_worker,
       ...(o.mandate?.spend_cap !== undefined ? { spendCapUsd: o.mandate.spend_cap, spentUsd: orderSpend(d, workersFile.workers, probes).cost_usd ?? 0 } : {}),

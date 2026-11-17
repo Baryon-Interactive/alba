@@ -1,5 +1,6 @@
 import type { ProjectConfig } from '../config.ts';
 import { fail, t } from '../i18n.ts';
+import { readOrderFileWithHash } from '../orders/preflight.ts';
 import type { Orders } from '../orders/service.ts';
 import { approve, rework } from '../run/review.ts';
 
@@ -37,7 +38,21 @@ export function humanAction(project: ProjectConfig, orders: Orders, tag: string,
     case 'review-manual': case 'review-auto': orders.update(tag, { review: action === 'review-manual' ? 'manual' : 'auto' }); break;
     case 'approve': approve(project, orders, tag, note, branch, override); break;
     case 'rework': rework(orders, tag, note, { max: project.dispatch.max_reworks, override }); break;
-    case 'queue': case 'cancel': case 'hold': case 'release': orders.act(tag, action, { note }); break;
+    case 'queue': {
+      if (override) {
+        const doc = orders.get(tag);
+        const trimmed = note?.trim() ?? '';
+        if (trimmed.length < 10) fail('An override needs a note of at least 10 characters.');
+        const stage = orders.stage(doc).stage;
+        if (stage !== 'queued' && stage !== 'waiting-needs') orders.act(tag, 'queue', { note });
+        const { hash } = readOrderFileWithHash(project, doc.order.tag);
+        orders.record(doc.order.tag, 'preflight-overridden', { hash, note: trimmed });
+        break;
+      }
+      orders.act(tag, 'queue', { note });
+      break;
+    }
+    case 'cancel': case 'hold': case 'release': orders.act(tag, action, { note }); break;
     case 'stop': stopRun(orders, tag, note); break;
     default: fail('Unknown action "{action}".', { action: String(action) });
   }

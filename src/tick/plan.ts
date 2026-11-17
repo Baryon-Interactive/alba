@@ -39,6 +39,10 @@ export interface TickOrder {
   spentUsd?: number;            // what its runs cost so far (engine-reported, or estimated from the worker's price)
   /** Foundation sets (`foundations:`) that apply to this order and are not ready: `block` holds it back, `warn` only says so. */
   foundations?: { set: string; mode: 'warn' | 'block'; missing: string }[];
+  /** Preflight hold findings (`orders.preflight`): `hold` (default) skips the order, `warn` reports it without holding. */
+  preflight?: { code?: string; text: string; fix: string; mode?: 'hold' | 'warn' }[];
+  /** Check commands for this order wait for the next real tick pass. */
+  preflightWaiting?: boolean;
   /** Latest run ended with a silent kind (`stream-cut-mid-turn`, `vanished`, `output-limit`, `context-limit`) and awaits attention. */
   silentEnd?: { run: string; kind: string; detail: string; wipRef?: string };
 }
@@ -95,6 +99,8 @@ export interface TickInput {
   editorPorts?: Record<string, Record<string, { ports: number; taken: string[] }>>;
   /** The machine each worker's runs are on (its host, else the local machine). */
   workerMachines?: Record<string, string>;
+  /** Default mode for `TickOrder.preflight` entries that omit `mode`. */
+  preflightMode?: 'hold' | 'warn';
 }
 
 /** Why a run on `machine` cannot have an editor of `pool` now, counting the ones planned in this pass, or undefined. */
@@ -105,7 +111,7 @@ function editorPortWhy(ports: NonNullable<TickInput['editorPorts']>, pool: strin
 }
 
 export type Move = { tag: string; mode: 'dispatch' | 'resume' | 'card'; worker: string; rework: boolean; /** Slots above a kind cap this start may use (the rework reserve); the start checks the cap again with it. */ capReserve?: number; rotated?: { from: string; reason: string }; why?: string; rejected?: { worker: string; reason: string }[] };
-export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'silent-end' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer' | 'foundations'; tag?: string; text: string }
+export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'silent-end' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer' | 'foundations' | 'preflight'; tag?: string; text: string }
 
 export interface TickReport {
   dispatched?: number;                              // successful real starts/resumes; absent on a preview
@@ -225,6 +231,17 @@ export function planTick(input: TickInput): TickReport {
     ? t('The "{set}" foundations are not ready ({missing}); held back until they are: {tags}.', { set, missing: g.missing, tags: g.tags.join(', ') })
     : t('The "{set}" foundations are not ready ({missing}); going ahead without them: {tags}.', { set, missing: g.missing, tags: g.tags.join(', ') }) });
 
+  for (const o of orders.filter(x => x.preflight?.length && (x.stage === 'queued' || x.stage === 'waiting-needs'))) {
+    const items = o.preflight!;
+    const summary = items.map(p => p.text).join('; ');
+    const fixes = items.map(p => p.fix.replace(/\r?\n/g, ' ').trim()).join('; ');
+    report.problems.push({
+      kind: 'preflight',
+      tag: o.tag,
+      text: `${o.tag}: preflight: ${summary} Fix: ${fixes} Override: alba orders act ${o.tag} queue --override --note "<why>"`,
+    });
+  }
+
   // Resource use now, by kind and heavy class.
   const used: Record<string, number> = Object.fromEntries(Object.entries(capacityUsage(orders, caps)).map(([key, value]) => [key, value.used]));
   for (const lease of input.leases ?? []) if (lease.acceptance?.cap) used[lease.acceptance.cap] = (used[lease.acceptance.cap] ?? 0) + 1;
@@ -240,6 +257,13 @@ export function planTick(input: TickInput): TickReport {
   for (const o of candidates) {
     const held = o.foundations?.find(f => f.mode === 'block');
     if (held) { report.heldBack.push({ tag: o.tag, why: t('the "{set}" foundations are not ready ({missing})', { set: held.set, missing: held.missing }) }); continue; }
+    const heldPreflight = (o.preflight ?? []).filter(p => (p.mode ?? input.preflightMode ?? 'hold') === 'hold');
+    if (heldPreflight.length) {
+      const more = heldPreflight.length > 1 ? ` (+${heldPreflight.length - 1} more)` : '';
+      report.heldBack.push({ tag: o.tag, why: `preflight: ${heldPreflight[0].text}${more}` });
+      continue;
+    }
+    if (o.preflightWaiting) { report.heldBack.push({ tag: o.tag, why: 'preflight checks waiting' }); continue; }
     // `on_limit: rotate`: the next qualifying supply for the same role, excluding exhausted supply and paid targets unless spending is allowed.
     let rotated: { from: string; reason: string } | undefined;
     let rotatedChoice: ReturnType<typeof chooseWorker> | undefined;
