@@ -51,11 +51,13 @@ export interface ServerOptions {
   /** Ask for the key (or a browser session from /login) on every /api and /legacy request. Off by default: the board answers only
    *  on 127.0.0.1 and refuses pages of other sites, which is enough on one person's machine. */
   signIn?: boolean;
+  onReload?: (request: import('../api/types.ts').ServeReloadRequest) => Promise<import('../api/types.ts').ServeReloadResult>;
 }
 
 export interface Board {
   server: Server; hub: Hub; ctx: ApiContext; invalidate(): void;
   renderLegacy(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]): Promise<void>;
+  onReload?: (request: import('../api/types.ts').ServeReloadRequest) => Promise<import('../api/types.ts').ServeReloadResult>;
 }
 
 const DEFAULT_UI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../ui/dist');
@@ -434,6 +436,70 @@ export function createBoard(options: ServerOptions): Board {
       if (!allowedOrigin || (!reading && browser && credential !== 'key' && !req.headers.origin)) return refuse(403, 'forbidden', t('This origin may not use the interface.'));
       admit(req);
     }
+    if (parts[0] === 'api' && parts[1] === 'serve' && parts[2] === 'reload' && parts.length === 3) {
+      const jsonOut = (status: number, payload: unknown, extraHeaders: Record<string, string> = {}) => {
+        res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...extraHeaders });
+        res.end(JSON.stringify(payload));
+      };
+      const remote = req.socket.remoteAddress;
+      if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') {
+        return jsonOut(403, { error: { code: 'forbidden', message: t('This board answers only on 127.0.0.1.') } });
+      }
+      const realCred = credentialOf(req, token, sessions);
+      if (!realCred) {
+        return jsonOut(401, { error: { code: 'unauthorized', message: t('Sign in first: open the link alba serve printed, or send the key from the key file in the header x-alba-token.') } });
+      }
+      if (req.method !== 'POST') {
+        return jsonOut(405, { error: { code: 'bad_request', message: t('Method not allowed.') } }, { allow: 'POST' });
+      }
+      const browserReq = realCred === 'session' || typeof req.headers['sec-fetch-site'] === 'string';
+      if (!originAllowed(req.headers.origin, port, ctx.extraOrigins) || (browserReq && realCred !== 'key' && !req.headers.origin)) {
+        return jsonOut(403, { error: { code: 'forbidden', message: t('This origin may not use the interface.') } });
+      }
+      const reloadHandler = boardOut.onReload ?? options.onReload;
+      if (!reloadHandler) {
+        return jsonOut(409, { error: { code: 'conflict', message: t('This server does not run alba serve.') } });
+      }
+      return void (async () => {
+        let size = 0;
+        const chunks: Buffer[] = [];
+        await new Promise<void>((resolve, reject) => {
+          req.on('data', (c: Buffer) => {
+            size += c.length;
+            if (size > MAX_BODY) { reject(Object.assign(new Error('Request too large.'), { status: 413, code: 'too_large' })); req.destroy(); }
+            else chunks.push(c);
+          });
+          req.on('end', () => resolve());
+          req.on('error', reject);
+        });
+        const rawText = Buffer.concat(chunks).toString('utf8').trim();
+        let parsed: Record<string, unknown> = {};
+        if (rawText) {
+          let v: unknown;
+          try { v = JSON.parse(rawText); } catch { return jsonOut(400, { error: { code: 'bad_request', message: 'The body must be a JSON object.' } }); }
+          if (typeof v !== 'object' || v === null || Array.isArray(v)) return jsonOut(400, { error: { code: 'bad_request', message: 'The body must be a JSON object.' } });
+          parsed = v as Record<string, unknown>;
+        }
+        const unknownKeys = Object.keys(parsed).filter(k => k !== 'force');
+        if (unknownKeys.length) return jsonOut(400, { error: { code: 'bad_request', message: `Unknown field(s): ${unknownKeys.join(', ')}.` } });
+        if (parsed.force !== undefined && typeof parsed.force !== 'boolean') {
+          return jsonOut(400, { error: { code: 'bad_request', message: '"force" must be true or false.' } });
+        }
+        try {
+          const result = await reloadHandler(parsed.force !== undefined ? { force: parsed.force } : {});
+          if (!res.destroyed) jsonOut(202, result);
+        } catch (err) {
+          if (res.destroyed) return;
+          if (err instanceof UserError) return jsonOut(409, { error: { code: 'conflict', message: err.message } });
+          jsonOut(500, { error: { code: 'internal', message: (err as Error).message } });
+        }
+      })().catch(err => {
+        if (res.destroyed) return;
+        const status = typeof (err as { status?: unknown }).status === 'number' ? (err as { status: number }).status : 500;
+        const code = typeof (err as { code?: unknown }).code === 'string' ? (err as { code: string }).code : 'internal';
+        jsonOut(status, { error: { code, message: (err as Error).message } });
+      });
+    }
     if (parts[0] === 'api') {
       // Buffered aggregate/detail reads have their own loop and connection; streams retain the main event hub. A slow read here
       // (routes with their results, the clean plan's git checks, skills) would otherwise stop every other request, pages included.
@@ -486,5 +552,6 @@ export function createBoard(options: ServerOptions): Board {
     for (const lang of ['en', 'zh'] as const) try { withLang(lang, snapshot); } catch { /* retain the previous readings */ }
   }, Math.max(1000, ttl)).unref() : undefined;
   server.once('close', () => { void lanes?.fast.close(); void lanes?.slow.close(); delay.close(); if (refresh) clearInterval(refresh); hub.stop(); });
-  return { server, hub, ctx, invalidate, renderLegacy: handle };
+  const boardOut: Board = { server, hub, ctx, invalidate, renderLegacy: handle, ...(options.onReload ? { onReload: options.onReload } : {}) };
+  return boardOut;
 }

@@ -1045,6 +1045,26 @@ export const zh: Record<string, string> = {
   'Unknown notification channel "{channel}" in {file}. Known channels: {known}.': '{file} 中没有通知渠道“{channel}”。已知渠道：{known}。',
   'Notifications are not configured ({file} has no "notify" section).': '未配置通知（{file} 中没有 "notify" 段）。',
   'Usage: alba notify test [--channel id] [--workers file] | alba notify status [--json] [--workers file]': '用法：alba notify test [--channel id] [--workers file] | alba notify status [--json] [--workers file]',
+  // serve reload
+  'This server does not run alba serve.': '当前服务未运行 alba serve。',
+  'A reload is already in progress (pid {pid}).': '已有一次重载正在进行中（pid {pid}）。',
+  'Reload refused: {leases} held by this serve (pid {pid}). Pass --force to reload anyway.': '拒绝重载：当前 serve（pid {pid}）仍持有 {leases}。如需强制重载请传 --force。',
+  'Reload refused: code smoke failed: {why}': '拒绝重载：代码自检未通过：{why}',
+  'Reload refused: {why}': '拒绝重载：{why}',
+  'Reloading alba serve (pid {from} -> pid {to}) on port {port}...': '正在端口 {port} 上重载 alba serve（pid {from} -> pid {to}）……',
+  'Reload failed: {why}': '重载失败：{why}',
+  'Reloaded alba serve on port {port}: pid {from} -> pid {to} (gap {gap} ms).': '已在端口 {port} 重载 alba serve：pid {from} -> pid {to}（切换间隔 {gap} ms）。',
+  'No running alba serve holds {dir}.': '{dir} 当前没有正在运行的 alba serve。',
+  'Serve lock in {dir} (pid {pid}) has no port yet; pass --port <N>.': '{dir} 的 serve 锁（pid {pid}）尚未记录端口；请传 --port <N>。',
+  'Serve lock in {dir} is on port {actual}, not {given}.': '{dir} 的 serve 运行在端口 {actual}，而不是 {given}。',
+  'Could not read console key file for port {port} ({file}).': '无法读取端口 {port} 的控制台密钥文件（{file}）。',
+  'Reload timed out after {seconds}s (last state: {state}).': '重载等待 {seconds} 秒超时（最后状态：{state}）。',
+  '--wait must be a number of seconds above 0.': '--wait 必须是大于 0 的秒数。',
+  '--drain-seconds must be a number of seconds >= 0.': '--drain-seconds 必须是大于等于 0 的秒数。',
+  'Invalid --takeover "{value}"; expected <pid>:<started>.': '无效的 --takeover "{value}"；格式应为 <pid>:<started>。',
+  'Takeover failed after 60s: {why}': '接管等待超过 60 秒失败：{why}',
+  'Usage: alba serve reload [--project f.yaml...] [--port N] [--force] [--wait 90]': '用法：alba serve reload [--project f.yaml...] [--port N] [--force] [--wait 90]',
+  'Usage: alba serve [--port 4777] [--every 15] [--max-dispatch 1] [--log file] [--watch-code] [--sign-in] --project f.yaml... | alba serve reload [--port N] [--force] [--wait 90] --project f.yaml...': '用法：alba serve [--port 4777] [--every 15] [--max-dispatch 1] [--log file] [--watch-code] [--sign-in] --project f.yaml... | alba serve reload [--port N] [--force] [--wait 90] --project f.yaml...',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

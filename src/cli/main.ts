@@ -56,6 +56,7 @@ import { formatStatus, recentEndedStatusRows, statusRows, unreachableStatusLines
 import { pendingNotes } from '../run/prompt.ts';
 import { lockHolder, skipLine } from '../serve/lock.ts';
 import { startServe } from '../serve/serve.ts';
+import { DEFAULT_DRAIN_SECONDS, createServeLogger, runServeReloadCli, runTakeoverServe } from '../serve/reload.ts';
 import { hasDeliveryChecks } from '../check/delivery.ts';
 import { startIndependentCheck } from '../review/independent.ts';
 import { computeFirstPassStats, disputeFirstPass, formatFirstPassStats } from '../review/first-pass-stats.ts';
@@ -110,6 +111,7 @@ const options = {
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
   page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' }, channel: { type: 'string' },
   'merged-elsewhere': { type: 'string' }, 'done-by-lead': { type: 'boolean' }, commit: { type: 'string' },
+  force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -170,8 +172,10 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   review <TAG> approve|rework [--note text] [--branch b] [--override]  approve checks the branch is merged and writes <TAG>.accept.md; rework sends it back
   review <TAG> sheet [--out file.png] [--columns 4] [--cell 320] [--json]  a contact sheet of the order's evidence pictures (default <state_dir>/review/<TAG>-sheet.png) and each one's size, mean luminance, spread, dark and highlight share, p5/p95, saturation, and the subject against its surround when <name>.mask.png exists
   review <TAG> target [--json]               the latest visual target table, round history and side-by-side sheet paths; exit 0 passed, 1 missed, 2 unmeasured
-  serve [--port 4777] [--every 15] [--max-dispatch 1] [--allow-origin url]... [--sign-in] --project f.yaml...
-                                             board + JSON interface (docs/console/010-api.md) + a real tick every n minutes (0: none) + an immediate record and tick when a run ends; one serve per state folder; --sign-in asks for the printed key or link
+  serve [--port 4777] [--every 15] [--max-dispatch 1] [--log file] [--watch-code] [--allow-origin url]... [--sign-in] --project f.yaml...
+                                             board + JSON interface (docs/console/010-api.md) + a real tick every n minutes (0: none) + an immediate record and tick when a run ends; one serve per state folder; --log appends output to a file; --watch-code reloads after src/ stays quiet 10 s; --sign-in asks for the printed key or link
+  serve reload [--port N] [--force] [--wait 90] --project f.yaml...
+                                             hand a running alba serve over to new code on the same port without stopping open runs (exit 0 on done, 1 on refusal or timeout)
   answer <TAG> (--text <answer> | --choice N [--text note]) [--worker id]
                                              answer the question an order waits on (--choice picks option N of its options): the worker's own session continues when its engine can, else a new run carries the answer
   say <TAG> --text <message> [--reply id] [--restart]    leave a message or answer for a running order. --restart stops its process and starts again
@@ -392,26 +396,101 @@ async function run(rawArgv: string[]): Promise<string> {
     });
   }
   if (group === 'serve') {
+    if (command === 'reload') {
+      if (rest.length) fail('Usage: alba serve reload [--project f.yaml...] [--port N] [--force] [--wait 90]');
+      const out = await runServeReloadCli({
+        projectFiles: projectFiles(values.project),
+        portOption: values.port,
+        force: values.force === true,
+        waitOption: values.wait,
+      });
+      if (!out.ok) throw new UserError(out.message);
+      return out.message;
+    }
+    if (command !== undefined) {
+      fail('Usage: alba serve [--port 4777] [--every 15] [--max-dispatch 1] [--log file] [--watch-code] [--sign-in] --project f.yaml... | alba serve reload [--port N] [--force] [--wait 90] --project f.yaml...');
+    }
+    const registerServeSignals = (active: { stop(): void | Promise<void> }) => {
+      let stopping = false;
+      const onStopSignal = () => {
+        if (stopping) return;
+        stopping = true;
+        const forceExit = setTimeout(() => process.exit(0), 35_000);
+        forceExit.unref();
+        Promise.resolve(active.stop()).finally(() => {
+          clearTimeout(forceExit);
+          process.exit(0);
+        });
+      };
+      process.once('SIGINT', onStopSignal);
+      process.once('SIGTERM', onStopSignal);
+      if (process.platform === 'win32') process.once('SIGBREAK', onStopSignal);
+    };
+    const logger = createServeLogger(values.log);
+    const printListening = (actual: number, everyNum: number, token: string) => {
+      logger.print(t('alba serve on http://127.0.0.1:{port}/ (only this machine can reach it); ticks every {every} min (0 = none). Stop with Ctrl+C.', { port: String(actual), every: String(everyNum) }));
+      if (values['sign-in']) logger.print(signInLines(actual, token));
+    };
+    if (values.takeover !== undefined) {
+      return runTakeoverServe({
+        takeover: values.takeover,
+        projectFiles: () => projectFiles(values.project),
+        workersOption: values.workers,
+        portOption: values.port,
+        everyOption: values.every,
+        maxDispatchOption: values['max-dispatch'],
+        drainSecondsOption: values['drain-seconds'],
+        allowOrigin: values['allow-origin'],
+        signIn: values['sign-in'] === true,
+        watchCode: values['watch-code'] === true,
+        logOption: values.log,
+        rawArgv,
+        startServeFn: startServe,
+        registerSignals: registerServeSignals,
+        onListeningBanner: printListening,
+      });
+    }
     const port = values.port === undefined ? 4777 : Number(values.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) fail('--port must be a port number.');
     const every = values.every === undefined ? 15 : Number(values.every);
     if (!Number.isFinite(every) || every < 0) fail('--every must be a number of minutes (0 turns the tick loop off).');
     const max = values['max-dispatch'] === undefined ? 1 : Number(values['max-dispatch']);
     if (!Number.isInteger(max) || max < 0) fail('--max-dispatch must be a whole number >= 0.');
+    const drainSeconds = values['drain-seconds'] === undefined ? DEFAULT_DRAIN_SECONDS : Number(values['drain-seconds']);
+    if (!Number.isFinite(drainSeconds) || drainSeconds < 0) fail('--drain-seconds must be a number of seconds >= 0.');
     const projects = projectFiles(values.project).map(file => loadProject(file));
     const workersPath = values.workers ?? process.env.ALBA_WORKERS ?? projects.find(p => p.workers)?.workers;
     if (!workersPath) fail('alba serve needs a workers file: --workers, ALBA_WORKERS or "workers:" in the project file.');
-    const serve = startServe({ projects, workers: loadWorkers(workersPath), port, probes: systemProbes, everyMinutes: every, maxDispatch: max, print: line => console.log(line), extraOrigins: values['allow-origin'], signIn: values['sign-in'] === true, version: '0.1.0' });
-    const stop = () => { serve.stop(); process.exit(0); };
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
-    return new Promise<string>((resolve, reject) => {
+    const serve = startServe({
+      projects,
+      workers: loadWorkers(workersPath),
+      port,
+      probes: systemProbes,
+      everyMinutes: every,
+      maxDispatch: max,
+      print: logger.print,
+      extraOrigins: values['allow-origin'],
+      signIn: values['sign-in'] === true,
+      version: '0.1.0',
+      reload: {
+        entry: process.argv[1],
+        argv: rawArgv,
+        execPath: process.execPath,
+        execArgv: process.execArgv,
+        cwd: process.cwd(),
+        logFile: logger.logFile,
+        watchCode: values['watch-code'] === true,
+        drainSeconds,
+        exitOnRelease: true,
+      },
+    });
+    registerServeSignals(serve);
+    return new Promise<string>((_resolve, reject) => {
       serve.server.once('listening', () => {
         const actual = (serve.server.address() as { port: number }).port;
-        console.log(t('alba serve on http://127.0.0.1:{port}/ (only this machine can reach it); ticks every {every} min (0 = none). Stop with Ctrl+C.', { port: String(actual), every: String(every) }));
-        if (values['sign-in']) console.log(signInLines(actual, serve.board.ctx.token));
+        printListening(actual, every, serve.board.ctx.token);
       });
-      serve.server.once('error', e => { serve.stop(); reject(e); });
+      serve.server.once('error', e => { void Promise.resolve(serve.stop()).finally(() => reject(e)); });
     });
   }
   if (group === 'usage' && command === 'scorecard') {
