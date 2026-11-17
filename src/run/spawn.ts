@@ -24,6 +24,10 @@ child.on('error', e => { fs.writeSync(1, 'ERR ' + e.message); process.exit(1); }
 child.on('spawn', () => { fs.writeSync(1, 'PID ' + child.pid); child.unref(); process.exit(0); });
 `;
 
+/** The exit receipt `capture.mjs` writes next to a run's events file when the worker ends. */
+export const exitFileOf = (eventsFile: string): string =>
+  eventsFile.replace(/\.events\.jsonl$/i, '').replace(/\.jsonl$/i, '') + '.exit.json';
+
 /**
  * Starts a program in the background with stdout and stderr appended to a log file, and returns its pid.
  *
@@ -36,7 +40,7 @@ export function spawnDetachedProgram(program: string, args: string[], options: D
   mkdirSync(path.dirname(options.logFile), { recursive: true });
   if (options.eventsFile) {
     mkdirSync(path.dirname(options.eventsFile), { recursive: true });
-    args = [fileURLToPath(new URL('./capture.mjs', import.meta.url)), JSON.stringify([program, args])];
+    args = [fileURLToPath(new URL('./capture.mjs', import.meta.url)), JSON.stringify([program, args, options.eventsFile])];
     program = process.execPath;
   }
   const env = workerEnvironment(process.env, options.env, options.envUnset);

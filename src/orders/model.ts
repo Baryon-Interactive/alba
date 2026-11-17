@@ -1,4 +1,5 @@
-import type { RunUsage } from '../api/types.ts';
+import type { EndKind, RunEnd, RunUsage } from '../api/types.ts';
+export type { EndKind, RunEnd };
 import type { LiveSummary } from '../run/live.ts';
 import type { OutboxEntry } from '../run/messages.ts';
 
@@ -97,6 +98,7 @@ export interface Run {
   role_warnings?: string[];
   engine?: string; model?: string; continuation?: boolean;
   events_file?: string;
+  exit_file?: string;
   live_summary?: LiveSummary;
   id: string;
   seq: number;
@@ -130,6 +132,7 @@ export interface Run {
   root_dirty?: string[];
   report_from?: 'earlier-message' | 'written-file'; // the report block was not in the last message (see the report-from-earlier event)
   resume_reason?: string;   // why an automatic resume started a new session
+  end?: RunEnd;             // why and how the run ended, plus any WIP snapshot ref
 }
 
 /** One condition of a monitor: exactly one of these keys. */

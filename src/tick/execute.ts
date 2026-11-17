@@ -1,6 +1,7 @@
 import { t } from '../i18n.ts';
 import { runAcceptanceTrials } from '../review/acceptance.ts';
-import { applyFinish, findFinishes } from '../run/finish.ts';
+import { applyFinish, findFinishes, type Finish } from '../run/finish.ts';
+import { isSilentEnd } from '../run/end-reason.ts';
 import { startRun, type RunContext } from '../run/launch.ts';
 import { runMonitors } from '../monitor/monitor.ts';
 import { reconcileLeases } from '../resources/leases.ts';
@@ -25,9 +26,11 @@ import { pollIndependentChecks } from '../review/independent.ts';
 export function executeTick(ctx: RunContext, options: { maxDispatch: number }): TickResult {
   const done: string[] = [];
   const failures: string[] = [];
+  const silentEnds: Finish[] = [];
   const recordFinishes = () => {
     for (const f of findFinishes(ctx.project, ctx.orders, ctx.probes, ctx.workers)) {
       applyFinish(ctx.orders, f, ctx.project);
+      if (isSilentEnd(f.end?.kind)) silentEnds.push(f);
       done.push(t('recorded the end of run {run} of {tag}: {outcome}{status} ({why})', { run: f.run, tag: f.tag, outcome: f.outcome, status: f.report ? `, ${f.report.status}` : '', why: f.why }));
     }
   };
@@ -85,5 +88,5 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
   report.exitCode = report.problems.length ? 2 : report.moves.length ? 1 : 0;
   refreshFacts(ctx.project, ctx.probes.now(), ctx.workers, result.workers);
   if (ctx.project.producer.brief) saveBriefReadings(ctx.project, { report, activity: result.activity });
-  return { ...result, report };
+  return { ...result, report, ...(silentEnds.length ? { silentEnds } : {}) };
 }

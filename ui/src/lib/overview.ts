@@ -13,7 +13,7 @@ export const attentionLabel = (kind: string): string => ({
   quota: t('Quota problems'), 'no-fit': t('No worker fits'), 'no-worker': t('No available worker'), spend: t('Spend limits'),
   'usage-waste': t('Usage warnings'), 'usage-budget': t('Usage budgets'), foundations: t('Foundations not ready'),
   'commit-nudge': t('Commit reminders'), lingering: t('Delivered runs still open'), 'maybe-finished': t('Runs to record'),
-  'no-report': t('Missing reports'), launch: t('Launch problems'), monitor: t('Monitor problems'), config: t('Configuration problems'),
+  'no-report': t('Missing reports'), 'silent-end': t('Silent run ends'), launch: t('Launch problems'), monitor: t('Monitor problems'), config: t('Configuration problems'),
 }[kind] ?? t('Problems'));
 
 export const STAGE_COLORS: Record<Stage, string> = {

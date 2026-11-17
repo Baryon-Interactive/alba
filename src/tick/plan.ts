@@ -39,6 +39,8 @@ export interface TickOrder {
   spentUsd?: number;            // what its runs cost so far (engine-reported, or estimated from the worker's price)
   /** Foundation sets (`foundations:`) that apply to this order and are not ready: `block` holds it back, `warn` only says so. */
   foundations?: { set: string; mode: 'warn' | 'block'; missing: string }[];
+  /** Latest run ended with a silent kind (`stream-cut-mid-turn`, `vanished`, `output-limit`, `context-limit`) and awaits attention. */
+  silentEnd?: { run: string; kind: string; detail: string; wipRef?: string };
 }
 
 export interface OrderActivity {
@@ -103,7 +105,7 @@ function editorPortWhy(ports: NonNullable<TickInput['editorPorts']>, pool: strin
 }
 
 export type Move = { tag: string; mode: 'dispatch' | 'resume' | 'card'; worker: string; rework: boolean; /** Slots above a kind cap this start may use (the rework reserve); the start checks the cap again with it. */ capReserve?: number; rotated?: { from: string; reason: string }; why?: string; rejected?: { worker: string; reason: string }[] };
-export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer' | 'foundations'; tag?: string; text: string }
+export interface Problem { /** : for `looping`, the command, the error and the count. */ evidence?: string[]; /** `lingering`: the engine's own end event is the last one in the log, so the process is stopped whatever `dispatch.on_lingering` says. */ ended?: boolean; kind: 'machine-down' | 'stalled' | 'maybe-finished' | 'no-report' | 'silent-end' | 'quota' | 'no-worker' | 'no-fit' | 'launch' | 'spend' | 'monitor' | 'looping' | 'start-failed' | 'lease-expired' | 'lingering' | 'commit-nudge' | 'usage-waste' | 'usage-budget' | 'producer' | 'foundations'; tag?: string; text: string }
 
 export interface TickReport {
   dispatched?: number;                              // successful real starts/resumes; absent on a preview
@@ -205,6 +207,11 @@ export function planTick(input: TickInput): TickReport {
   }
   for (const o of orders.filter(x => x.endedWithoutReport)) {
     report.problems.push({ kind: 'no-report', tag: o.tag, text: t('{tag}: the last run ended but no report was recorded.', { tag: o.tag }) });
+  }
+  for (const o of orders.filter(x => x.silentEnd)) {
+    const s = o.silentEnd!;
+    const wip = s.wipRef ? t(' (saved at {ref})', { ref: s.wipRef }) : '';
+    report.problems.push({ kind: 'silent-end', tag: o.tag, text: t('{tag}: run {run} ended silently ({kind}): {detail}{wip}', { tag: o.tag, run: s.run, kind: s.kind, detail: s.detail, wip }) });
   }
 
   // Foundations not ready: one line per set, naming the orders it holds back (queued, block) or that go ahead without it.
