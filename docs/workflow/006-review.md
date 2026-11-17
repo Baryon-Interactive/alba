@@ -40,6 +40,8 @@ A mean in range does not make a good picture: a grey, flat capture can meet a br
 
 **Alba's own captures.** When a [capture recipe](037-capture-recipes.md) in `alba.yaml` matches the order (or a reviewer runs `alba capture <TAG>`), Alba builds and captures the delivered worktree itself under the capture lock, writes its own contact sheet (`sheet.png`) and `manifest.json`, runs the `identical`, `blank`, `dark`, `size`, `baseline`, `luminance` and `motion` gates on `<shot>.png`, and renders **Alba's captures** ahead of the worker's own pictures on the review card.
 
+**Visual targets and comparison sheets.** When the order also declares a `## Target` section ([038. Visual targets](038-visual-targets.md)), the `target` acceptance step compares captured shots against reference PNGs read from the trial's base commit, writes a three-panel side-by-side sheet (`logs-<id>/target/<shot>.png`: reference left, capture middle, per-cell luminance difference right), and bounces measured misses automatically up to `verify.max_visual_rounds` (default `2`). Run `alba review <TAG> target [--json]` to inspect the latest measurements, sheet paths and round history (exit `0` passed, `1` missed, `2` unmeasured).
+
 ## Deterministic acceptance gates
 
 `alba verify <TAG>` runs mechanical gates before a person approves an order. It checks the latest ready report's commits and evidence, the order's declared acceptance/evidence/path sections, protected gate files, the existing `alba check`, and merge readiness. It exits `0` only when no gate fails; `--json` returns the full result. Verification is recorded as an `order-verified` event, and a run ending with a ready report triggers that event once automatically.
@@ -68,6 +70,7 @@ The `screenshots` gate checks images named by the report or matched by the order
 
 ```yaml
 verify:
+  max_visual_rounds: 2
   screenshots:
     duplicate_diff: 0.015
     blank_std: 0.02
