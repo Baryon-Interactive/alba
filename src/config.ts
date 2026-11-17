@@ -3,6 +3,7 @@ import { gatesConfig } from './gates/config.ts';
 import { validateFoundations } from './foundations/config.ts';
 import { roundConfig, monitorConfig, type RoundConfig, type MonitorConfig } from './producer/round-config.ts';
 import { validateAccept, type AcceptConfig } from './review/accept-config.ts';
+import { validateCapture, type CaptureConfig } from './capture/config.ts';
 import { safePackageRoot } from './clean/safety.ts';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -217,6 +218,7 @@ export interface ProjectConfig {
   foundations?: import('./foundations/config.ts').FoundationsConfig;
   intake?: IntakeConfig;
   accept?: AcceptConfig;
+  capture?: CaptureConfig;
   roles?: Roles;
   /** `routing.groups` of the project file. */
   worker_groups?: import('./roles/config.ts').WorkerGroups;
@@ -511,6 +513,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   }
   if (raw.drafting !== undefined) cfg.drafting = validateDrafting(raw.drafting, base);
   if (raw.accept !== undefined) cfg.accept = validateAccept(raw.accept, base);
+  if (raw.capture !== undefined) cfg.capture = validateCapture(raw.capture, file);
   if (raw.workers !== undefined) cfg.workers = path.resolve(base, str('workers'));
   if (raw.machines !== undefined) cfg.machines = path.resolve(base, str('machines'));
   if (raw.dispatch_table !== undefined) cfg.dispatch_table = validateTable(raw.dispatch_table, file, base);
@@ -549,7 +552,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.art !== undefined) cfg.art = validateArt(raw.art, file, base, cfg.root, id);
   if (raw.credits !== undefined) cfg.credits = validateCredits(raw.credits, file, base, cfg.root, id);
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }

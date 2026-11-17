@@ -1,0 +1,15 @@
+capture:
+  recipes:
+    - name: demo
+      kinds: [visual, art]
+      tags: [capture]
+      lock: capture
+      timeout_minutes: 5
+      size: [320, 180]
+      launch: [node, "{alba}/examples/capture/fake-game.mjs", --out, "{out}", --size, 320x180]
+      done: exit
+      baseline: menu
+      shots:
+        - { name: menu, args: [--scene, menu] }
+        - { name: day, args: [--scene, day] }
+        - { name: night, args: [--scene, night] }
