@@ -10,7 +10,7 @@ export const REPORT_STATUSES = ['progress', 'waiting', 'ready', 'blocked', 'fail
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
 /** `monitor` is written by the tick, never by a person: a monitor ended and the order is queued to continue (its note is the monitor's result). `message` is a note sent to a running order (`alba say --restart`). */
-export const ACTION_KINDS = ['queue', 'cancel', 'hold', 'release', 'approve', 'rework', 'answer', 'monitor', 'message'] as const;
+export const ACTION_KINDS = ['queue', 'cancel', 'hold', 'release', 'approve', 'rework', 'answer', 'monitor', 'message', 'merged-elsewhere', 'done-by-lead'] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export const STAGES = [
@@ -200,6 +200,7 @@ export interface Action {
   at: string;
   kind: ActionKind;
   note?: string;
+  commit?: string;
   choice?: number;           // an answer that picked option N of the waiting report
   imported?: boolean;
   override?: boolean;

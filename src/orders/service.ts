@@ -245,7 +245,7 @@ export class Orders {
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { note?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean } = {}): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -258,6 +258,8 @@ export class Orders {
       if (kind === 'rework' && !options.note?.trim() && !options.force) fail('Rework needs a note (--note): it becomes the instruction for the next run.');
       if (kind === 'answer' && !options.note?.trim()) fail('An answer needs its text (--text).');
       if (kind === 'message' && !options.note?.trim()) fail('A message needs its text (--text).');
+      if (kind === 'done-by-lead' && (options.note?.trim().length ?? 0) < 10 && !options.force) fail('Closing with done-by-lead needs a note of at least 10 characters.');
+      if (kind === 'merged-elsewhere' && !options.commit?.trim() && !options.force) fail('Closing with merged-elsewhere needs a commit on the base branch.');
       const doc = this.get(tag);
       const now = this.stage(doc);
       const stage = now.stage;
@@ -271,6 +273,7 @@ export class Orders {
       // Approval never runs beside a worker: its run could still change what is being approved.
       const openRun = doc.runs.find(r => r.ended === undefined);
       if (kind === 'approve' && openRun && !options.force) fail('Run {run} of {tag} is still open; wait for it to end (or stop it) before approving.', { run: openRun.id, tag: doc.order.tag });
+      if ((kind === 'merged-elsewhere' || kind === 'done-by-lead') && openRun && !options.force) fail('Run {run} of {tag} is still open; stop the run first before closing.', { run: openRun.id, tag: doc.order.tag });
       const problem = kind === 'approve' && options.override && overrideStage ? undefined : actionProblem(stage, kind);
       // The English text travels with the message: a code that tells the kinds of error apart reads it, not the translation.
       if (problem && !options.force) throw new UserError(t('{tag}: {problem}', { tag: doc.order.tag, problem }), `${doc.order.tag}: ${withLang('en', () => actionProblem(stage, kind))}`);
@@ -293,13 +296,14 @@ export class Orders {
       const action: Action = { seq: nextSeq(doc), at: this.now(), kind };
       if (kind === 'message' && options.queued) action.queued = true;
       if (options.note?.trim()) action.note = options.note.trim();
+      if (options.commit?.trim()) action.commit = options.commit.trim();
       if (options.choice !== undefined) action.choice = options.choice;
       if (options.imported) action.imported = true;
       if (options.override) action.override = true;
       if (options.bounce) action.bounce = true;
       if (options.lint) action.lint = true;
       doc.actions.push(action);
-      this.save(doc, `action-${kind}`, { note: action.note, from: stage, ...(action.choice !== undefined ? { choice: action.choice } : {}), ...(action.override ? { override: true } : {}), ...(action.bounce ? { bounce: true } : {}) });
+      this.save(doc, `action-${kind}`, { note: action.note, from: stage, ...(kind === 'merged-elsewhere' || kind === 'done-by-lead' || action.commit ? { commit: action.commit } : {}), ...(action.choice !== undefined ? { choice: action.choice } : {}), ...(action.override ? { override: true } : {}), ...(action.bounce ? { bounce: true } : {}) });
       return doc;
     });
   }

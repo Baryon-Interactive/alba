@@ -36,6 +36,8 @@ import { createOrder } from '../service/new-order.ts';
 import { executeTick } from '../tick/execute.ts';
 import { findWorktree, readQuotaHistory, tick, type Probes } from '../tick/gather.ts';
 import { Orders } from '../orders/service.ts';
+import { closeOrder } from '../orders/close.ts';
+import { actionProblem } from '../orders/stage.ts';
 import { stateStore } from '../orders/backend.ts';
 import { formatReport } from '../tick/plan.ts';
 import { findFinishes } from '../run/finish.ts';
@@ -432,7 +434,14 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       return json(res, 200, { project: view.config.id, ...(stage ? { stage: stage as A.Stage } : {}), count: items.length, items } satisfies A.OrderList);
     }
     if (parts[0] === 'orders' && parts.length === 2) {
-      return json(res, 200, detail(light(q('project')), parts[1], env()) satisfies A.OrderDetail);
+      const d = detail(light(q('project')), parts[1], env());
+      const openRun = d.runs.find(r => !r.ended);
+      const closeProblem = openRun && d.stage !== 'running' && d.stage !== 'monitoring'
+        ? t('Run {run} of {tag} is still open; stop the run first before closing.', { run: openRun.id, tag: d.order.tag })
+        : actionProblem(d.stage, 'merged-elsewhere');
+      if (closeProblem) d.unavailable.close = closeProblem;
+      else if (!d.actions.includes('close')) d.actions.push('close');
+      return json(res, 200, d satisfies A.OrderDetail);
     }
     if (parts[0] === 'orders' && parts[2] === 'draft' && parts.length === 3) {
       const view = light(q('project'));
@@ -1030,6 +1039,19 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
         case 'queue': case 'hold': case 'release': case 'cancel': case 'rework': case 'stop':
           humanAction(view.config, view.orders, tag, action as 'queue', note);
           break;
+        case 'close': {
+          const how = str(body, 'how', true)!;
+          if (how !== 'merged-elsewhere' && how !== 'done-by-lead') throw new ApiFailure(400, 'bad_request', '"how" must be "merged-elsewhere" or "done-by-lead".');
+          const commit = str(body, 'commit', how === 'merged-elsewhere')?.trim() || undefined;
+          if (how === 'merged-elsewhere' && !commit) throw new ApiFailure(400, 'bad_request', '"commit" is required for merged-elsewhere.');
+          try {
+            closeOrder(view.config, view.orders, tag, { how, commit, note });
+          } catch (e) {
+            if (e instanceof UserError) throw new ApiFailure(409, 'conflict', e.message);
+            throw e;
+          }
+          break;
+        }
         case 'answer': {
           const text = str(body, 'text', body.choice === undefined);
           const choice = body.choice === undefined ? undefined : Number(body.choice);

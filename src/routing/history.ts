@@ -32,8 +32,8 @@ export function workerHistory(docs: readonly OrderDoc[], workers: readonly Worke
       }
       if (run.outcome !== 'completed') return;
       const until = runs[i + 1]?.seq ?? Infinity;
-      const verdict = [...doc.actions].sort((a, b) => a.seq - b.seq).find(a => a.seq > run.seq && a.seq < until && (a.kind === 'approve' || a.kind === 'rework'));
-      if (!verdict) return;
+      const verdict = [...doc.actions].sort((a, b) => a.seq - b.seq).find(a => a.seq > run.seq && a.seq < until && (a.kind === 'approve' || a.kind === 'rework' || a.kind === 'merged-elsewhere' || a.kind === 'done-by-lead'));
+      if (!verdict || verdict.kind === 'merged-elsewhere' || verdict.kind === 'done-by-lead') return;
       const h = ((out[owner.id] ??= {})[kind] ??= { kind, accepted: 0, reworked: 0, samples: 0 });
       if (verdict.kind === 'approve') h.accepted++; else h.reworked++;
       h.samples = h.accepted + h.reworked + (h.failed ?? 0);

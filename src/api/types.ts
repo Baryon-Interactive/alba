@@ -24,7 +24,7 @@ export type Stage = (typeof STAGES)[number];
  * What a person can do to an order. `answer`, `run` and `stop` are not stored as plain actions: `answer` continues the worker's session,
  * `run` starts it now (a held order on the worker named), `stop` ends the open run's whole process tree and holds the order.
  */
-export const ORDER_ACTIONS = ['queue', 'hold', 'release', 'cancel', 'approve', 'rework', 'answer', 'run', 'stop'] as const;
+export const ORDER_ACTIONS = ['queue', 'hold', 'release', 'cancel', 'approve', 'rework', 'answer', 'run', 'stop', 'close'] as const;
 export type OrderAction = (typeof ORDER_ACTIONS)[number];
 
 /** What an `awaiting-user` order is waiting for: a person to click a card in a session of their own, or an answer to a question. `answer` is only for the second. */
@@ -296,8 +296,9 @@ export interface RunRouting {
 export interface Decision {
   seq: number;
   at: string;
-  kind: 'queue' | 'cancel' | 'hold' | 'release' | 'approve' | 'rework' | 'answer' | 'monitor' | 'message';
+  kind: 'queue' | 'cancel' | 'hold' | 'release' | 'approve' | 'rework' | 'answer' | 'monitor' | 'message' | 'merged-elsewhere' | 'done-by-lead';
   note?: string;
+  commit?: string;
   /** For an `answer` that picked option N of the waiting report. */
   choice?: number;
   imported?: boolean;
@@ -880,7 +881,7 @@ export interface NewOrderResult {
 export interface ActionRequest {
   project?: string;
   action: OrderAction;
-  /** Required for `rework`; optional for approve, hold, cancel. */
+  /** Required for `rework`, and for `close` with `done-by-lead` (at least 10 characters); optional for approve, hold, cancel, `merged-elsewhere`. */
   note?: string;
   /** Required for `answer` unless `choice` is given: the reply to the worker's question. */
   text?: string;
@@ -890,6 +891,12 @@ export interface ActionRequest {
   worker?: string;
   /** For `approve` of an order with no branch recorded (one imported from a table): the branch is recorded, then checked to be merged as usual. */
   branch?: string;
+  /** For `approve`: approve a failed, blocked or idle order with a note of at least 10 characters. */
+  override?: boolean;
+  /** Required for `close`: how the lead closed the order. */
+  how?: 'merged-elsewhere' | 'done-by-lead';
+  /** Required for `close` with `merged-elsewhere`; optional for `done-by-lead`: commit or ref on the order's base branch. */
+  commit?: string;
 }
 export interface ActionResult {
   ok: true;

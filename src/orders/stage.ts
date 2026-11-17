@@ -32,15 +32,18 @@ export interface StageResult {
  */
 export function inferStage(order: Order, runs: readonly Run[], reports: readonly Report[], actions: readonly Action[], merged: ReadonlySet<string>): StageResult {
   let cancelled = false, isMerged = false, held = false, queued = false, lastReset = 0;
+  let mergeAction: Action | undefined;
   for (const a of [...actions].sort((x, y) => x.seq - y.seq)) {
     if (a.kind === 'message' && a.queued) continue;
     switch (a.kind) {
       case 'queue': queued = true; cancelled = false; lastReset = a.seq; break;
-      case 'answer': case 'rework': case 'monitor': case 'message': queued = true; isMerged = false; lastReset = a.seq; break;
+      case 'answer': case 'rework': case 'monitor': case 'message': queued = true; isMerged = false; mergeAction = undefined; lastReset = a.seq; break;
       case 'cancel': cancelled = true; break;
       case 'hold': held = true; break;
       case 'release': held = false; break;
-      case 'approve': isMerged = true; break;
+      case 'approve': isMerged = true; mergeAction = a; break;
+      case 'merged-elsewhere': isMerged = true; cancelled = false; mergeAction = a; break;
+      case 'done-by-lead': isMerged = true; cancelled = false; mergeAction = a; break;
     }
   }
   const lastStart = runs.reduce((n, r) => Math.max(n, r.seq), 0);
@@ -52,7 +55,14 @@ export function inferStage(order: Order, runs: readonly Run[], reports: readonly
 
   const hit = (stage: Stage, why: string, waitingFor?: WaitingFor): StageResult => ({ stage, why, ...(waitingFor ? { waitingFor } : {}) });
   if (cancelled) return hit('cancelled', t('cancelled by a person'));
-  if (isMerged) return hit('merged', t('approved by a person'));
+  if (isMerged) {
+    const why = mergeAction?.kind === 'merged-elsewhere'
+      ? t('closed by the lead: merged elsewhere in {sha}', { sha: mergeAction.commit?.slice(0, 7) || '-' })
+      : mergeAction?.kind === 'done-by-lead'
+        ? t('closed by the lead: done by hand')
+        : t('approved by a person');
+    return hit('merged', why);
+  }
   if (order.planned) return hit('planned', unmet.length ? `Waiting to draft after ${unmet.join(', ')} merges` : 'Ready for producer drafting');
   if (held) return hit('held', t('put on hold by a person'));
   if (current?.status === 'waiting' && current.question) {
@@ -78,6 +88,11 @@ export function stageOf(order: Order, runs: readonly Run[], reports: readonly Re
   return inferStage(order, runs, reports, actions, merged).stage;
 }
 
+export const CLOSE_STAGES: readonly Stage[] = [
+  'planned', 'draft', 'queued', 'waiting-needs', 'held', 'idle',
+  'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped', 'cancelled',
+];
+
 /** Why an action is not allowed in the current stage, or undefined if it is allowed. */
 export function actionProblem(stage: Stage, kind: ActionKind): string | undefined {
   const allowed: Record<ActionKind, readonly Stage[]> = {
@@ -90,7 +105,15 @@ export function actionProblem(stage: Stage, kind: ActionKind): string | undefine
     answer: ['awaiting-user', 'blocked'],
     monitor: ['monitoring'],
     message: ['held', 'draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
+    'merged-elsewhere': CLOSE_STAGES,
+    'done-by-lead': CLOSE_STAGES,
   };
   if (allowed[kind].includes(stage)) return undefined;
+  if (kind === 'merged-elsewhere' || kind === 'done-by-lead') {
+    if (stage === 'running' || stage === 'monitoring') {
+      return t('cannot close an order that is {stage}; stop the run first', { stage });
+    }
+    return t('cannot close an order that is {stage} (allowed from: {from})', { stage, from: allowed[kind].join(', ') });
+  }
   return t('cannot {action} an order that is {stage} (allowed from: {from})', { action: kind, stage, from: allowed[kind].join(', ') });
 }

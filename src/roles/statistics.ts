@@ -33,8 +33,8 @@ export function roleResults(docs: readonly OrderDoc[], usage: readonly UsageRow[
         groups.set(key, group);
       }
       const r = group.result; r.runs++;
-      const verdict = actions.find(a => a.seq > run.seq && a.seq < (runs[i + 1]?.seq ?? Infinity) && a.at <= until && ['approve', 'rework'].includes(a.kind));
-      if (verdict) { r.samples++; if (verdict.kind === 'approve') r.accepted++; else r.reworked++; }
+      const verdict = actions.find(a => a.seq > run.seq && a.seq < (runs[i + 1]?.seq ?? Infinity) && a.at <= until && ['approve', 'rework', 'merged-elsewhere', 'done-by-lead'].includes(a.kind));
+      if (verdict && (verdict.kind === 'approve' || verdict.kind === 'rework')) { r.samples++; if (verdict.kind === 'approve') r.accepted++; else r.reworked++; }
       const rows = byRun.get(JSON.stringify([doc.order.tag, run.id])) ?? [];
       const tokens = rows.length ? (rows.every(u => u.total_tokens !== undefined) ? rows.reduce((n, u) => n + u.total_tokens!, 0) : undefined) : run.usage?.total_tokens;
       if (tokens !== undefined && Number.isFinite(tokens) && tokens >= 0) group.tokens.push(tokens);
