@@ -194,6 +194,9 @@ export const api = {
   // : tool plugins
   plugins: (project: string) => request<import('@api').PluginsView>(`/api/plugins${qs({ project })}`),
   pluginDoctor: (project: string, ids?: string[]) => post<import('@api').PluginDoctor>('/api/plugins/doctor', { project, ...(ids?.length ? { ids } : {}) }),
+  // : first-pass review
+  reviewStats: (project: string, days = 30) => request<import('@api').FirstPassStats>(`/api/review/stats${qs({ project, days })}`),
+  firstPassWrong: (project: string, tag: string, note: string) => post<import('@api').FirstPassDisputeResult>(`/api/orders/${enc(tag)}/first-pass-wrong`, { project, note }),
 };
 
 /** Which file a configuration edit goes to: the project's own file or the shared workers file. */

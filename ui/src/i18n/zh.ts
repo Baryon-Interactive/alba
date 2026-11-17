@@ -1,6 +1,20 @@
 // Chinese texts of the console. The words follow docs/glossary.md (工单, 派工, 报告, 授权, 打回返工, 一次巡检, 验收, 参照值 ...).
 // `node scripts/i18n-keys.mjs` checks that every t('...') text in src/ has a line here.
 export const zh: Record<string, string> = {
+  'First-pass review': '初审',
+  'send-back': '建议退回',
+  'unsure': '无法确定',
+  'confident': '确信',
+  'reviewed by {worker} ({family})': '由 {worker}（{family}）初审',
+  'delivering worker: {worker}': '交付工人：{worker}',
+  'Sent back automatically': '已自动打回返工',
+  'Not sent back: {reason}': '未自动打回：{reason}',
+  'Reviewer note': '初审意见',
+  'Wrong send-back': '误判退回',
+  'Explain why the send-back was wrong (at least 10 characters)': '请说明此次退回为何误判（至少 10 个字符）',
+  'Record dispute': '确认标记误判',
+  'Marked wrong': '已标记误判',
+  '{tag}: recorded wrong send-back': '{tag}：已记录初审误判',
   'Intake review': '导入审阅',
   'Review design document blocks and accept or return systems.': '审阅策划文档分块，按系统接受或退回。',
   'Pending': '待处理',

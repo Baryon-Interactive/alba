@@ -504,6 +504,14 @@ export function runFirstPass(ctx: RunContext): void {
       w => ({ ...w, running: w.running + (runningCounts.get(w.config.id) ?? 0) }),
     );
     if (!worker) {
+      if (reviewBudgetExhausted(project, orders, probes.now())) {
+        skip('First-pass review refused: review_runs_per_day budget exhausted.');
+        continue;
+      }
+      const busyOnConcurrency = choice.outcome === 'none-available'
+        && choice.waiting === 'limit'
+        && choice.candidates.some(c => c.blocked === 'limit' && /concurrency limit/.test(c.reason));
+      if (busyOnConcurrency) continue;
       skip(`No eligible reviewer outside model_family ${deliveringFamily}: ${choice.why}`);
       continue;
     }

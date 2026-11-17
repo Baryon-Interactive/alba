@@ -350,3 +350,22 @@ export const usePlugins = (project: string) => useQuery({ queryKey: ['plugins', 
 
 /** The doctor for some tools (or the enabled ones): starts their servers on the serving machine and lists their tools; nothing is called. */
 export const usePluginDoctor = (project: string) => useMutation({ mutationFn: (ids?: string[]) => api.pluginDoctor(project, ids) });
+
+export const useReviewStats = (project: string, days = 30) => useQuery({
+  queryKey: ['review-stats', project, days],
+  queryFn: () => api.reviewStats(project, days),
+  enabled: !!project,
+  staleTime: 15_000,
+});
+
+export function useFirstPassWrong(project: string, tag: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (note: string) => api.firstPassWrong(project, tag, note),
+    onSuccess: () => {
+      toast.success(t('{tag}: recorded wrong send-back', { tag }));
+      void client.invalidateQueries({ queryKey: keys.order(project, tag) });
+      void client.invalidateQueries({ queryKey: ['review-stats', project] });
+    },
+  });
+}
