@@ -79,3 +79,17 @@ verify:
 ## Override approvals
 
 `alba review <TAG> approve --override --note "at least ten characters"` can approve a failed, blocked, or idle order after the reviewer records a note of at least ten characters. The action ledger records `override: true`. The web console shows a separate `Approve with override` action and requires the note in its confirmation form.
+
+## Closing an order the lead finished
+
+```sh
+alba orders close <TAG> --merged-elsewhere <commit-or-ref> [--note text]
+alba orders close <TAG> --done-by-lead [--commit <sha>] --note "at least ten characters"
+```
+
+Marks an order `merged` (satisfying `needs` and clearing an earlier `cancel`) without running `accept_command` or writing `<TAG>.accept.md`. Allowed from `planned`, `draft`, `queued`, `waiting-needs`, `held`, `idle`, `awaiting-user`, `awaiting-review`, `blocked`, `failed`, `dropped` and `cancelled`; refused from `running` or `monitoring` (stop the run first) and from `merged`. The web console offers **Close** on `awaiting-review`, `awaiting-user`, `blocked`, `failed`, `dropped` and `idle`.
+
+- `--merged-elsewhere <commit-or-ref>` resolves `<commit-or-ref>^{commit}` in the project repository, verifies with `git merge-base --is-ancestor` that it is on the order's base branch, records `action-merged-elsewhere` (`{ note, from, commit }` with the full SHA), and sets stage `merged` (`closed by the lead: merged elsewhere in <short sha>`).
+- `--done-by-lead` requires a `--note` of at least 10 characters (an optional `--commit` is verified on the base branch the same way), records `action-done-by-lead` (`{ note, from, commit }`), and sets stage `merged` (`closed by the lead: done by hand`).
+
+Use `approve --override` only when the worker's run itself delivered the work, because an override approval counts that run as accepted in worker routing history and role statistics. Use `orders close` when another commit on the base branch already landed the work or the lead finished it by hand: a completed run whose verdict is a close counts neither as accepted nor as reworked (a run that ended failed without a report still counts as `failed`).
