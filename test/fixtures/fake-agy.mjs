@@ -1,6 +1,7 @@
 // A stand-in for the Antigravity CLI (`agy -p <prompt> --output-format stream-json ...`), used by test/agy.test.ts.
 // Prints the stream-json lines agy 1.5.9 prints (shapes copied from real runs), records how it was started in FAKE_AGY_PROOF,
-// and plays the scenario named in FAKE_AGY_MODE: ok (a report block), region, auth, model, quota.
+// and plays the scenario named in FAKE_AGY_MODE: ok (a report block), late-error (the report block, then an
+// error result, as agy 1.5.9 ended a real run), region, auth, model, quota.
 import { writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -47,4 +48,5 @@ const block = '--- alba-report ---\n{"status":"waiting","summary":"Fake agy work
 const final = `Fake agy worker finished.\n\n${block}\n`;
 for (const piece of final.match(/[\s\S]{1,40}/g)) step(5, { state: 'ACTIVE', step_type: 'agent_response', text_delta: piece });
 step(5, { state: 'DONE', step_type: 'agent_response', usage: usage(300, 40) });
-out({ event: 'result', result: { conversation_id: conversation, status: 'SUCCESS', response: final, duration_seconds: 2.5, num_turns: 3, usage: { input_tokens: 600, output_tokens: 90, thinking_tokens: 15, cache_read_tokens: 30, total_tokens: 690 } } });
+const late = mode === 'late-error' ? { status: 'ERROR', finished_reason: 'error', error: 'Your previous response contained an improperly formatted function call: Malformed function call: Failed to parse function call: Function call is empty - no input to parse.\nPlease retry with a properly formatted function call\nRetries remaining: 3' } : { status: 'SUCCESS' };
+out({ event: 'result', result: { conversation_id: conversation, ...late, response: final, duration_seconds: 2.5, num_turns: 3, usage: { input_tokens: 600, output_tokens: 90, thinking_tokens: 15, cache_read_tokens: 30, total_tokens: 690 } } });

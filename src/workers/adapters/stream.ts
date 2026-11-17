@@ -85,6 +85,9 @@ export function parseStreamLog(text: string, options: { cut?: boolean } = {}): S
   return log;
 }
 
+/** A complete report block (begin and end markers, as in orders/report.ts), not a mention of the marker in the middle of a message. */
+const hasReportBlock = (text: string): boolean => { const at = text.lastIndexOf('--- alba-report ---'); return at >= 0 && text.indexOf('--- end ---', at) > at; };
+
 /** Antigravity (`agy --output-format stream-json`): events keyed by `event`; the text of agent_response steps after the last tool is the final message. */
 function agyStep(log: StreamLog, e: AgyEvent): void {
   log.ended = e.kind === 'result';
@@ -105,7 +108,11 @@ function agyStep(log: StreamLog, e: AgyEvent): void {
     }
     if (r.status === 'SUCCESS') { if (r.response) log.finalText = r.response; }
     else {
-      log.finalText = '';
+      // agy can end with an error after the final message is complete (seen 2026-11-16, AI3A: "Malformed function call: Function
+      // call is empty" after a 5 h run whose response ended with a valid report block). A finished report block is the delivery;
+      // only a message without one is cleared, so the error decides how the run ended.
+      const text = [r.response, log.finalText].find(hasReportBlock);
+      log.finalText = text ?? '';
       if (r.error) log.errors.push(r.error);
       if (r.status) log.stopReason = r.status.toLowerCase();
     }

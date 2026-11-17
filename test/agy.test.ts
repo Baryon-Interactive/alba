@@ -158,3 +158,17 @@ test('order model: an order names its model for its own worker; a worker the ord
   const theirs = JSON.parse(readFileSync(other.proof, 'utf8'));
   assert.equal(theirs.args[theirs.args.indexOf('--model') + 1], 'gemini-test');
 });
+
+test('agy: an error result after a complete report block is still the delivery; without a block the error decides', async () => {
+  const ctx = setup('late-error');
+  await ran(ctx);
+  const f = finishOf(ctx);
+  assert.equal(f.outcome, 'completed');
+  assert.equal(f.report?.summary, 'Fake agy worker finished');
+  const error = JSON.stringify({ event: 'result', result: { status: 'ERROR', response: 'I could not finish.', error: 'UNAVAILABLE (code 503)' } });
+  const log = parseStreamLog([JSON.stringify({ event: 'step_update', step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'Working.' } }), error].join('\n'));
+  assert.equal(log.finalText, '');
+  assert.deepEqual(log.errors, ['UNAVAILABLE (code 503)']);
+  // A marker quoted in the middle of a message is not a block.
+  assert.equal(parseStreamLog(JSON.stringify({ event: 'result', result: { status: 'ERROR', response: '--- end --- then --- alba-report --- unfinished', error: 'x' } })).finalText, '');
+});
