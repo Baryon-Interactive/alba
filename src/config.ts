@@ -42,6 +42,7 @@ export interface DispatchRules {
   monitor_dirs: string[];           // folders (besides an order's worktree and the project root) where a monitor's check command may run
   monitor_timeout_seconds: number;  // one check command is stopped after this long (default 120)
   commit_nudge_minutes: number;     // a running order with changed files and no commit for this long gets one inbox reminder (default 45); 0 turns it off
+  auto_merge_base: boolean;         // merge the base branch into a local order worktree before delivery lint when checks.base_merged is on (default true)
 }
 
 /** A shared thing orders compete for (a machine, a lane of builds): at most `slots` leases at a time. */
@@ -872,14 +873,14 @@ export const DEFAULT_LONG_COMMANDS: string[] = [];
 
 const dispatchDefaults = (): DispatchRules => ({
   caps: {}, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6,
-  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45,
+  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true,
 });
 
 function validateDispatch(raw: unknown, file: string): DispatchRules {
   if (raw === undefined) return dispatchDefaults();
   if (!isRecord(raw)) fail('{file}: "dispatch" must be a mapping.', { file });
   const out: DispatchRules = dispatchDefaults();
-  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "dispatch": {keys}.', { file, keys: unknown.join(', ') });
   if (raw.caps !== undefined) {
     if (!isRecord(raw.caps)) fail('{file}: "dispatch.caps" must be a mapping of name to a whole number.', { file });
@@ -936,6 +937,10 @@ function validateDispatch(raw: unknown, file: string): DispatchRules {
   if (raw.commit_nudge_minutes !== undefined) {
     if (typeof raw.commit_nudge_minutes !== 'number' || !Number.isInteger(raw.commit_nudge_minutes) || raw.commit_nudge_minutes < 0) fail('{file}: "dispatch.commit_nudge_minutes" must be a whole number >= 0.', { file });
     out.commit_nudge_minutes = raw.commit_nudge_minutes;
+  }
+  if (raw.auto_merge_base !== undefined) {
+    if (typeof raw.auto_merge_base !== 'boolean') fail('{file}: "dispatch.auto_merge_base" must be true or false.', { file });
+    out.auto_merge_base = raw.auto_merge_base;
   }
   for (const key of ['worktree_parent', 'base_ref'] as const) {
     const v = raw[key];

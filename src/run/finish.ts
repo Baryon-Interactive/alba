@@ -22,6 +22,7 @@ import type { WorkersFile } from '../workers/config.ts';
 import { eventErrors } from './transient.ts';
 import { liveRuns, liveSummary, type LiveSummary } from './live.ts';
 import { hasDeliveryChecks } from '../check/delivery.ts';
+import { mergeBaseBeforeReview } from '../check/base-merge.ts';
 import { lintDelivery } from '../producer/delivery-lint.ts';
 import { outsideWorktree } from './worktree.ts';
 import { designBounceNote, designChangeProblem } from '../design/worker.ts';
@@ -332,6 +333,7 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
       // Evidence pictures that are copies of one file, or one flat colour: the worker described what it did not look at.
       const pictures = evidenceProblems(project, orders.get(f.tag));
       if (pictures && bounceOnce('evidence-bounced', 'evidence-images', { ...pictures }, evidenceBounceNote(pictures))) return;
+      mergeBaseBeforeReview(project, orders, f.tag, run);
       lintDelivery(project, orders, f.tag);
       if (orders.stage(orders.get(f.tag)).stage === 'awaiting-review') verifyOrder(project, orders, f.tag);
     }

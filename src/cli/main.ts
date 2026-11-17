@@ -105,6 +105,7 @@ const options = {
   'stall-minutes': { type: 'string' }, 'timeout-minutes': { type: 'string' }, 'poll-minutes': { type: 'string' }, 'wait-minutes': { type: 'string' },
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
   page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' },
+  'merged-elsewhere': { type: 'string' }, 'done-by-lead': { type: 'boolean' }, commit: { type: 'string' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -128,6 +129,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   orders plan <TAG> --title t --kind k --needs A,B --intent text [--role role]
   orders edit-plan <TAG> [--title t] [--kind k] [--needs A,B] [--intent text] [--role role]
   orders cancel <TAG>
+  orders close <TAG> (--merged-elsewhere <commit-or-ref> | --done-by-lead) [--commit <sha>] [--note text]
   orders add <TAG> [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--run-model m] [--heavy h] [--branch b] [--base-ref local-branch] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
   orders check <TAG>   start a separate read-only verifier (or show the active check)
                     [--quote text] [--decisions text] [--spend-cap n] [--protect a,b]
@@ -654,6 +656,16 @@ ${editorLines(editors, projects.length > 1)}` : body;
         return tagLine(editPlan(orders, rest[0], { ...(values.title !== undefined ? { title: values.title } : {}), ...(values.kind !== undefined ? { kind: values.kind } : {}), ...(values.intent !== undefined ? { intent: values.intent } : {}), ...(values.role !== undefined ? { role: values.role } : {}), ...(values.needs !== undefined ? { needs: values.needs.split(',').filter(Boolean) } : {}) }));
       }
       case 'cancel': need(1, 'alba orders cancel <TAG>'); return tagLine(orders.act(rest[0], 'cancel'));
+      case 'close': {
+        const usage = 'alba orders close <TAG> (--merged-elsewhere <commit-or-ref> | --done-by-lead) [--commit <sha>] [--note text]';
+        need(1, usage);
+        const elsewhere = values['merged-elsewhere'];
+        const byLead = values['done-by-lead'] === true;
+        if ((elsewhere !== undefined) === byLead || (elsewhere !== undefined && values.commit !== undefined)) fail('Usage: {usage}', { usage });
+        const { closeOrder } = await import('../orders/close.ts');
+        const closed = closeOrder(cfg, orders, rest[0], { how: byLead ? 'done-by-lead' : 'merged-elsewhere', commit: byLead ? values.commit : elsewhere, note: values.note });
+        return `${tagLine(closed)}\n${orders.stage(closed).why}`;
+      }
       case 'list': return list(orders, values, cfg);
       case 'show': need(1, 'alba orders show <TAG>'); return show(orders, rest[0]);
       case 'check': {
@@ -737,6 +749,10 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const found = outcome === 'completed' && !ended.reports.some(r => r.run === closed.id) ? reportInRunLog(systemProbes, closed) : undefined;
         if (found) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
+          if (found.report.status === 'ready') {
+            const { mergeBaseBeforeReview } = await import('../check/base-merge.ts');
+            mergeBaseBeforeReview(cfg, orders, rest[0], closed);
+          }
           lintDelivery(cfg, orders, rest[0]);
           return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
         }
