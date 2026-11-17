@@ -34,6 +34,7 @@ const coordinator = startCoordinator({ ...options, probes, print: line => port.p
 server.emit('listening');
 let queue = Promise.resolve();
 port.on('message', ({ id, method, args }) => {
+  if (method === 'drain' || method === 'stop') coordinator.stopStarting?.();
   // Async model work must never permit concurrent dispatch decisions. All explicit jobs share this queue.
   queue = queue.then(async () => {
     try {
@@ -51,7 +52,8 @@ port.on('message', ({ id, method, args }) => {
           ? executeTick({ project, orders, workers: board.ctx.workers!, probes, peers }, { maxDispatch: args.maxDispatch })
           : tick(project, orders, board.ctx.workers!, board.ctx.slow, { record: false, finishes: findFinishes(project, orders, probes, board.ctx.workers).map(f => ({ tag: f.tag, run: f.run, outcome: f.outcome, why: f.why })) }));
         board.invalidate();
-      } else if (method === 'stop') { await coordinator.stop(); closeStateStores(); }
+      } else if (method === 'drain') { await coordinator.drain?.(args?.timeoutMs); closeStateStores(); }
+      else if (method === 'stop') { await coordinator.stop(); closeStateStores(); }
       else throw new Error('Unknown serve worker operation');
       port.postMessage({ id, value });
     } catch (error) { port.postMessage({ id, error: (error as Error).message }); }

@@ -980,7 +980,7 @@ export interface StreamEvents {
   'credits.changed': OrderEvent & { project: string };
   'clean.done': OrderEvent & { project: string };
   /** `alba serve` changed something by itself or noticed an abnormal silent run end. */
-  'serve.notice': { project: string; at: string; kind: 'config-reloaded' | 'config-invalid' | 'table-imported' | 'table-import-failed' | 'silent-end'; text: string; tag?: string; run?: string };
+  'serve.notice': { project: string; at: string; kind: 'config-reloaded' | 'config-invalid' | 'table-imported' | 'table-import-failed' | 'silent-end' | 'reload-started' | 'reload-refused' | 'reload-failed' | 'reload-done'; text: string; tag?: string; run?: string; from?: number; to?: number; gapMs?: number };
   /** Any entry type not listed above. */
   'log.other': OrderEvent & { project: string };
   /** New lines at the end of a run's log, for the runs named in `logs`. Not replayed. */
@@ -1674,4 +1674,15 @@ export interface Scorecard {
   kind?: string;
   projects: string[];
   rows: ScorecardRow[];
+}
+
+// ---------------------------------------------------------------------------------------------------------------- serve reload
+
+/** `POST /api/serve/reload` */
+export interface ServeReloadRequest {
+  force?: boolean;
+}
+export interface ServeReloadResult {
+  from: number;
+  state: 'starting';
 }

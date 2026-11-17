@@ -5,17 +5,26 @@ import { writeKeyFile } from '../web/auth.ts';
 import { systemProbes } from '../tick/gather.ts';
 import { startCoordinator, type ServeOptions, type Serve } from './coordinator.ts';
 import { WorkerChannel } from './channel.ts';
-import { currentLang } from '../i18n.ts';
+import { currentLang, t } from '../i18n.ts';
 import type { TickResult } from '../tick/gather.ts';
 import type { ProjectConfig } from '../config.ts';
 import type * as A from '../api/types.ts';
 import { newFleetLock } from './fleet.ts';
 import { createNotifier } from '../notify/notifier.ts';
 import { scrubSecrets } from '../notify/channels.ts';
+import { Orders } from '../orders/service.ts';
+import { stateStore, closeStateStores } from '../orders/backend.ts';
+import { closeMachineStores } from '../resources/machine-store.ts';
+import { attachServeReload, type ReloadController } from './reload.ts';
 export type { ServeOptions, Serve } from './coordinator.ts';
 
+export interface StartedServe extends Serve {
+  readonly startedAt: string;
+  emitReloadDone(from: number, gapMs: number): void;
+}
+
 /** HTTP/SSE stay here; the persistent worker owns ticks, finish checks, file polling and the producer session. */
-export function startServe(options: ServeOptions): Serve {
+export function startServe(options: ServeOptions): StartedServe {
   const startedAt = new Date().toISOString();
   const lockReleases: LockRelease[] = [];
   const releases: (() => void)[] = [];
@@ -62,9 +71,16 @@ export function startServe(options: ServeOptions): Serve {
     ?? previousEnds.find(p => p.how === 'killed')
     ?? previousEnds.find(p => p.how === 'clean')
     ?? { how: 'none' as const };
-  notifier.onServeStart({ startedAt, previous });
+  if (!options.takeoverAttempt) {
+    notifier.onServeStart({ startedAt, previous });
+  }
 
+  let listenedOnce = false;
   board.server.once('listening', () => {
+    listenedOnce = true;
+    if (options.takeoverAttempt) {
+      notifier.onServeStart({ startedAt, previous });
+    }
     const address = board.server.address();
     if (!address || typeof address === 'string') return;
     // The console key, for programs of this account (alba producer session, scripts): a file only this account can read.
@@ -90,7 +106,48 @@ export function startServe(options: ServeOptions): Serve {
       }
     }
   });
+
+  const currentPort = (): number | undefined => {
+    const addr = board.server.address();
+    return addr && typeof addr === 'object' ? addr.port : undefined;
+  };
+
+  const emitReloadNotice = (
+    kind: 'reload-started' | 'reload-refused' | 'reload-failed' | 'reload-done',
+    text: string,
+    extra: { from?: number; to?: number; gapMs?: number } = {},
+  ) => {
+    const at = options.probes.now().toISOString();
+    options.print(text);
+    for (const p of options.projects) {
+      try {
+        new Orders(stateStore(p), () => at, 'serve').record('*', kind, { text, ...extra });
+      } catch { /* best-effort durable event */ }
+      board.hub.scan?.();
+      const payload: A.StreamEvents['serve.notice'] = { project: p.id, at, kind, text, ...extra };
+      board.hub.publish(p.id, 'serve.notice', payload);
+      if (background) notifier.onNotice(payload);
+    }
+  };
+
+  const emitReloadDone = (from: number, gapMs: number) => {
+    const port = currentPort() ?? options.port;
+    emitReloadNotice(
+      'reload-done',
+      t('Reloaded alba serve on port {port}: pid {from} -> pid {to} (gap {gap} ms).', {
+        port,
+        from,
+        to: process.pid,
+        gap: gapMs,
+      }),
+      { from, to: process.pid, gapMs },
+    );
+  };
+
+  let reloadCtrl: ReloadController | undefined;
+
   if (!background) {
+    let fgStopped = false;
     const prevOnReadings = board.ctx.onReadings;
     board.ctx.onReadings = (projectId, result) => {
       prevOnReadings?.(projectId, result);
@@ -107,24 +164,68 @@ export function startServe(options: ServeOptions): Serve {
       onWorkersReload: next => { options.onWorkersReload?.(next); notifier.setWorkers(next); },
       onProjectsReload: next => { options.onProjectsReload?.(next); notifier.setProjects(next); },
     }, board);
-    const stop = coordinator.stop;
+    const origStop = coordinator.stop;
     coordinator.stop = () => {
+      fgStopped = true;
+      reloadCtrl?.close();
       recordExit('clean');
       notifier.stop();
       cleanupCrash();
-      const out = stop();
+      const out = origStop();
       unlock();
       return out;
     };
     board.server.once('error', err => {
-      recordExit('crashed', scrubSecrets(err.message).slice(0, 300));
+      fgStopped = true;
+      reloadCtrl?.close();
+      if (!options.takeoverAttempt || listenedOnce) {
+        recordExit('crashed', scrubSecrets(err.message).slice(0, 300));
+      }
       notifier.stop();
       cleanupCrash();
       unlock();
     });
-    return coordinator;
+    if (options.reload !== false) {
+      reloadCtrl = attachServeReload({
+        startedAt,
+        projects: options.projects,
+        workers: options.workers,
+        everyMinutes: options.everyMinutes,
+        maxDispatch: options.maxDispatch,
+        signIn: options.signIn === true,
+        extraOrigins: options.extraOrigins ?? [],
+        port: currentPort,
+        isStopped: () => fgStopped,
+        notice: emitReloadNotice,
+        async drainAndRelease(drainSeconds: number): Promise<string> {
+          fgStopped = true;
+          reloadCtrl?.close();
+          await coordinator.drain?.(drainSeconds * 1000);
+          recordExit('clean', 'reload');
+          notifier.stop();
+          cleanupCrash();
+          closeStateStores();
+          closeMachineStores();
+          unlock();
+          const closedAt = new Date().toISOString();
+          board.hub.stop();
+          board.server.closeAllConnections();
+          if (board.server.listening) {
+            await new Promise<void>(resolve => board.server.close(() => resolve()));
+          } else {
+            board.server.close();
+          }
+          return closedAt;
+        },
+      }, options.reload ?? {});
+      board.onReload = req => reloadCtrl!.trigger(req);
+    }
+    return Object.assign(coordinator, { startedAt, emitReloadDone });
   }
-  const { probes, print, onWorkersReload, onProjectsReload, notifySender, notifyMachineDir, ...data } = options;
+
+  const { probes, print, onWorkersReload, onProjectsReload, notifySender, notifyMachineDir, reload: reloadOpt, takeoverAttempt, onReload: _onReload, ...data } = options;
+  void takeoverAttempt;
+  void _onReload;
   // One thread per project: its ticks, end checks, file polling and producer session. A slow step of one project (a provision
   // command, git, a quota command) no longer holds up the others. The projects share the workers file, so each counts the
   // others' open runs against a worker's concurrency and records a start under one lock (src/serve/fleet.ts).
@@ -180,13 +281,13 @@ export function startServe(options: ServeOptions): Serve {
     channel.worker.on('error', error => {
       options.print(`serve worker of ${id} failed: ${error.message}`);
       recordExit('crashed', scrubSecrets(`serve worker of ${id} failed: ${error.message}`).slice(0, 300));
-      stop();
+      void stop();
     });
     channel.worker.on('exit', code => {
       if (!stopped) {
         options.print(`serve worker of ${id} exited (${code})`);
         recordExit('crashed', `serve worker of ${id} exited (${code})`);
-        stop();
+        void stop();
       }
     });
   }
@@ -208,23 +309,96 @@ export function startServe(options: ServeOptions): Serve {
       void channel.call('tick', source).catch(report).finally(() => { tickPending.delete(id); });
     }
   };
-  const stop = () => {
-    if (stopped) return;
+
+  let stopPromise: Promise<void> | undefined;
+  const stop = (): Promise<void> => {
+    if (stopPromise) return stopPromise;
     stopped = true;
-    recordExit('clean');
+    reloadCtrl?.close();
+    if (!options.takeoverAttempt || listenedOnce) {
+      recordExit('clean');
+    }
     notifier.stop();
     cleanupCrash();
-    board.hub.stop(); board.server.closeAllConnections(); board.server.close();
-    // Give in-flight state writes and session shutdown time to finish before releasing the serve lock.
-    const closeAll = () => Promise.allSettled([...channels.values()].map(c => c.close())).then(unlock);
-    const deadline = setTimeout(() => { void closeAll(); }, 30_000).unref();
-    void Promise.allSettled([...channels.values()].map(c => c.call('stop', null))).finally(() => { clearTimeout(deadline); void closeAll(); });
+    board.hub.stop();
+    board.server.closeAllConnections();
+    const serverClosed = board.server.listening
+      ? new Promise<void>(resolve => board.server.close(() => resolve()))
+      : (board.server.close(), Promise.resolve());
+    let closedAll = false;
+    const closeAll = () => {
+      if (closedAll) return Promise.resolve();
+      closedAll = true;
+      return Promise.allSettled([...channels.values()].map(c => c.close()))
+        .then(() => serverClosed)
+        .then(() => {
+          closeStateStores();
+          closeMachineStores();
+          unlock();
+        });
+    };
+    stopPromise = new Promise<void>(resolve => {
+      const deadline = setTimeout(() => { void closeAll().finally(resolve); }, 30_000);
+      deadline.unref();
+      void Promise.allSettled([...channels.values()].map(c => c.call('stop', null))).finally(() => {
+        clearTimeout(deadline);
+        void closeAll().finally(resolve);
+      });
+    });
+    return stopPromise;
   };
+
+  const drainAndRelease = async (drainSeconds: number): Promise<string> => {
+    stopped = true;
+    reloadCtrl?.close();
+    const timeoutMs = Math.max(0, drainSeconds * 1000);
+    let backstop: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.allSettled([...channels.values()].map(c => c.call('drain', { timeoutMs }))),
+      new Promise<void>(resolve => { backstop = setTimeout(resolve, timeoutMs + 5_000); backstop.unref(); }),
+    ]).finally(() => { if (backstop) clearTimeout(backstop); });
+    await Promise.allSettled([...channels.values()].map(c => c.close()));
+    recordExit('clean', 'reload');
+    notifier.stop();
+    cleanupCrash();
+    closeStateStores();
+    closeMachineStores();
+    unlock();
+    const closedAt = new Date().toISOString();
+    board.hub.stop();
+    board.server.closeAllConnections();
+    if (board.server.listening) {
+      await new Promise<void>(resolve => board.server.close(() => resolve()));
+    } else {
+      board.server.close();
+    }
+    return closedAt;
+  };
+
+  if (reloadOpt !== false) {
+    reloadCtrl = attachServeReload({
+      startedAt,
+      projects: options.projects,
+      workers: options.workers,
+      everyMinutes: options.everyMinutes,
+      maxDispatch: options.maxDispatch,
+      signIn: options.signIn === true,
+      extraOrigins: options.extraOrigins ?? [],
+      port: currentPort,
+      isStopped: () => stopped,
+      notice: emitReloadNotice,
+      drainAndRelease,
+    }, reloadOpt ?? {});
+    board.onReload = req => reloadCtrl!.trigger(req);
+  }
+
   board.server.once('error', err => {
-    recordExit('crashed', scrubSecrets(err.message).slice(0, 300));
-    stop();
+    if (!options.takeoverAttempt || listenedOnce) {
+      recordExit('crashed', scrubSecrets(err.message).slice(0, 300));
+    }
+    void stop();
   });
   const pollNow = () => { for (const c of channels.values()) void c.call('poll', null).catch(report); };
   const recordEnds = () => Promise.all([...channels.values()].map(c => c.call<number>('ends', null))).then(counts => counts.reduce((a, b) => a + b, 0));
-  return { board, server: board.server, tickNow, sessionControl, pollNow, recordEnds, stop };
+  return { board, server: board.server, startedAt, tickNow, sessionControl, pollNow, recordEnds, stop, emitReloadDone };
 }

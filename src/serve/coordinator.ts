@@ -55,6 +55,9 @@ export interface ServeOptions extends Omit<ServerOptions, 'loop' | 'workers'> {
   onProjectsReload?: (projects: ProjectConfig[]) => void;
   notifySender?: ChannelSender;
   notifyMachineDir?: string;
+  reload?: import('./reload.ts').ReloadRuntimeOptions | false;
+  /** Internal flag for takeover attempts: bind errors before listening do not write a crash record. */
+  takeoverAttempt?: boolean;
 }
 
 /** Entries of the event log after which something may be dispatchable (or no longer blocked): a tick follows soon. */
@@ -65,6 +68,7 @@ const OWN_ACTORS = new Set(['serve', 'tick']);
 export interface Serve {
   board: Board;
   server: Server;
+  startedAt?: string;
   /** Runs one tick for every project now (the loop and the event trigger call this). */
   tickNow(source: 'schedule' | 'finish' | 'event' | 'start'): void;
   /** Looks at the event logs, the dispatch tables and the configuration files now (the timer does it every `eventMs`). */
@@ -72,6 +76,8 @@ export interface Serve {
   /** Records the end of runs whose process is gone, now; returns how many. */
   recordEnds(): number | Promise<number>;
   sessionControl(project: string, action: 'start' | 'stop'): Promise<ProducerSessionStatus>;
+  stopStarting?(): void;
+  drain?(timeoutMs?: number): Promise<void>;
   stop(): void | Promise<void>;
 }
 
@@ -109,12 +115,16 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
   board.ctx.sessionControl = (project, action) => sessionControl(project.id, action);
   // Interrupted turns are visible errors after a restart; never replay a possibly executed proposal.
   for (const project of options.projects) for (const message of directorMessages(project).filter(m => m.status === 'running')) updateDirectorMessage(project, message.id, { status: 'error', error: 'Producer chat was interrupted; send a new message to retry.' });
+  let stopped = false;
+  const chatting = new Set<Promise<unknown>>();
   const chatTimer = setInterval(() => {
+    if (stopped) return;
     for (const project of options.projects) {
       if (!directorMessages(project).some(m => m.status === 'queued')) continue;
       const guest = producerSession(project, ordersFor(project), undefined, options.probes, options.workers.file);
       sessions.set(project.id, guest);
-      void guest.processChat().then(() => { board.invalidate();  }).catch(e => options.print(String(e)));
+      const job = guest.processChat().then(() => { board.invalidate(); }).catch(e => options.print(String(e))).finally(() => chatting.delete(job));
+      chatting.add(job);
     }
   }, 250);
   chatTimer.unref();
@@ -200,7 +210,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
 
   let ticking = false;
   const tickNow = (source: 'schedule' | 'finish' | 'event' | 'start'): void => {
-    if (ticking) return;
+    if (ticking || stopped) return;
     ticking = true;
     try {
       const lines: string[] = [];
@@ -405,26 +415,54 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
     loop.unref();
   }
 
-  const stop = () => {
+  const stopStarting = () => {
+    if (stopped) return;
+    stopped = true;
     clearInterval(watcher);
     clearInterval(poller);
-    if (eventTick) clearTimeout(eventTick);
-    if (loop) clearInterval(loop);
-    if (followUp) clearTimeout(followUp);
+    if (eventTick) { clearTimeout(eventTick); eventTick = undefined; }
+    if (loop) { clearInterval(loop); loop = undefined; }
+    if (followUp) { clearTimeout(followUp); followUp = undefined; }
     clearInterval(producerTimer);
     clearInterval(briefTimer);
     clearInterval(roundTimer);
     clearInterval(chatTimer);
     clearInterval(measureTimer);
     clearInterval(gatesTimer);
+  };
+
+  const drain = async (timeoutMs = 120_000): Promise<void> => {
+    stopStarting();
+    const inFlight = [...chatting, ...measuring.values(), ...gating.values()];
+    if (inFlight.length && timeoutMs > 0) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        Promise.allSettled(inFlight),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, timeoutMs); timer.unref(); }),
+      ]).finally(() => { if (timer) clearTimeout(timer); });
+    }
+    const stoppedSessions = [...sessions.values()].map(session => session.stop());
+    if (stoppedSessions.length) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        Promise.allSettled(stoppedSessions),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, 10_000); timer.unref(); }),
+      ]).finally(() => { if (timer) clearTimeout(timer); });
+    }
+    for (const project of options.projects) unbindProjectMachineStore(project);
+    closeMachineStores();
+  };
+
+  const stop = () => {
+    stopStarting();
     const stoppedSessions = [...sessions.values()].map(session => session.stop());
     board.hub.stop();
     board.server.closeAllConnections();
     board.server.close();
-    return Promise.allSettled([...stoppedSessions, ...measuring.values(), ...gating.values()]).then(() => {
+    return Promise.allSettled([...stoppedSessions, ...chatting, ...measuring.values(), ...gating.values()]).then(() => {
       for (const project of options.projects) unbindProjectMachineStore(project);
       closeMachineStores();
     });
   };
-  return { board, server: board.server, tickNow, pollNow, recordEnds, sessionControl, stop };
+  return { board, server: board.server, tickNow, pollNow, recordEnds, sessionControl, stopStarting, drain, stop };
 }
