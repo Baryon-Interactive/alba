@@ -1,6 +1,6 @@
 // Made-up data for `pnpm dev:mock` (a neutral demo project; nothing here comes from a real project).
 import type {
-  CheckResult, Decision, DecisionEntry, DiffFile, Lesson, OrderDefinition, OrderEvent, MonitorView, OrderSpend, Overview, ProgressView, ProjectInfo, ResourceView, QuotaPoint, Quote, Question, Report, Run, Stage, WaitingFor, Worker,
+  CheckResult, Decision, DecisionEntry, DiffFile, Lesson, OrderAction, OrderDefinition, OrderEvent, MonitorView, OrderSpend, Overview, ProgressView, ProjectInfo, ResourceView, QuotaPoint, Quote, Question, Report, Run, Stage, WaitingFor, Worker,
 } from '@api';
 import { mockDecisions, mockLessons } from './extra-data.ts';
 import { hasLibrary, pendingPicks } from './library-data.ts';
@@ -37,7 +37,7 @@ export interface MockProject {
 const MIN = 60_000;
 export const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 
-const ACTIONS: Record<Stage, ('queue' | 'hold' | 'release' | 'cancel' | 'approve' | 'rework' | 'answer' | 'run' | 'stop')[]> = {
+const ACTIONS: Record<Stage, OrderAction[]> = {
   cancelled: [], merged: [], held: ['run', 'release', 'cancel'], 'awaiting-user': ['answer', 'cancel', 'hold'],
   'awaiting-review': ['approve', 'rework', 'cancel'], blocked: ['rework', 'queue', 'cancel'], failed: ['rework', 'queue', 'cancel'],
   dropped: ['queue', 'cancel'], running: ['stop', 'hold', 'cancel'], monitoring: ['hold', 'cancel'], idle: ['queue', 'hold', 'cancel'],

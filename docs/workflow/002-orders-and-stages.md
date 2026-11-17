@@ -9,7 +9,7 @@ The stage of an order is computed from stored facts by one pure function (`infer
 | # | Stage | Who is being waited for | Condition |
 |---|---|---|---|
 | 1 | `cancelled` | nobody | the last relevant action is `cancel` |
-| 2 | `merged` | nobody | approved and not sent back |
+| 2 | `merged` | nobody | approved or closed (`merged-elsewhere`, `done-by-lead`), and not sent back |
 | 3 | `held` | a person, to release | `hold` without a later `release` |
 | 4 | `awaiting-user` | a person, to answer or to click a card | the current report is `waiting` and has a question (`waiting_for`: `answer` unless the report or the table's status word says `card`; document 011) |
 | 5 | `awaiting-review` | a person, to review | the current report is `ready` |
@@ -27,7 +27,7 @@ A report is *current* only if no `queue`, `rework` or `answer` action and no run
 
 ## 2. Human actions
 
-`queue`, `cancel`, `hold`/`release`, `stop` (end the open run's processes and hold the order; document 005), `approve` (the order is merged) `rework --note` (send it back; the note goes to the next run) and `answer` (the order waits on a worker's question: the answer goes to the next run, in the same conversation when the engine can continue it; document 005). Which are allowed depends on the stage (`actionProblem`): `approve` needs `awaiting-review` (or `idle` with `--override`) and no open run: a run that is still going could change the branch under the approval (the JSON interface offers it only for `awaiting-review`); `answer` is refused while the order waits for a card; `rework` is refused for merged or cancelled orders; `release` only for held ones; `stop` only with an open run. `hold`, `stop` and `cancel` of a running order stop its process and everything under it after checking its identity (a cancel leaves a process it cannot verify alone). Everything else is a fact recorded by a worker or by the tick.
+`queue`, `cancel`, `hold`/`release`, `stop` (end the open run's processes and hold the order; document 005), `approve` (the order is merged), `close` (`merged-elsewhere` with a commit on the base branch, or `done-by-lead` with a note of at least 10 characters; marks the order merged and clears `cancelled` without counting a worker run; document 006), `rework --note` (send it back; the note goes to the next run) and `answer` (the order waits on a worker's question: the answer goes to the next run, in the same conversation when the engine can continue it; document 005). Which are allowed depends on the stage (`actionProblem`): `approve` needs `awaiting-review` (or `idle` with `--override`) and no open run: a run that is still going could change the branch under the approval (the JSON interface offers it only for `awaiting-review`); `close` is allowed from every stage except `running`, `monitoring` (stop the run first) and `merged`; `answer` is refused while the order waits for a card; `rework` is refused for merged or cancelled orders; `release` only for held ones; `stop` only with an open run. `hold`, `stop` and `cancel` of a running order stop its process and everything under it after checking its identity (a cancel leaves a process it cannot verify alone). Everything else is a fact recorded by a worker or by the tick.
 
 `alba orders ready` lists orders in `queued` whose `needs` are all merged.
 

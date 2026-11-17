@@ -8,6 +8,8 @@ import { ORDER_ACTIONS, type OrderDetail, type OrderEvent, type OrderSummary, ty
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Input, Label, Select, Textarea } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/misc';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ActionButtons, ActionDialog } from '@/components/ActionDialog';
@@ -21,8 +23,8 @@ import { OrderSkillsPanel, RoutePanel, RunRoutingNote } from '@/components/Routi
 import { Empty, ErrorBox, Section, StageBadge, TagLink, UsageText } from '@/components/common';
 import { OrderBodyDialog, OrderDefinitionEdit } from '@/components/OrderEdit';
 import { draftKey, hasDraft } from '@/lib/drafts';
-import { useOrder, useOrders, useProjectId, useRoute } from '@/lib/queries';
-import { stageLabel, visibleActions, waitingFor } from '@/lib/stages';
+import { errorText, useAct, useOrder, useOrders, useProjectId, useRoute } from '@/lib/queries';
+import { actionExplain, actionLabel, stageLabel, visibleActions, waitingFor } from '@/lib/stages';
 import { ago, dateTime, duration } from '@/lib/format';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -234,10 +236,58 @@ function Timeline({ d }: { d: OrderDetail }) {
   );
 }
 
+function CloseOrderDialog({ project, tag, open, onOpenChange }: { project: string; tag: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const act = useAct(project);
+  const [how, setHow] = useState<'merged-elsewhere' | 'done-by-lead'>('merged-elsewhere');
+  const [commit, setCommit] = useState('');
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    if (open) { setHow('merged-elsewhere'); setCommit(''); setNote(''); act.reset(); }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const blocked = how === 'merged-elsewhere' ? !commit.trim() : note.trim().length < 10;
+  const submit = () => {
+    act.mutate(
+      { tag, action: 'close', how, ...(commit.trim() ? { commit: commit.trim() } : {}), ...(note.trim() ? { note: note.trim() } : {}) },
+      { onSuccess: () => onOpenChange(false) },
+    );
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle>{t('{action}: {tag}?', { action: actionLabel('close'), tag })}</DialogTitle>
+        <DialogDescription>{actionExplain('close')}</DialogDescription>
+        <div className="grid gap-1.5">
+          <Label>{t('How was it closed?')}</Label>
+          <Select value={how} onChange={e => setHow(e.target.value as 'merged-elsewhere' | 'done-by-lead')}>
+            <option value="merged-elsewhere">{t('Merged elsewhere on the base branch')}</option>
+            <option value="done-by-lead">{t('Done by hand by the lead')}</option>
+          </Select>
+        </div>
+        <div className="grid gap-1.5">
+          <Label>{how === 'merged-elsewhere' ? t('Commit or ref on the base branch (required)') : t('Commit or ref on the base branch (optional)')}</Label>
+          <Input value={commit} onChange={e => setCommit(e.target.value)} placeholder="abc1234" className="font-mono text-[13px]" />
+        </div>
+        <div className="grid gap-1.5">
+          <Label>{how === 'done-by-lead' ? t('Note (at least 10 characters)') : t('Note (optional)')}</Label>
+          <Textarea value={note} onChange={e => setNote(e.target.value)} className="min-h-24 font-mono text-[13px]" />
+        </div>
+        {act.isError && <ErrorBox error={errorText(act.error)} />}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('Back')}</Button>
+          <Button disabled={blocked || act.isPending} onClick={submit}>
+            {act.isPending ? t('Working…') : t('Confirm: {verb}', { verb: actionLabel('close') })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OrderPage() {
   const project = useProjectId();
   const { tag = '' } = useParams();
   const [params, setParams] = useSearchParams();
+  const [closing, setClosing] = useState(false);
   const q = useOrder(project, tag);
   const { hash } = useLocation();
   useEffect(() => {
@@ -255,6 +305,8 @@ export function OrderPage() {
   const wanted = ORDER_ACTIONS.find(a => a === params.get('do'));
   const closeAsk = () => setParams(p => { const n = new URLSearchParams(p); n.delete('do'); return n; }, { replace: true });
   const hasDiff = !!d.order.branch || !!d.worktree || d.stage === 'awaiting-review';
+  const visible = visibleActions(d.stage, d.actions).filter(a => a !== 'answer');
+  const closeIdx = visible.indexOf('close');
 
   return (
     <div>
@@ -266,13 +318,18 @@ export function OrderPage() {
           <p className="mt-1 text-sm text-muted-foreground">{stageLabel(d.stage, d.waitingFor)} — {d.why}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} only={visibleActions(d.stage, d.actions).filter(a => a !== 'answer')} noBranch={!d.order.branch} />
+          <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} only={closeIdx < 0 ? visible : visible.slice(0, closeIdx)} noBranch={!d.order.branch} />
+          {closeIdx >= 0 && <Button size="sm" variant="outline" onClick={() => setClosing(true)}>{actionLabel('close')}</Button>}
+          {closeIdx >= 0 && visible.slice(closeIdx + 1).length > 0 && <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} only={visible.slice(closeIdx + 1)} noBranch={!d.order.branch} />}
           {d.actions.includes('answer') && <ActionButtons project={project} tag={tag} actions={d.actions} only={['answer']} context={[...d.reports].reverse().find(r => r.question)?.question} />}
           {d.order.kind === 'intake' && <Button asChild size="sm" variant="outline"><Link to={`/p/${encodeURIComponent(project)}/intake/${encodeURIComponent(tag)}`}>{t('Intake review')}</Link></Button>}
         </div>
       </div>
 
-      {wanted && d.actions.includes(wanted) && (
+      {(closing || (wanted === 'close' && d.actions.includes('close'))) && (
+        <CloseOrderDialog project={project} tag={tag} open onOpenChange={o => { if (!o) { setClosing(false); if (wanted === 'close') closeAsk(); } }} />
+      )}
+      {wanted && wanted !== 'close' && d.actions.includes(wanted) && (
         <ActionDialog project={project} tag={tag} action={wanted} open onOpenChange={o => !o && closeAsk()} context={wanted === 'answer' ? [...d.reports].reverse().find(r => r.question)?.question : undefined} noBranch={!d.order.branch} />
       )}
       {d.stage === 'awaiting-review' && <MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} />}

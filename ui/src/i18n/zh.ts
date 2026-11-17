@@ -1680,4 +1680,11 @@ export const zh: Record<string, string> = {
   'Bound': '范围',
   'Trend': '趋势',
   'Reference · Capture · Cell diff': '参考图 · 抓图 · 分格亮度差',
+  'Marks the order merged without counting a worker run: either the work landed in another commit on the base branch, or the lead finished it by hand.': '将工单记为已合并且不计入工人派工统计：其工作已在基线分支的其他提交中完成，或已由负责人手工完成。',
+  'How was it closed?': '关闭方式',
+  'Merged elsewhere on the base branch': '已在基线分支的其他提交中合并',
+  'Done by hand by the lead': '由负责人手工完成',
+  'Commit or ref on the base branch (required)': '基线分支上的提交或引用（必填）',
+  'Commit or ref on the base branch (optional)': '基线分支上的提交或引用（可选）',
+  'Note (at least 10 characters)': '说明（至少 10 个字符）',
 };

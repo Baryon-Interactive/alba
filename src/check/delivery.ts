@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { ChecksConfig, ProjectConfig } from '../config.ts';
 import type { OrderDoc } from '../orders/model.ts';
+import { stateStore } from '../orders/backend.ts';
 import { parseReportFile } from '../orders/report.ts';
 import { baseRefOf } from '../run/worktree.ts';
 import { findOrderFile } from '../run/prompt.ts';
@@ -93,6 +94,13 @@ export function deliveryChecks(project: ProjectConfig, doc: OrderDoc, worktree: 
     const head = git(worktree, ['rev-parse', 'HEAD']);
     const revision = report?.revision;
     const resolved = revision && /^[0-9a-f]{7,40}$/i.test(revision) ? git(worktree, ['rev-parse', '--verify', `${revision}^{commit}`]) : undefined;
+    if (resolved && resolved !== head) {
+      const store = project.state.backend === 'sqlite' && !existsSync(path.join(project.state_dir, 'state.sqlite')) && existsSync(path.join(project.state_dir, 'events.jsonl'))
+        ? stateStore({ state_dir: project.state_dir, state: { backend: 'files' } })
+        : stateStore(project);
+      const merged = [...store.events({ tag: doc.order.tag })].reverse().find(e => e.type === 'base-merged-by-alba' && e.data?.to === head && e.data?.from === resolved);
+      if (merged) return { ok: true, detail: `Reported revision ${resolved} was merged with ${String(merged.data?.base ?? 'base')} by Alba into HEAD ${head}.` };
+    }
     return { ok: !!resolved && resolved === head, detail: resolved === head ? `Revision ${head} is HEAD.` : `Reported revision ${revision ?? '(missing)'}; branch HEAD ${head}. Report the current HEAD revision.` };
   });
   const base = baseRefOf(project);

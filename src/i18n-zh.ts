@@ -992,6 +992,21 @@ export const zh: Record<string, string> = {
   // visual targets and rounds
   '{file}: "verify.max_visual_rounds" must be a whole number >= 0.': '{file}：“verify.max_visual_rounds”必须是大于等于 0 的整数。',
   'Usage: alba review <TAG> approve|rework|sheet|target [--note text] [--branch b] [--out file.png] [--json]': '用法：alba review <TAG> approve|rework|sheet|target [--note text] [--branch b] [--out file.png] [--json]',
+  // lead closures and base merge
+  'closed by the lead: merged elsewhere in {sha}': '负责人已关闭：工作已在 {sha} 中另行合并',
+  'closed by the lead: done by hand': '负责人已关闭：已由人工完成',
+  'cannot close an order that is {stage}; stop the run first': '无法关闭处于 {stage} 阶段的工单；请先停止派工',
+  'cannot close an order that is {stage} (allowed from: {from})': '无法关闭处于 {stage} 阶段的工单（允许阶段：{from}）',
+  'Closing with done-by-lead needs a note of at least 10 characters.': '以 done-by-lead 关闭工单需要至少 10 个字符的说明。',
+  'Closing with merged-elsewhere needs a commit on the base branch.': '以 merged-elsewhere 关闭工单需要基线分支上的提交。',
+  'Run {run} of {tag} is still open; stop the run first before closing.': '{tag} 的派工 {run} 仍在进行；请先停止派工再关闭。',
+  'Close needs how: merged-elsewhere or done-by-lead.': '关闭工单需要指定方式：merged-elsewhere 或 done-by-lead。',
+  '{tag}: closing with merged-elsewhere needs a commit or ref on the base branch.': '{tag}：以 merged-elsewhere 关闭需要提供基线分支上的提交或引用。',
+  '{tag}: closing with done-by-lead needs a note of at least 10 characters.': '{tag}：以 done-by-lead 关闭需要至少 10 个字符的说明。',
+  '{tag}: "{ref}" is not a valid commit or ref.': '{tag}：“{ref}”不是有效的提交或引用。',
+  '{tag}: commit or ref "{ref}" could not be resolved in {root}.': '{tag}：在 {root} 中无法解析提交或引用“{ref}”。',
+  '{tag}: commit {sha} is not an ancestor of {base}.': '{tag}：提交 {sha} 不在基线 {base} 上。',
+  '{file}: "dispatch.auto_merge_base" must be true or false.': '{file}：“dispatch.auto_merge_base”必须是 true 或 false。',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

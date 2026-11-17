@@ -60,6 +60,7 @@ export const actionLabel = (a: OrderAction): string => {
     case 'answer': return t('Answer');
     case 'run': return t('Run now');
     case 'stop': return t('Stop');
+    case 'close': return t('Close');
   }
 };
 
@@ -74,6 +75,7 @@ export const actionExplain = (a: OrderAction): string => {
     case 'answer': return t('Your answer goes to the worker. The original session is continued when the engine can, otherwise a new run starts with the answer.');
     case 'run': return t('Starts the order now on the worker you choose (a held order too), without waiting for a tick.');
     case 'stop': return t('Ends the run now: the worker process and every process it started. The order is held, so no tick starts it again; start it on a worker of your choice with Run now, or release it.');
+    case 'close': return t('Marks the order merged without counting a worker run: either the work landed in another commit on the base branch, or the lead finished it by hand.');
   }
 };
 
@@ -82,14 +84,14 @@ export const actionExplain = (a: OrderAction): string => {
  * be approved (the person may know better), but the console offers approve only where a review is waiting.
  */
 const STAGE_BUTTONS: Record<Stage, OrderAction[]> = {
-  'awaiting-review': ['approve', 'rework', 'hold', 'cancel'],
-  'awaiting-user': ['answer', 'hold', 'cancel'],
+  'awaiting-review': ['approve', 'rework', 'hold', 'close', 'cancel'],
+  'awaiting-user': ['answer', 'hold', 'close', 'cancel'],
   running: ['stop', 'cancel'],
   monitoring: ['hold', 'cancel'],
-  blocked: ['rework', 'queue', 'cancel'],
-  failed: ['rework', 'queue', 'cancel'],
-  dropped: ['queue', 'cancel'],
-  idle: ['queue', 'hold', 'cancel'],
+  blocked: ['rework', 'queue', 'close', 'cancel'],
+  failed: ['rework', 'queue', 'close', 'cancel'],
+  dropped: ['queue', 'close', 'cancel'],
+  idle: ['queue', 'hold', 'close', 'cancel'],
   queued: ['run', 'hold', 'cancel'],
   'waiting-needs': ['hold', 'cancel'],
   held: ['run', 'release', 'cancel'],
