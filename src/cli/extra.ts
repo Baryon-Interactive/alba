@@ -2,6 +2,7 @@ import type { ProjectConfig } from '../config.ts';
 import { applyClean, formatClean, planClean, systemClean } from '../clean/clean.ts';
 import { gate, formatQuotes, quoteList, toQuote } from '../credits/credits.ts';
 import { formatLessons, lessonsFor, lessonsForOrder, readLessons } from '../lessons/lessons.ts';
+import { formatLessonStats, lessonStats } from '../lessons/stats.ts';
 import { checkOptionImages } from '../evidence/evidence.ts';
 import { fail, t } from '../i18n.ts';
 import { systemProbes } from '../tick/gather.ts';
@@ -15,6 +16,7 @@ export interface ExtraValues {
   text?: string; note?: string; source?: string; who?: string; json?: boolean; choice?: string; id?: string; order?: string; date?: string;
   default?: boolean; option?: string[]; apply?: boolean; check?: boolean; topic?: string; all?: boolean;
   tag?: string; status?: string; service?: string; unit?: string; 'unit-price'?: string; quantity?: string; cap?: string; amount?: string; what?: string; need?: string; key?: string;
+  since?: string; kind?: string;
 }
 
 /** `label | note | image;image`: one option given on the command line. */
@@ -68,9 +70,14 @@ export function runExtra(group: string, command: string | undefined, rest: strin
       return t('{tag}: {id} answered, option {n}: {label}.', { tag: orders.get(command).order.tag, id: question.id, n: choice, label: question.options[choice - 1].label });
     }
     case 'lessons': {
-      // alba lessons [--tag a,b] [--json]: the library, or the lessons that match the tags
-      const all = readLessons(cfg.lessons, cfg);
+      // alba lessons [--tag a,b] [--order TAG] [--all] [--json] | alba lessons stats [--since 30d] [--kind k] [--json]
+      if (command && command !== 'stats') fail('Usage: alba lessons [--tag a,b] [--order TAG] [--all] [--json] | alba lessons stats [--since 30d] [--kind k] [--json]');
       if (!cfg.lessons) return t('{file} has no "lessons" section.', { file: cfg.file });
+      const all = readLessons(cfg.lessons, cfg);
+      if (command === 'stats') {
+        const report = lessonStats(cfg, orders.all(), { since: values.since ?? '30d', kind: values.kind, lessons: all });
+        return values.json ? JSON.stringify(report, null, 2) : formatLessonStats(report);
+      }
       // --order TAG: what that order's prompt would carry; --tag: by tags; --all: also the lessons of other projects
       const items = values.order ? lessonsForOrder(cfg, orders.get(values.order), all) : values.tag ? lessonsFor(all.filter(l => l.appliesToProject), values.tag.split(',')) : values.all ? all : all.filter(l => l.appliesToProject);
       return values.json ? JSON.stringify({ project: cfg.id, count: items.length, items }, null, 2) : formatLessons(items);

@@ -40,7 +40,7 @@ import { formatReport } from '../tick/plan.ts';
 import { prewarmEndpointProbes, systemProbes, tick } from '../tick/gather.ts';
 import { executeTick } from '../tick/execute.ts';
 import { startRun } from '../run/launch.ts';
-import { lessonsForOrder } from '../lessons/lessons.ts';
+import { lessonRunFor, selectLessons } from '../lessons/select.ts';
 import { promptFor } from '../run/prompt.ts';
 import { syncOrders } from '../sync/sync.ts';
 import { writeBack } from '../table/write.ts';
@@ -174,7 +174,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
                                              record a decision in the project's ledger (a number in the reviewer's range, or in the range reserved on --order)
   decisions [--json] [--topic t] [--check]   the ledger (with the whole file when decisions.section is "*"), the next number, and the ranges reserved on open orders; --check lists numbers that appear in more than one place
   ask <TAG> --text "<question>" --option "label | note | image;image" ...   2 to 4 options, the recommended one first; the order waits for the answer
-  lessons [--tag a,b] [--json]               the lessons library (Markdown files in "lessons: dir"), or the lessons that match tags; "alba run" and "alba prompt" put the ones matching an order's tags into its prompt
+  lessons [--tag a,b] [--order TAG] [--all] [--json] | lessons stats [--since 30d] [--kind k] [--json]   the lessons library, an order's matches, or per-lesson first-pass acceptance stats
   credits list [--status s] | quote <TAG> --service s --cap N [--unit u] [--unit-price p --quantity n] [--note t] | approve <TAG> <C1> --cap N [--note t]
           | reject <TAG> <C1> [--note t] | spend <TAG> <C1> --amount N --what t [--key k] | gate <TAG> <C1> --need N [--key k]
                                              quotes for paid resources: the worker asks, a person approves with a cap, "gate" exits 1 unless the approved quote has N left
@@ -286,6 +286,13 @@ function show(orders: Orders, tag: string): string {
   }
   out.push('', t('Runs:'));
   out.push(doc.runs.length ? table(['ID', 'WORKER', 'STARTED', 'ENDED', 'OUTCOME', 'NOTE'], doc.runs.map(r => [r.id, r.worker, r.started, r.ended ?? '', r.limit === 'unreachable' ? t('endpoint unreachable') : (r.outcome ?? (r.ended ? '' : 'open')), r.note ?? ''])) : '  ' + t('(none)'));
+  for (const r of doc.runs) {
+    if (!r.prompt_bytes) continue;
+    const kb = (n: number) => n === 0 ? '0' : (n / 1024).toFixed(1);
+    const pb = r.prompt_bytes;
+    const counts = r.lessons ? ` (${r.lessons.mounted.length} in, ${r.lessons.listed.length} listed)` : '';
+    out.push(`  ${r.id}  prompt ${kb(pb.total)} KB: lessons ${kb(pb.lessons)}${counts} | rules ${kb(pb.rules)} | skills ${kb(pb.skills)} | notes ${kb(pb.notes)} | order ${kb(pb.order)} | alba ${kb(pb.alba)}`);
+  }
   const endedWithDetail = doc.runs.filter(r => r.end);
   if (endedWithDetail.length) {
     for (const r of endedWithDetail) {
@@ -775,7 +782,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
     let promptWorkers: ReturnType<typeof workersOf> | undefined;
     try { promptWorkers = workersOf(values.workers, cfg); } catch { promptWorkers = undefined; }
     const role = resolveRole(effectiveRoles(cfg, promptWorkers), { ...doc.order, kind: routingOf(cfg, doc).kind || doc.order.kind });
-    const text = withRoleRules(promptFor(cfg.work_orders, doc, lessonsForOrder(cfg, doc), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines), roleRules(role));
+    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines), roleRules(role));
     if (values.out) { writeFileSync(values.out, text, 'utf8'); return t('Wrote {file}', { file: values.out }); }
     return text.trimEnd();
   }
