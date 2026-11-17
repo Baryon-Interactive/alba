@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a>
 </p>
 
 # Alba
@@ -27,7 +27,7 @@ Alba replaces ad-hoc chat loops with four layers of local control:
 
 - **Work orders, templates, and preflight.** Every task is a Markdown order with intent, dependencies, `allow:`/`deny:` file boundaries, and acceptance criteria. Per-kind templates (`ue`, `code`, `docs`) fill missing sections on creation, and preflight checks hold malformed orders before a worker run is spent. Card stages (`queued`, `running`, `monitoring`, `awaiting-user`, `awaiting-review`, `merged`, `cancelled`) are computed from append-only facts in SQLite, so cards cannot drift out of sync with Git. [Orders, templates and preflight](docs/workflow/002-orders-and-stages.md)
 - **One worktree per run and atomic end receipts.** Each worker attempt gets its own branch and Git worktree. Finished runs write atomic exit receipts classifying exact end causes (`report`, `output-limit`, `context-limit`, `stream-cut-mid-turn`, `quota`, `vanished`), and any non-report exit snapshots uncommitted files into `refs/alba/wip/*` without touching `git stash`. [Runs and resume](docs/workflow/005-run-and-resume.md)
-- **Capture recipes and visual target convergence.** A clean exit code approves nothing. With `capture.recipes`, Alba builds and launches the order's worktree itself under a machine lock, runs blank/dark/duplicate/luminance/motion gates, and places **Alba's captures** ahead of worker screenshots. Orders with a `## Target` block compare shots against base-commit reference images (`luminance`, `saturation`, 512-bin RGB `histogram`, `16x9` `structure`, and `motion`), generate a three-panel diff sheet, automatically bounce misses up to `max_visual_rounds`, and escalate `Not converging` with round trend history when progress stalls. [Capture recipes](docs/workflow/037-capture-recipes.md), [visual targets](docs/workflow/038-visual-targets.md), [review](docs/workflow/006-review.md), [nightly gates](docs/operations/029-nightly-gates.md)
+- **Capture recipes, visual targets, and cross-model review.** A clean exit code approves nothing. Alba can automatically merge the base branch into clean worktrees before delivery lint, build and capture the order's worktree itself under a machine lock (`capture.recipes`), and place **Alba's captures** ahead of worker screenshots. Orders with a `## Target` block compare shots against base-commit reference images (`luminance`, `saturation`, 512-bin RGB `histogram`, `16x9` `structure`, and `motion`), generate a three-panel diff sheet, automatically bounce misses up to `max_visual_rounds`, and escalate `Not converging` when progress stalls. Optional **first-pass review** dispatches a read-only reviewer from a different model family than the delivering worker before human review. [Capture recipes](docs/workflow/037-capture-recipes.md), [visual targets](docs/workflow/038-visual-targets.md), [first-pass review](docs/workflow/039-first-pass-review.md), [review](docs/workflow/006-review.md), [nightly gates](docs/operations/029-nightly-gates.md)
 
 ### 2. Agent-agnostic routing, circuit breakers, and bounded lessons
 
@@ -170,7 +170,7 @@ art:
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md). Key references: [philosophy](docs/concepts/000-philosophy.md), [adopt Alba](docs/concepts/033-adopt-alba.md), [capture recipes](docs/workflow/037-capture-recipes.md), [visual targets](docs/workflow/038-visual-targets.md), [machines](docs/operations/028-machines.md), [Unreal module](docs/engines/unreal.md), [run editors](docs/workers/032-run-editors.md), [tool plugins](docs/workers/031-tool-plugins.md), [worker adapters](docs/worker-adapters.md), [HTTP API](docs/console/010-api.md), and [contributing](CONTRIBUTING.md).
+Start at the [documentation index](docs/README.md). Key references: [philosophy](docs/concepts/000-philosophy.md), [adopt Alba](docs/concepts/033-adopt-alba.md), [capture recipes](docs/workflow/037-capture-recipes.md), [visual targets](docs/workflow/038-visual-targets.md), [first-pass review](docs/workflow/039-first-pass-review.md), [machines](docs/operations/028-machines.md), [Unreal module](docs/engines/unreal.md), [run editors](docs/workers/032-run-editors.md), [tool plugins](docs/workers/031-tool-plugins.md), [worker adapters](docs/worker-adapters.md), [HTTP API](docs/console/010-api.md), and [contributing](CONTRIBUTING.md).
 
 ## Data and privacy
 

@@ -51,11 +51,12 @@ test('release scan covers new files and each prohibited class without reading ig
     mkdirSync(path.join(root, 'ui/src/i18n'), { recursive: true });
     writeFileSync(path.join(root, 'ui/src/i18n/zh.ts'), '\u4e2d');
     writeFileSync(path.join(root, 'README.zh-CN.md'), '# Alba \u4e2d\u6587\n');
-    writeFileSync(path.join(root, 'README.md'), '**English** | [\u7b80\u4f53\u4e2d\u6587](README.zh-CN.md)\n');
+    writeFileSync(path.join(root, 'README.ja.md'), '# Alba \u65e5\u672c\u8a9e\u306e\u6848\u5185\n');
+    writeFileSync(path.join(root, 'README.md'), '**English** | [\u7b80\u4f53\u4e2d\u6587](README.zh-CN.md) | [\u65e5\u672c\u8a9e](README.ja.md)\n');
     assert.deepEqual(auditSource(root).problems, []);
-    writeFileSync(path.join(root, 'README.md'), '# Alba \u4e2d\u6587\n');
+    writeFileSync(path.join(root, 'README.md'), '# Alba \u30c6\u30b9\u30c8\n');
     assert.ok(auditSource(root).problems.some(p => p.includes('README.md: translation outside its catalog')));
-    writeFileSync(path.join(root, 'README.md'), '**English** | [\u7b80\u4f53\u4e2d\u6587](README.zh-CN.md)\n');
+    writeFileSync(path.join(root, 'README.md'), '**English** | [\u7b80\u4f53\u4e2d\u6587](README.zh-CN.md) | [\u65e5\u672c\u8a9e](README.ja.md)\n');
     writeFileSync(path.join(root, 'ui/src/i18n/index.ts'), '\u4e2d');
     assert.ok(auditSource(root).problems.length, 'non-catalog files in the translation directory are scanned');
   } finally { rmSync(root, { recursive: true, force: true }); }

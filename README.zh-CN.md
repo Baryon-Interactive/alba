@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <strong>简体中文</strong>
+  <a href="README.md">English</a> | <strong>简体中文</strong> | <a href="README.ja.md">日本語</a>
 </p>
 
 # Alba
@@ -27,7 +27,7 @@ Alba 用四层本地工程控制取代松散的聊天循环：
 
 - **工单模板与派工前预检（Preflight）。** 每项任务都是一份带明确意图、前置依赖、`allow:`/`deny:` 文件边界与验收标准的 Markdown 工单。创建工单时可按种类（`ue`、`code`、`docs`）自动补齐模板段落；派工前自动预检缺失验收项、越界路径与前置依赖，不合格工单直接挂起（`preflight-held`），不白白消耗运行名额。看板阶段（`queued`、`running`、`monitoring`、`awaiting-user`、`awaiting-review`、`merged`、`cancelled`）完全由本地 SQLite 中的追加事实自动推算，卡片不可手动拖拽。见 [工单、模板与预检](docs/workflow/002-orders-and-stages.md)。
 - **每次派工独立工作树与原子结束回执。** 每一次工人尝试（Run）都拥有独立分支与 Git 工作树；运行结束写入原子退出回执，精确区分正常提交报告、输出长度截断（`output-limit`）、上下文触顶（`context-limit`）、流中断、额度耗尽或进程消失，且所有非正常报告退出都会自动将未提交改动快照至 `refs/alba/wip/*`。见 [派工与续跑](docs/workflow/005-run-and-resume.md)。
-- **独立抓图配方（Capture Recipes）与视觉目标自动收敛（Visual Targets）。** 进程退出码为 `0` 不代表通过。配置 `capture.recipes` 后，Alba 会在机器锁下亲自编译并启动该工单的工作树，抓取指定镜头并执行黑屏、纯色、重复帧、亮度与帧间运动门禁，在审查卡片上将 **Alba 亲自抓取的画面**排在工人自报截图之前。工单还可声明 `## Target` 段落，直接从基线提交读取参考图（`git show <base>:<path>`，防止工人篡改目标图），综合测量亮度、HSV 饱和度、512 桶 RGB 直方图距离、`16x9` 网格结构对比度与运动量，生成“参考图 · 实拍图 · 网格差值图”三联对比表，在 `max_visual_rounds` 轮次内自动打回偏差项并追踪收敛趋势（`closer` / `farther` / `stalled`），连续停滞时自动升级为 `Not converging` 交由人工裁决。见 [抓图配方](docs/workflow/037-capture-recipes.md)、[视觉目标与自动收敛](docs/workflow/038-visual-targets.md)、[验收审查](docs/workflow/006-review.md)、[夜间门禁](docs/operations/029-nightly-gates.md)。
+- **独立抓图配方、视觉目标收敛与跨模型初审。** 进程退出码为 `0` 不代表通过。Alba 支持在审查检查前自动把基线分支合入干净工作树（`auto_merge_base`）；配置 `capture.recipes` 后，会在机器锁下亲自编译并启动该工单的工作树，抓取指定镜头并执行黑屏、纯色、重复帧、亮度与帧间运动门禁，在审查卡片上将 **Alba 亲自抓取的画面**排在工人自报截图之前。工单还可声明 `## Target` 段落，直接从基线提交读取参考图（`git show <base>:<path>`，防止工人篡改目标图），综合测量亮度、HSV 饱和度、512 桶 RGB 直方图距离、`16x9` 网格结构对比度与运动量，生成“参考图 · 实拍图 · 网格差值图”三联对比表，在 `max_visual_rounds` 轮次内自动打回偏差项并追踪收敛趋势（`closer` / `farther` / `stalled`），连续停滞时自动升级为 `Not converging` 交由人工裁决。还可开启**跨模型初审（First-pass review）**，自动指派与交付工人不同模型家族（`model_family`）的只读审查员先行把关。见 [抓图配方](docs/workflow/037-capture-recipes.md)、[视觉目标与自动收敛](docs/workflow/038-visual-targets.md)、[跨模型初审](docs/workflow/039-first-pass-review.md)、[验收审查](docs/workflow/006-review.md)、[夜间门禁](docs/operations/029-nightly-gates.md)。
 
 ### 2. 无关智能体框架的路由、熔断器与教训预算
 
@@ -170,7 +170,7 @@ art:
 
 ## 文档导航
 
-从 [文档总索引](docs/README.md) 开始阅读。常用参考：[设计哲学](docs/concepts/000-philosophy.md)、[接入自有项目](docs/concepts/033-adopt-alba.md)、[抓图配方](docs/workflow/037-capture-recipes.md)、[视觉目标收敛](docs/workflow/038-visual-targets.md)、[多机管理](docs/operations/028-machines.md)、[Unreal 模块](docs/engines/unreal.md)、[运行期编辑器池](docs/workers/032-run-editors.md)、[工具插件](docs/workers/031-tool-plugins.md)、[工人适配器规范](docs/worker-adapters.md)、[HTTP 接口](docs/console/010-api.md) 以及 [贡献指南](CONTRIBUTING.md)。
+从 [文档总索引](docs/README.md) 开始阅读。常用参考：[设计哲学](docs/concepts/000-philosophy.md)、[接入自有项目](docs/concepts/033-adopt-alba.md)、[抓图配方](docs/workflow/037-capture-recipes.md)、[视觉目标收敛](docs/workflow/038-visual-targets.md)、[跨模型初审](docs/workflow/039-first-pass-review.md)、[多机管理](docs/operations/028-machines.md)、[Unreal 模块](docs/engines/unreal.md)、[运行期编辑器池](docs/workers/032-run-editors.md)、[工具插件](docs/workers/031-tool-plugins.md)、[工人适配器规范](docs/worker-adapters.md)、[HTTP 接口](docs/console/010-api.md) 以及 [贡献指南](CONTRIBUTING.md)。
 
 ## 数据与隐私
 

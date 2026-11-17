@@ -22,7 +22,8 @@
     "CHANGELOG.md",
     "NOTICE",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "README.ja.md"
   ],
   "scripts": {
     "alba": "node --disable-warning=ExperimentalWarning src/cli/main.ts",

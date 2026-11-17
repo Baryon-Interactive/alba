@@ -24,7 +24,7 @@ export function auditSource(root = path.resolve(import.meta.dirname, '..')) {
   const problems = [];
   const legacy = /\bg[s]f\b|game-studio-fact[o]ry|studio-o[s]/i;
   const internal = /\b(?:g[s]f|s[o]|al[b]a|a[l])\d+(?:\.\d+)?\b/i;
-  const cjk = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/u;
+  const cjk = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/u;
   const drive = /(?:^|["'\s(`=])[A-Za-z]:[\\/]/m;
   const home = /[\\/](?:home|Users)[\\/]/;
   const absolute = /(?:^|["'`\s=])(?:\/(?:tmp|var|private|Volumes|etc|opt|mnt|media|workspace|root|srv)\/|\\\\(?!\\)[A-Za-z0-9.-]+\\(?!\\))/m;
@@ -51,8 +51,10 @@ export function auditSource(root = path.resolve(import.meta.dirname, '..')) {
     catch { problems.push(`${file}: invalid UTF-8 text; remove binary data from text sources or declare a supported binary format`); continue; }
     if (legacy.test(text)) problems.push(`${file}: obsolete product or library name`);
     if (internal.test(text)) problems.push(`${file}: internal ticket identifier`);
-    const translation = file === 'README.zh-CN.md' || file === 'src/i18n-zh.ts' || /^ui\/src\/i18n\/(?:zh|machines|design-goals|independent-check|nightly-gates|producer-activity)\.ts$/.test(file);
-    const cjkScan = file === 'README.md' ? text.replace(/(?:\[\u7b80\u4f53\u4e2d\u6587\]\(README\.zh-CN\.md\)|<a href="README\.zh-CN\.md">\u7b80\u4f53\u4e2d\u6587<\/a>)/u, '') : text;
+    const translation = file === 'README.zh-CN.md' || file === 'README.ja.md' || file === 'src/i18n-zh.ts' || /^ui\/src\/i18n\/(?:zh|machines|design-goals|independent-check|nightly-gates|producer-activity)\.ts$/.test(file);
+    const cjkScan = file === 'README.md'
+      ? text.replace(/(?:\[\u7b80\u4f53\u4e2d\u6587\]\(README\.zh-CN\.md\)|<a href="README\.zh-CN\.md">\u7b80\u4f53\u4e2d\u6587<\/a>|\[\u65e5\u672c\u8a9e\]\(README\.ja\.md\)|<a href="README\.ja\.md">\u65e5\u672c\u8a9e<\/a>)/gu, '')
+      : text;
     if (!translation && cjk.test(cjkScan)) problems.push(`${file}: translation outside its catalog`);
     if (drive.test(text) || home.test(text) || absolute.test(text)) problems.push(`${file}: machine-specific absolute path`);
     if (username.test(text)) problems.push(`${file}: private username`);
