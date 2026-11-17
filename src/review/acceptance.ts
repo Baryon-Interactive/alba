@@ -19,6 +19,9 @@ import { globToRegExp, type CheckItem } from '../check/general.ts';
 import { deliveryChecks } from '../check/delivery.ts';
 import { findOrderFile } from '../run/prompt.ts';
 import { parseOrderSections } from '../verify/verify.ts';
+import { runTargetStep, type TargetResult } from '../verify/target-step.ts';
+import { applyTargetOutcome } from '../verify/target-rounds.ts';
+export type { TargetResult, TargetRow, TargetTrend, TargetBlockTrend } from '../verify/target.ts';
 import { acquireAcceptanceResources, releaseAcceptanceResources } from '../resources/leases.ts';
 import { independentChecks, needsIndependentCheck, assertIndependentCheckPassed, type IndependentCheck } from './independent.ts';
 
@@ -39,7 +42,7 @@ function acceptConfigFor(project: ProjectConfig, doc: OrderDoc): NonNullable<Pro
 }
 
 export interface ArtifactReceipt { path: string; size: number; sha256: string; modified: string; status?: 'refused'; reason?: string }
-export interface AcceptStepResult { name: string; status: 'passed' | 'failed' | 'skipped'; duration_ms: number; code?: number | null; tail: string; log?: string; issues?: string[]; classified?: number; blocks?: number; artifacts?: ArtifactReceipt[]; artifact_warnings?: string[]; truncated?: boolean; capture?: CaptureSummary }
+export interface AcceptStepResult { name: string; status: 'passed' | 'failed' | 'skipped'; duration_ms: number; code?: number | null; tail: string; log?: string; issues?: string[]; classified?: number; blocks?: number; artifacts?: ArtifactReceipt[]; artifact_warnings?: string[]; truncated?: boolean; capture?: CaptureSummary; target?: TargetResult[] }
 export interface AcceptanceTrial {
   id: string;
   fingerprint: string;
@@ -408,6 +411,7 @@ export function trialAcceptance(project: ProjectConfig, orders: Orders, tag: str
           if (cap.busy) result.retryable = true;
         }
       }
+      runTargetStep(project, orders, tag, result);
       if (result.status !== 'failed') result.status = 'passed';
     }
   } catch (e) { result.status = 'failed'; result.reason = errorText(e); if (interrupted(e)) result.retryable = true; }
@@ -473,7 +477,11 @@ export function acceptanceCard(project: ProjectConfig, orders: Orders, tag: stri
 export function attemptAcceptance(project: ProjectConfig, orders: Orders, tag: string): AcceptanceTrial | undefined {
   const doc = orders.get(tag);
   if (!acceptConfigFor(project, doc)) return undefined;
-  try { return trialAcceptance(project, orders, tag, false, false, 30 * 60 * 1000); }
+  try {
+    const trial = trialAcceptance(project, orders, tag, false, false, 30 * 60 * 1000);
+    applyTargetOutcome(project, orders, tag, trial);
+    return trial;
+  }
   catch (e) {
     const doc = orders.get(tag), reason = errorText(e), previous = latestAcceptanceTrial(orders, tag);
     if (previous?.reason === reason && previous.report === doc.reports.at(-1)?.seq) return previous;
