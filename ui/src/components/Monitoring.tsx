@@ -74,9 +74,13 @@ export function RotationNote({ r }: { r: Run }) {
 
 function Lease({ project, r, l }: { project: string; r: ResourceView; l: ResourceView['leases'][number] }) {
   const release = useReleaseLease(project);
+  const holderProject = l.project ?? project;
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
-      <TagLink project={project} tag={l.tag} />
+      <span className="inline-flex items-center gap-1">
+        {l.project && <span className="font-mono text-xs text-muted-foreground">{l.project}:</span>}
+        <TagLink project={holderProject} tag={l.tag} />
+      </span>
       <span className="text-muted-foreground tabular-nums">{t('held {time}', { time: minutes(l.heldMinutes) })}</span>
       {l.expired && <Badge tone="warning">{t('longer than its lease')}</Badge>}
       {l.run && <span className="text-xs text-muted-foreground">{l.run}</span>}
@@ -89,7 +93,7 @@ function Lease({ project, r, l }: { project: string; r: ResourceView; l: Resourc
   );
 }
 
-/** The shared resources of the project (`resources` in the project file): how many slots, who holds them, and a button to take back a lease that outlived its run. */
+/** The shared resources of the project (`resources` in the project file): scope, effective slots, holders, and the queue. */
 export function ResourcesSection() {
   const project = useProjectId();
   const q = useResources(project);
@@ -100,22 +104,48 @@ export function ResourcesSection() {
   return (
     <Section title={<><Layers className="size-4" />{t('Resources')}</>} count={list.length}>
       <div className="grid gap-3 xl:grid-cols-2">
-        {list.map(r => (
-          <Card key={r.name} className="overflow-hidden">
-            <div className="p-3.5 pb-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[13px] font-semibold">{r.name}</span>
-                {r.exclusive && <Badge tone="warning">{t('exclusive: blocks {kinds}', { kinds: r.blocks.join(', ') || t('nothing') })}</Badge>}
-                <span className="ml-auto text-xs text-muted-foreground tabular-nums">{t('{used} of {slots} in use', { used: r.used, slots: r.slots })}</span>
+        {list.map(r => {
+          const scope = r.scope ?? 'project';
+          const queue = r.queue ?? [];
+          return (
+            <Card key={r.name} className="overflow-hidden">
+              <div className="p-3.5 pb-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[13px] font-semibold">{r.name}</span>
+                  <Badge tone={scope === 'machine' ? 'info' : 'neutral'}>{scope === 'machine' ? t('machine') : t('project')}</Badge>
+                  {r.exclusive && <Badge tone="warning">{t('exclusive: blocks {kinds}', { kinds: r.blocks.join(', ') || t('nothing') })}</Badge>}
+                  <span className="ml-auto text-xs text-muted-foreground tabular-nums">{t('{used} of {slots} in use', { used: r.used, slots: r.slots })}</span>
+                </div>
+                {r.slotMismatch && <p className="mt-1 text-xs text-warning">{r.slotMismatch}</p>}
+                {r.note && <p className="mt-1 text-xs text-muted-foreground">{r.note}</p>}
+                <Progress value={usedPercent(r.used, r.slots)} tone={r.used >= r.slots ? 'warn' : 'ok'} className="mt-2" />
               </div>
-              {r.note && <p className="mt-1 text-xs text-muted-foreground">{r.note}</p>}
-              <Progress value={usedPercent(r.used, r.slots)} tone={r.used >= r.slots ? 'warn' : 'ok'} className="mt-2" />
-            </div>
-            {r.leases.length === 0
-              ? <div className="px-4 pb-3 text-xs text-muted-foreground">{t('Free.')}</div>
-              : <div className="divide-y border-t">{r.leases.map(l => <Lease key={l.tag} project={project} r={r} l={l} />)}</div>}
-          </Card>
-        ))}
+              {r.leases.length === 0
+                ? <div className="px-4 pb-3 text-xs text-muted-foreground">{t('Free.')}</div>
+                : <div className="divide-y border-t">{r.leases.map(l => <Lease key={`${l.project ?? project}:${l.tag}`} project={project} r={r} l={l} />)}</div>}
+              {queue.length > 0 && (
+                <div className="border-t bg-muted/30 px-4 py-2 text-xs">
+                  <div className="mb-1 font-medium text-muted-foreground">{t('Queue')} ({queue.length})</div>
+                  <ol className="grid gap-1">
+                    {queue.map(item => (
+                      <li key={`${item.project}:${item.tag}`} className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-muted-foreground tabular-nums">#{item.position}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <span className="font-mono text-muted-foreground">{item.project}:</span>
+                          <TagLink project={item.project} tag={item.tag} className="text-xs" />
+                        </span>
+                        <Badge tone={item.priority === 'rework' ? 'warning' : 'neutral'}>{item.priority === 'rework' ? t('rework') : t('new')}</Badge>
+                        <span className="ml-auto text-muted-foreground tabular-nums">
+                          {item.etaMinutes !== undefined ? t('about {time}', { time: minutes(item.etaMinutes) }) : t('unknown')}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
     </Section>
   );
