@@ -114,7 +114,7 @@ export interface ScreenshotVerifyConfig {
 export interface LuminanceGate { match: string; mean_min?: number; mean_max?: number; region?: [number, number, number, number] }
 export interface MotionGate { a: string; b: string; min?: number; max?: number; region?: [number, number, number, number] }
 export const DEFAULT_SCREENSHOT_THRESHOLDS: ScreenshotVerifyConfig = { duplicate_diff: 0.015, blank_std: 0.02, dark_mean: 0.12, dark_fraction: 0.85 };
-export interface VerifyConfig { protected_gates: string[]; screenshots: ScreenshotVerifyConfig | 'off' }
+export interface VerifyConfig { protected_gates: string[]; screenshots: ScreenshotVerifyConfig | 'off'; max_visual_rounds: number }
 
 /** The decisions ledger: its own entries are kept in the state folder; a Markdown table of the project can be read in as well (never changed). */
 export interface DecisionsConfig {
@@ -1022,17 +1022,21 @@ function validateChecks(raw: unknown, file: string, base: string): ChecksConfig 
 }
 
 function validateVerify(raw: unknown, file: string): VerifyConfig {
-  if (raw === undefined) return { protected_gates: [], screenshots: { ...DEFAULT_SCREENSHOT_THRESHOLDS } };
+  if (raw === undefined) return { protected_gates: [], screenshots: { ...DEFAULT_SCREENSHOT_THRESHOLDS }, max_visual_rounds: 2 };
   if (!isRecord(raw)) fail('{file}: "verify" must be a mapping.', { file });
-  const unknown = Object.keys(raw).filter(k => !['protected_gates', 'screenshots'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['protected_gates', 'screenshots', 'max_visual_rounds'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "verify": {keys}.', { file, keys: unknown.join(', ') });
   const value = raw.protected_gates;
   const protectedGates = value === undefined ? [] : (() => {
     if (!Array.isArray(value) || value.some(x => typeof x !== 'string' || !x.trim())) fail('{file}: "verify.protected_gates" must be a list of globs.', { file });
     return (value as string[]).map(x => x.trim());
   })();
+  const maxVisualRounds = raw.max_visual_rounds === undefined ? 2 : (() => {
+    if (typeof raw.max_visual_rounds !== 'number' || !Number.isInteger(raw.max_visual_rounds) || raw.max_visual_rounds < 0) fail('{file}: "verify.max_visual_rounds" must be a whole number >= 0.', { file });
+    return raw.max_visual_rounds;
+  })();
   const screenshots = raw.screenshots;
-  if (screenshots === 'off') return { protected_gates: protectedGates, screenshots: 'off' };
+  if (screenshots === 'off') return { protected_gates: protectedGates, screenshots: 'off', max_visual_rounds: maxVisualRounds };
   if (screenshots !== undefined && !isRecord(screenshots)) fail('{file}: "verify.screenshots" must be a mapping or "off".', { file });
   const source = (screenshots ?? {}) as Record<string, unknown>;
   const unknownScreenshots = Object.keys(source).filter(k => !['duplicate_diff', 'blank_std', 'dark_mean', 'dark_fraction', 'luminance', 'motion'].includes(k));
@@ -1078,7 +1082,7 @@ function validateVerify(raw: unknown, file: string): VerifyConfig {
       return { a: raw.a, b: raw.b, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), ...(region ? { region } : {}) };
     });
   })();
-  return { protected_gates: protectedGates, screenshots: { ...thresholds, ...(source.luminance !== undefined ? { luminance } : {}), ...(source.motion !== undefined ? { motion } : {}) } };
+  return { protected_gates: protectedGates, screenshots: { ...thresholds, ...(source.luminance !== undefined ? { luminance } : {}), ...(source.motion !== undefined ? { motion } : {}) }, max_visual_rounds: maxVisualRounds };
 }
 
 function validateSync(raw: unknown, file: string): SyncRules {

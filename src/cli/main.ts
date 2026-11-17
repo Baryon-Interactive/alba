@@ -75,6 +75,7 @@ import { runLibrary } from './library.ts';
 import { machinesEdit } from './machines.ts';
 import { migrateState, exportState, checkState } from '../orders/state.ts';
 import { verifyOrder, formatVerify } from '../verify/verify.ts';
+import { reviewTarget, formatReviewTarget } from '../verify/target-step.ts';
 import { dryRunCapture, formatCaptureDryRun, formatCaptureRun, runCapture } from '../capture/run.ts';
 import { producerAct, producerActions, producerCases, producerPolicy, producerState, producerWouldDo, intakeProducer, setProducerPaused } from '../producer/producer.ts';
 import { producerLog } from '../producer/activity.ts';
@@ -161,6 +162,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   stop <TAG> [--note text]                   stop the open run: its process and every process under it (identity checked), close the run as cancelled and hold the order; then "run <TAG> --worker id" moves it to another worker
   review <TAG> approve|rework [--note text] [--branch b] [--override]  approve checks the branch is merged and writes <TAG>.accept.md; rework sends it back
   review <TAG> sheet [--out file.png] [--columns 4] [--cell 320] [--json]  a contact sheet of the order's evidence pictures (default <state_dir>/review/<TAG>-sheet.png) and each one's size, mean luminance, spread, dark and highlight share, p5/p95, saturation, and the subject against its surround when <name>.mask.png exists
+  review <TAG> target [--json]               the latest visual target table, round history and side-by-side sheet paths; exit 0 passed, 1 missed, 2 unmeasured
   serve [--port 4777] [--every 15] [--max-dispatch 1] [--allow-origin url]... [--sign-in] --project f.yaml...
                                              board + JSON interface (docs/console/010-api.md) + a real tick every n minutes (0: none) + an immediate record and tick when a run ends; one serve per state folder; --sign-in asks for the printed key or link
   answer <TAG> (--text <answer> | --choice N [--text note]) [--worker id]
@@ -937,7 +939,12 @@ ${t('Stopped run {run}. The order is held: start it on a worker with "alba run {
       const sheet = contactSheet(cfg, orders, systemProbes, tag, { out, ...(values.columns ? { columns: Number(values.columns) } : {}), ...(values.cell ? { cell: Number(values.cell) } : {}) });
       return values.json ? JSON.stringify(sheet, null, 2) : formatSheet(sheet);
     }
-    fail('Usage: alba review <TAG> approve|rework|sheet [--note text] [--branch b] [--out file.png]');
+    if (action === 'target') {
+      const view = reviewTarget(cfg, orders, command!);
+      exitCode = view.exitCode;
+      return values.json ? JSON.stringify(view, null, 2) : formatReviewTarget(view);
+    }
+    fail('Usage: alba review <TAG> approve|rework|sheet|target [--note text] [--branch b] [--out file.png] [--json]');
   }
 
   if (group === 'table') {

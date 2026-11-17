@@ -118,6 +118,7 @@ Deterministic gate definitions can be protected from worker edits in the project
 ```yaml
 verify:
   protected_gates: ["alba.yaml", "work-orders/**"]
+  max_visual_rounds: 2
   screenshots:
     duplicate_diff: 0.015
     blank_std: 0.02
@@ -125,7 +126,7 @@ verify:
     dark_fraction: 0.85
 ```
 
-If a branch changes one of these globs, `alba verify` fails and explains that only a person can accept the change.
+If a branch changes one of these globs, `alba verify` fails and explains that only a person can accept the change. `verify.max_visual_rounds` (whole number `>= 0`, default `2`; `0` disables automatic send-backs) caps how many measured [visual target](038-visual-targets.md) misses `attemptAcceptance` sends back automatically before recording `target-not-converging` for the lead.
 
 The verification `evidence` gate uses both the ready report's run start and the order's earliest run start. Files made after the current run began pass; files made after the first run but before the current run warn as `carried over from an earlier run of this order`; files predating the first run fail as stale. Missing files fail. Directory timestamps do not decide freshness: recursive regular-file counts show fresh and carried-over files, and empty directories count as missing.
 

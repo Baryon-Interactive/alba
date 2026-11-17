@@ -989,6 +989,9 @@ export const zh: Record<string, string> = {
   '{holder} for {min} min': '{holder} 已占用 {min} 分钟',
   'waiting for {name} slot ({place}, {eta})': '等待 {name} 槽位（{place}，预计 {eta}）',
   'waiting for {name} slot ({place}, {eta}; held by {who})': '等待 {name} 槽位（{place}，预计 {eta}；当前占用：{who}）',
+  // visual targets and rounds
+  '{file}: "verify.max_visual_rounds" must be a whole number >= 0.': '{file}：“verify.max_visual_rounds”必须是大于等于 0 的整数。',
+  'Usage: alba review <TAG> approve|rework|sheet|target [--note text] [--branch b] [--out file.png] [--json]': '用法：alba review <TAG> approve|rework|sheet|target [--note text] [--branch b] [--out file.png] [--json]',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */
