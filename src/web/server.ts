@@ -465,8 +465,15 @@ export function createBoard(options: ServerOptions): Board {
   server.requestTimeout = 30000; server.headersTimeout = 10000;
   // Port 0 means "any free one": ask for one `fetch` may connect to (the system sometimes hands out a port it refuses).
   if (options.listen !== false) {
-    if (options.port === 0) void freePort(HOST).then(p => server.listen(p, HOST), () => server.listen(0, HOST));
-    else server.listen(options.port, HOST);
+    if (options.port === 0) {
+      // The port arrives later: a close() before then must win, or the server would start listening after it was stopped and keep
+      // the process alive.
+      let closed = false;
+      const close = server.close.bind(server);
+      server.close = ((callback?: (err?: Error) => void) => { closed = true; return close(callback); }) as typeof server.close;
+      const listen = (p: number) => { if (!closed) server.listen(p, HOST); };
+      void freePort(HOST).then(listen, () => listen(0));
+    } else server.listen(options.port, HOST);
   }
   server.once('listening', () => {
     hub.start();

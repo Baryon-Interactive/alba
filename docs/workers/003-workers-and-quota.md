@@ -199,7 +199,7 @@ The launcher supplies the required headless, stream-output, model and permission
 
 A worker whose last `trip_after_failures` runs (default 3; `0` turns the breaker off) all ended failed **without a report block**, the process died, could not start or stopped without saying anything, is paused: it counts as not available, with the reason "paused: its last 3 runs ended failed without a report; one more may try after 14:20", until `trip_minutes` (default 60) after the last of those failures. Then one run may start; if it fails the same way the pause starts again, and any other ending (a delivery, a failed report written by the worker, a send-back) closes the breaker. Cancelled runs, capacity endings, monitor wake-ups and runs alba stopped itself (caps, loops, stalls) neither count nor close it. The breaker looks at the runs of one project.
 
-Such runs also count in the worker's routing history as `failed`, next to `accepted` and `reworked`: a worker whose runs keep dying no longer shows as "100% of 7 accepted".
+Such runs also count in the worker's routing history as `failed`, next to `accepted` and `reworked`: a worker whose runs keep dying no longer shows as "100% of 7 accepted". See [034](../operations/034-notifications.md) for notifications when a worker is paused.
 
 ### A Codex template that can resume
 

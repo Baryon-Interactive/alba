@@ -71,6 +71,7 @@ Start with the [five-minute demo](../examples/demo/README.md), then choose a top
 |---|---|
 | [028-machines.md](operations/028-machines.md) | Machines |
 | [029-nightly-gates.md](operations/029-nightly-gates.md) | Nightly regression gates |
+| [034-notifications.md](operations/034-notifications.md) | 034. Notifications from `alba serve` |
 
 ## Proposals
 
