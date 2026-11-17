@@ -23,12 +23,12 @@ function fixture() {
   writeFileSync(path.join(workOrders, 'R1-present.md'), '# R1\nPresentation.\n');
   const project = validateProject({ id: 'demo', name: 'Demo', root, work_orders: workOrders, state_dir: path.join(dir, 'state'), dispatch: { worktree_parent: path.join(dir, 'trees'), base_ref: 'refs/heads/main' } }, path.join(dir, 'alba.yaml'));
   const launch = (program: string) => ({ template: program, program, args: ['{prompt_file}'] });
-  const workers = validateWorkers({ workers: [{ id: 'codex-paid', engine: 'codex-cli', launch: launch('codex') }, { id: 'claude-sonnet', engine: 'claude-cli', launch: launch('claude') }] }, 'w.yaml');
+  const workers = validateWorkers({ workers: [{ id: 'codex-metered', engine: 'codex-cli', launch: launch('codex') }, { id: 'claude-sonnet', engine: 'claude-cli', launch: launch('claude') }] }, 'w.yaml');
   const probes: Probes = {
     now: () => new Date('2026-01-01T12:00:00Z'), runCommand: () => '[]', freeRamGb: () => 32, worktrees: () => [], gitActivity: () => ({}),
     fileTime: () => undefined, isAlive: () => false, tail: () => '', readText: () => undefined, spawnDetached: () => 4242,
   };
-  orders.add({ tag: 'R1', title: 'Presentation', kind: 'ue', worker: 'codex-paid' });
+  orders.add({ tag: 'R1', title: 'Presentation', kind: 'ue', worker: 'codex-metered' });
   orders.act('R1', 'queue');
   return { orders, project, workers, probes };
 }
@@ -37,7 +37,7 @@ test('a person\'s run on another worker becomes the order\'s worker, so the tick
   const f = fixture();
   startRun(f, 'R1', 'claude-sonnet', { explicitWorker: true });
   assert.equal(f.orders.get('R1').order.worker, 'claude-sonnet');
-  assert.ok(f.orders.store.events({ tag: 'R1' }).some(e => e.type === 'worker-set' && e.data?.from === 'codex-paid' && e.data?.to === 'claude-sonnet'));
+  assert.ok(f.orders.store.events({ tag: 'R1' }).some(e => e.type === 'worker-set' && e.data?.from === 'codex-metered' && e.data?.to === 'claude-sonnet'));
   f.orders.runEnd('R1'); f.orders.report('R1', ready);
   f.orders.act('R1', 'rework', { note: 'Brighter title card' });
   const plan = tick(f.project, f.orders, f.workers, f.probes, { record: false });
@@ -46,7 +46,7 @@ test('a person\'s run on another worker becomes the order\'s worker, so the tick
 
 test('queue on a held order releases it (and queues it when it had ended)', () => {
   const f = fixture();
-  startRun(f, 'R1', 'codex-paid');
+  startRun(f, 'R1', 'codex-metered');
   f.orders.act('R1', 'hold');
   assert.equal(f.orders.stage(f.orders.get('R1')).stage, 'held');
   f.orders.act('R1', 'queue');

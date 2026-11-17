@@ -28,7 +28,7 @@ const KNOWN: Omit<PluginView, 'enabled' | 'kinds' | 'problems'>[] = [
   {
     id: 'image-gateway', version: '1.0.0', description: 'Generates pictures from a prompt, or edits them from reference pictures, through an OpenAI-compatible images endpoint.', origin: 'built-in', folder: `${here}/image-gateway`,
     settings: [
-      { name: 'base_url', description: 'The endpoint, without /v1 (https://api.openai.com, or a local gateway such as http://127.0.0.1:3425).', default: 'https://api.openai.com' },
+      { name: 'base_url', description: 'The endpoint, without /v1 (https://api.openai.com, or a local gateway such as http://127.0.0.1:8000).', default: 'https://api.openai.com' },
       { name: 'model', description: 'The image model a call uses when it names none.', default: 'gpt-image-1' },
       { name: 'key_env', description: 'The name of the environment variable that holds the API key; empty for a gateway that needs no key. The value is never written anywhere.', default: 'OPENAI_API_KEY' },
     ],

@@ -257,16 +257,16 @@ test('Claude: a block before the last instruction, the footer example and a brok
 test('Claude: a report the worker saved with the Write tool to a *.last.txt file of its own counts, and spacing inside the markers is forgiven', () => {
   const restore = testEnv();
   try {
-    // as in MAP1-r7: the report went to a file the worker named itself, with "---  alba-report ---"
-    const text = `MAP1-r7 Final Report\n\n---  alba-report ---\n${JSON.stringify({ status: 'progress', summary: 'autoplay blocked', evidence: [], commits: ['409ed46'] })}\n--- end ---\n`;
+    // a real case: the report went to a file the worker named itself, with "---  alba-report ---"
+    const text = `T9-r7 Final Report\n\n---  alba-report ---\n${JSON.stringify({ status: 'progress', summary: 'autoplay blocked', evidence: [], commits: ['409ed46'] })}\n--- end ---\n`;
     const ctx = endedRun([
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '/x/.local/alba/runs/MAP1-r7.last.txt', content: text } }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '/x/.local/alba/runs/T9-r7.last.txt', content: text } }] } },
       { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'w1', content: 'File created successfully' }] } },
       said('The final report is complete. Summary: ...'), result('The final report is complete. Summary: ...'),
     ]);
     const [f] = findFinishes(ctx.project, ctx.orders, ctx.probes, ctx.workers);
     assert.equal(f.report?.status, 'progress'); assert.deepEqual(f.report?.commits, ['409ed46']);
-    assert.deepEqual(f.report_from, { where: 'written-file', file: '/x/.local/alba/runs/MAP1-r7.last.txt' });
+    assert.deepEqual(f.report_from, { where: 'written-file', file: '/x/.local/alba/runs/T9-r7.last.txt' });
     // another file written with a block (a doc that shows the format) is not a report
     const doc = endedRun([{ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'w2', name: 'Write', input: { file_path: 'docs/format.md', content: block('format example') } }] } }, result('Stopping.')]);
     assert.equal(findFinishes(doc.project, doc.orders, doc.probes, doc.workers)[0].report, undefined);

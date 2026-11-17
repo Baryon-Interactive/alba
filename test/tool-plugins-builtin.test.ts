@@ -24,7 +24,7 @@ test('settings: put into commands, arguments and env_from; an empty one drops th
   const defaults = withSettings(m, {});
   assert.deepEqual(defaults.agent.mcp.image!.env_from, ['OPENAI_API_KEY']);
   assert.deepEqual(defaults.agent.mcp.image!.args.slice(1), ['--base-url', 'https://api.openai.com', '--model', 'gpt-image-1', '--key-env', 'OPENAI_API_KEY']);
-  const gateway = withSettings(m, { base_url: 'http://127.0.0.1:3425', key_env: '' });
+  const gateway = withSettings(m, { base_url: 'http://127.0.0.1:8000', key_env: '' });
   assert.deepEqual(gateway.agent.mcp.image!.env_from, [], 'no key for a gateway that needs none');
   assert.equal(m.agent.mcp.image!.args[2], '${setting.base_url}', 'the manifest itself is unchanged');
   const { dir } = tempOrders();

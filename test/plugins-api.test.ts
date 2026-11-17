@@ -22,7 +22,7 @@ async function withTools() {
     'plugins:',
     '  enable: [image-gateway, example-echo]   # pictures and the example',
     '  settings:',
-    `    image-gateway: { base_url: "http://127.0.0.1:3425", key_env: ${KEY_NAME} }`,
+    `    image-gateway: { base_url: "http://127.0.0.1:8000", key_env: ${KEY_NAME} }`,
     '  by_kind:', '    art: [image-gateway]',
     '  auto_approve: { images: { per_job: 2, per_day: 20 } }', '',
   ].join('\n'));
@@ -52,7 +52,7 @@ test('GET /api/plugins: every plugin with settings, servers, env names (set or n
     const image = v.tools.find((x: { id: string }) => x.id === 'image-gateway');
     assert.equal(image.enabled, true);
     assert.equal(image.origin, 'built-in');
-    assert.deepEqual(image.settings.find((s: { name: string }) => s.name === 'base_url'), { name: 'base_url', description: image.settings.find((s: { name: string }) => s.name === 'base_url').description, default: 'https://api.openai.com', value: 'http://127.0.0.1:3425' });
+    assert.deepEqual(image.settings.find((s: { name: string }) => s.name === 'base_url'), { name: 'base_url', description: image.settings.find((s: { name: string }) => s.name === 'base_url').description, default: 'https://api.openai.com', value: 'http://127.0.0.1:8000' });
     assert.equal(image.settings.find((s: { name: string }) => s.name === 'model').value, undefined);
     assert.deepEqual(image.servers[0].env, [{ name: KEY_NAME, set: true }]);
     assert.deepEqual(image.servers[0].tools, ['image_generate']);

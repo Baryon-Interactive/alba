@@ -20,7 +20,7 @@ const start = (): { project: Values; workers: Values } => ({
     routing: { routes: { art: { kinds: ['art', 'vfx'], requires: ['vision'], group: 'visual', description: 'Pictures and effects' } } },
     plugins: {
       enable: ['image-gateway', 'tripo-3d'],
-      settings: { 'image-gateway': { base_url: 'http://127.0.0.1:3425', model: 'gpt-image-2', key_env: '' }, 'tripo-3d': { ceiling: 60 } },
+      settings: { 'image-gateway': { base_url: 'http://127.0.0.1:8000', model: 'gpt-image-2', key_env: '' }, 'tripo-3d': { ceiling: 60 } },
       by_kind: { art: ['image-gateway'], model: ['tripo-3d'] },
       auto_approve: { images: { per_job: 2, per_day: 20 }, credits: 0 },
     },

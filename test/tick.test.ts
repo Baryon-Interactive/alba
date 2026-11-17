@@ -187,12 +187,12 @@ test('workers file: clear errors', () => {
 });
 
 test('worker names: an id in the text picks that worker only, an alias any of them; runs count against their exact id', async () => {
-  const sub = worker({ id: 'codex-sub' }), paid = worker({ id: 'codex-paid' });
+  const sub = worker({ id: 'codex-sub' }), paid = worker({ id: 'codex-metered' });
   const workers = [state(sub), state(paid)];
   const pick = (workerText: string) => planTick(input({ workers, orders: [order('A1', { workerText })] })).moves[0]?.worker;
   assert.equal(pick('Codex'), 'codex-sub');            // the alias names both; the first one listed wins
-  assert.equal(pick('codex-paid, high'), 'codex-paid'); // the id names one
+  assert.equal(pick('codex-metered, high'), 'codex-metered'); // the id names one
   const { ownerOf } = await import('../src/usage/spend.ts');
-  assert.equal(ownerOf([sub, paid], 'codex-paid')?.id, 'codex-paid');   // not codex-sub through its "Codex" alias
+  assert.equal(ownerOf([sub, paid], 'codex-metered')?.id, 'codex-metered');   // not codex-sub through its "Codex" alias
   assert.equal(ownerOf([sub, paid], 'Codex(alba)')?.id, 'codex-sub');
 });

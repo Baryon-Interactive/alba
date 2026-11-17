@@ -27,8 +27,8 @@ const view: PluginsView = {
     tool('example-echo', { servers: [{ name: 'echo', command: 'node', args: ['/alba/plugins/example-echo/server.mjs'], tools: ['echo'], workers: true, env: [] }] }),
     tool('image-gateway', {
       enabled: true, kinds: ['art'],
-      settings: [{ name: 'base_url', description: 'The endpoint.', default: 'https://api.openai.com', value: 'http://127.0.0.1:3425' }, { name: 'model', description: 'The model.', default: 'gpt-image-1' }],
-      servers: [{ name: 'image', command: 'node', args: ['server.mjs', '--base-url', 'http://127.0.0.1:3425'], tools: ['image_generate'], workers: true, env: [{ name: 'IMAGE_KEY', set: false }] }],
+      settings: [{ name: 'base_url', description: 'The endpoint.', default: 'https://api.openai.com', value: 'http://127.0.0.1:8000' }, { name: 'model', description: 'The model.', default: 'gpt-image-1' }],
+      servers: [{ name: 'image', command: 'node', args: ['server.mjs', '--base-url', 'http://127.0.0.1:8000'], tools: ['image_generate'], workers: true, env: [{ name: 'IMAGE_KEY', set: false }] }],
       operations: [{ name: 'generate', description: 'Pictures.', input: {}, timeout_minutes: 15, paid: { unit: 'images', priced_by_tool: true } }],
     }),
     tool('tripo-3d', {
@@ -43,7 +43,7 @@ const view: PluginsView = {
     { id: 'J39', tool: 'image-gateway', version: '1.0.0', operation: 'generate', status: 'failed', by: 'web', spent: 1, spentUnknown: true, error: 'timed out', created: '2026-11-13T08:00:00.000Z' },
   ],
 };
-const values = { plugins: { enable: ['image-gateway', 'tripo-3d'], settings: { 'image-gateway': { base_url: 'http://127.0.0.1:3425' } }, by_kind: { art: ['image-gateway'] }, auto_approve: { images: { per_job: 2, per_day: 20 } } } };
+const values = { plugins: { enable: ['image-gateway', 'tripo-3d'], settings: { 'image-gateway': { base_url: 'http://127.0.0.1:8000' } }, by_kind: { art: ['image-gateway'] }, auto_approve: { images: { per_job: 2, per_day: 20 } } } };
 
 const tr = (lang: 'en' | 'zh', text: string, vars: Record<string, string | number> = {}) => Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), lang === 'en' ? text : translated[text] ?? text);
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -65,7 +65,7 @@ describe('the Tools page', () => {
       expect(html).toContain(esc(tr(lang, '{today} today, {ever} in all', { today: 3, ever: 7 })));
       expect(html).toContain(esc(tr(lang, 'The newest {n} of {count}; alba tools jobs lists them all.', { n: 3, count: 41 })));
       expect(html).toContain(esc(tr(lang, 'default: {value}', { value: 'gpt-image-1' })));
-      for (const value of ['value="http://127.0.0.1:3425"', 'image_generate', '/studio/alba.yaml', 'value="art"', 'value="images"', 'value="2"', 'value="20"', 'J41', 'J40', 'J39', 'ART-12', 'crate.png', 'timed out', 'generate-model']) expect(html, value).toContain(value);
+      for (const value of ['value="http://127.0.0.1:8000"', 'image_generate', '/studio/alba.yaml', 'value="art"', 'value="images"', 'value="2"', 'value="20"', 'J41', 'J40', 'J39', 'ART-12', 'crate.png', 'timed out', 'generate-model']) expect(html, value).toContain(value);
       // the order: built-in plugins as the server sent them; a disabled one offers to turn it on, enabled ones to turn them off
       expect(html.indexOf('data-tool="example-echo"')).toBeLessThan(html.indexOf('data-tool="image-gateway"'));
       expect(html.indexOf('data-job="J41"')).toBeLessThan(html.indexOf('data-job="J39"'));

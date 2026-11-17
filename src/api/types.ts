@@ -288,7 +288,7 @@ export interface Run {
 /** What a `run.start` event and a run carry about the choice of worker. */
 export interface RunRouting {
   kind: string;
-  /** In words: `codex-subscription: role build, included, role preference 1, 80% of 5 accepted`. */
+  /** In words: `codex-sub: role build, included, role preference 1, 80% of 5 accepted`. */
   why: string;
   rejected: { worker: string; reason: string }[];
 }

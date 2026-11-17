@@ -32,7 +32,7 @@ editors:
     cap: ue                        # the kind cap a run with an editor counts against
     skills: [unreal-mcp-editor]    # skills a run with this editor gets (Alba's library or the registry)
     machines:                      # machine ids of the machine registry (a local run: the local machine; a remote run: its host)
-      main-pc: { ports: [8101, 8102] }
+      gpu-box: { ports: [8101, 8102] }
       gpu-box: { ports: [8201], desktop: true }   # desktop: start it in the logged-on user's session; program: when installed elsewhere
 ```
 
@@ -76,7 +76,7 @@ orders are not affected. A run uses one pool at most.
 Such an order holds the pool, the pool's `holds` (here `editor-build`) and a slot of its `cap` (here `ue`, as if the order were
 `heavy: ue`), in the tick's plan, in `alba run` and in the prompt's **Slots this run holds**. The pool's resource counts the ports of
 all its machines; the tick and `alba run` also count the free ports on the machine of the run's worker. When every port there is
-taken the tick waits ("every ue-editor port on main-pc is taken"); a start by hand is refused with who holds them, before anything
+taken the tick waits ("every ue-editor port on gpu-box is taken"); a start by hand is refused with who holds them, before anything
 is made.
 
 ## What a run does
@@ -84,7 +84,7 @@ is made.
 When the run starts, after its worktree is ready and before the worker:
 
 1. Alba takes a free port of the pool on the run's machine (the order's own slot again if it still has one). When that machine has
-   none free the start is refused: "every ue-editor port on main-pc is taken".
+   none free the start is refused: "every ue-editor port on gpu-box is taken".
 2. It writes the editor's spec to `<worktree>/.alba/editor.json` and the helper to `<worktree>/.alba/bin/editor.mjs` (both kept out
    of git).
 3. The worker command becomes `node .alba/bin/editor.mjs run -- <worker command>`. The helper starts the editor, waits until a

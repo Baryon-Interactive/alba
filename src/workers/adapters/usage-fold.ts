@@ -59,7 +59,12 @@ export class UsageFold {
         const sum = this.turns.reduce((n, t) => n + (t.usage[key] ?? 0), 0);
         if (cumulative[key] !== undefined && cumulative[key]! > sum) last.usage[key] = (last.usage[key] ?? 0) + cumulative[key]! - sum;
       }
-      if (n(e.total_cost_usd) !== undefined) last.usage.cost_usd = e.total_cost_usd;
+      // `total_cost_usd` is the running total of the whole process: a run with several results (a background command's
+      // notification starts another turn) must not count the earlier spend again, so the last turn keeps only the increment.
+      if (n(e.total_cost_usd) !== undefined) {
+        const before = this.turns.slice(0, -1).reduce((sum, t) => sum + (t.usage.cost_usd ?? 0), 0);
+        last.usage.cost_usd = Math.max(0, e.total_cost_usd - before);
+      }
     }
     let raw: Record<string, any> | undefined, source: RunUsage['source'] = 'unknown';
     if (type === 'turn.completed') { raw = e.usage; source = 'codex-json'; }

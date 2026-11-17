@@ -111,7 +111,7 @@ const SSH = [
   'Match host *.lan exec "true"',
   '    User lanuser',
   '',
-  'Host win-dev win-dev-alt',
+  'Host build-box build-box-alt',
   '    HostName=192.0.2.40',
   '',
   'Host *',
@@ -146,7 +146,7 @@ test('the SSH Host block of an alias is found and only its address lines change'
 
 test('aliases that are shared, overridden earlier, missing or included are refused with the reason', () => {
   const refused = (text: string, alias: string, re: RegExp) => assert.throws(() => rewriteSshHost(text, alias, { hostname: '10.0.0.1' }), (e: unknown) => e instanceof EditRefused && re.test(e.message));
-  refused(SSH, 'win-dev', /names win-dev-alt too/);
+  refused(SSH, 'build-box', /names build-box-alt too/);
   refused(SSH, 'missing-box', /not in config\. It may come from an Include \(~\/\.ssh\/config\.d\/\*\)/);
   refused('Host other\n  HostName x\n', 'missing-box', /Write a Host block/);
   refused('Host gpu*\n  HostName 10.9.9.9\n\nHost gpu-box\n  HostName 10.0.0.2\n', 'gpu-box', /Line 2 sets HostName/);

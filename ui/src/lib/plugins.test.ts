@@ -4,7 +4,7 @@ import { autoEdits, autoRows, kindEdits, pluginsBlock, settingsDraft, settingsEd
 const values = {
   plugins: {
     enable: ['image-gateway', 'tripo-3d'],
-    settings: { 'image-gateway': { base_url: 'http://127.0.0.1:3425', key_env: '' }, 'tripo-3d': { ceiling: 60 } },
+    settings: { 'image-gateway': { base_url: 'http://127.0.0.1:8000', key_env: '' }, 'tripo-3d': { ceiling: 60 } },
     by_kind: { art: ['image-gateway'], model: ['tripo-3d', 'image-gateway'] },
     auto_approve: { images: { per_job: 2, per_day: 20 }, credits: 0 },
   },
@@ -31,12 +31,12 @@ describe('the plugins block of the project file', () => {
   });
 
   it('writes a tool\'s settings whole, keeps how an unchanged value was written, keeps an empty value, and removes the mapping when all are defaults', () => {
-    const written = { base_url: 'http://127.0.0.1:3425', key_env: '' };
+    const written = { base_url: 'http://127.0.0.1:8000', key_env: '' };
     const names = ['base_url', 'model', 'key_env'];
     const draft = settingsDraft(written, names);
-    expect(draft).toEqual({ base_url: 'http://127.0.0.1:3425', model: undefined, key_env: '' });
+    expect(draft).toEqual({ base_url: 'http://127.0.0.1:8000', model: undefined, key_env: '' });
     expect(settingsEdits('image-gateway', written, draft)).toEqual([]);
-    expect(settingsEdits('image-gateway', written, { ...draft, model: 'gpt-image-2' })).toEqual([{ path: ['plugins', 'settings', 'image-gateway'], value: { base_url: 'http://127.0.0.1:3425', model: 'gpt-image-2', key_env: '' } }]);
+    expect(settingsEdits('image-gateway', written, { ...draft, model: 'gpt-image-2' })).toEqual([{ path: ['plugins', 'settings', 'image-gateway'], value: { base_url: 'http://127.0.0.1:8000', model: 'gpt-image-2', key_env: '' } }]);
     expect(settingsEdits('image-gateway', written, { base_url: undefined, model: undefined, key_env: undefined })).toEqual([{ path: ['plugins', 'settings', 'image-gateway'] }]);
     expect(settingsEdits('example-echo', undefined, {})).toEqual([]);
     // a number stays a number while its text does not change

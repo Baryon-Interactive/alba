@@ -135,3 +135,15 @@ test('cli: a list flag given twice adds up instead of the last one winning', () 
   assert.deepEqual(mergeListFlags(['orders', 'add', 'X', '--needs', 'A']), ['orders', 'add', 'X', '--needs', 'A']);
   assert.deepEqual(mergeListFlags(['--title', 'needs', '--json']), ['--title', 'needs', '--json'], 'other flags are untouched');
 });
+
+import { UsageFold, totalUsage as foldTotal } from '../src/workers/adapters/index.ts';
+
+test('usage: Claude result costs are a running total, so a run with two results is not counted twice', () => {
+  const f = new UsageFold(), at = '2026-11-17T00:00:00.000Z';
+  const assistant = (id: string) => ({ type: 'assistant', message: { id, usage: { input_tokens: 10, output_tokens: 5 } } });
+  f.event(assistant('m1'), at);
+  f.event({ type: 'result', total_cost_usd: 12.5, usage: { input_tokens: 10, output_tokens: 5 } }, at);
+  f.event(assistant('m2'), at);
+  f.event({ type: 'result', total_cost_usd: 17.75, usage: { input_tokens: 20, output_tokens: 10 } }, at);
+  assert.equal(foldTotal(f.turns)?.cost_usd, 17.75);
+});

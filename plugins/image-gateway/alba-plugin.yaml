@@ -8,7 +8,7 @@ description: Generates pictures from a prompt, or edits them from reference pict
 
 settings:
   base_url:
-    description: The endpoint, without /v1 (https://api.openai.com, or a local gateway such as http://127.0.0.1:3425).
+    description: The endpoint, without /v1 (https://api.openai.com, or a local gateway such as http://127.0.0.1:8000).
     default: https://api.openai.com
   model:
     description: The image model a call uses when it names none.

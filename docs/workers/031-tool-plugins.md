@@ -254,7 +254,7 @@ probe is `audio-studio-mcp --check` (the runtime is installed; no model is loade
 plugins:
   enable: [image-gateway, tripo-3d]
   settings:
-    image-gateway: { base_url: "http://127.0.0.1:3425", model: <the gateway's image model>, key_env: "" }
+    image-gateway: { base_url: "http://127.0.0.1:8000", model: <the gateway's image model>, key_env: "" }
     tripo-3d: { server: "<home>/.codex/plugins/cache/tripo-studio-plugins/tripo-studio-plugin/0.3.13/mcp/bootstrap.mjs", ceiling: 60 }
   auto_approve: { images: { per_job: 2, per_day: 20 }, credits: 0 }   # small picture jobs, 20 pictures a day; every Tripo quote waits for a person
 ```

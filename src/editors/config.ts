@@ -79,7 +79,7 @@ export function validateEditors(raw: unknown, file: string, resources: Record<st
     if (!Array.isArray(holds) || holds.some(h => typeof h !== 'string')) fail(`"${at}.holds" must be a list of resource names.`);
     for (const h of holds as string[]) if (!resources?.[h]) fail(`"${at}.holds": "${h}" is not a resource under "resources".`);
     if (v.cap !== undefined && (typeof v.cap !== 'string' || !Object.hasOwn(caps, v.cap))) fail(`"${at}.cap" must be a cap under "dispatch.caps" (${Object.keys(caps).join(', ') || 'none'}).`);
-    if (!record(v.machines) || !Object.keys(v.machines).length) return fail(`"${at}.machines" must map machine ids to their ports, e.g. { main-pc: { ports: [8101, 8102] } }.`);
+    if (!record(v.machines) || !Object.keys(v.machines).length) return fail(`"${at}.machines" must map machine ids to their ports, e.g. { gpu-box: { ports: [8101, 8102] } }.`);
     const machines: Record<string, EditorMachine> = {};
     for (const [machine, m] of Object.entries(v.machines)) {
       const mat = `${at}.machines.${machine}`;
