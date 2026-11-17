@@ -38,6 +38,8 @@ A mean in range does not make a good picture: a grey, flat capture can meet a br
 
 **Evidence pictures are checked when the report arrives.** The images a `ready` report names (found in the worktree or the project root) are compared byte for byte, and PNGs are checked for a single flat colour. Copies of one file under different names (a worker described four copies of one capture as four camera moments), or a black or blank capture, send the delivery back to the worker once with the files named (event `evidence-bounced`); a second delivery with the same problem goes to review with an `accept-warning` event.
 
+**Alba's own captures.** When a [capture recipe](037-capture-recipes.md) in `alba.yaml` matches the order (or a reviewer runs `alba capture <TAG>`), Alba builds and captures the delivered worktree itself under the capture lock, writes its own contact sheet (`sheet.png`) and `manifest.json`, runs the `identical`, `blank`, `dark`, `size`, `baseline`, `luminance` and `motion` gates on `<shot>.png`, and renders **Alba's captures** ahead of the worker's own pictures on the review card.
+
 ## Deterministic acceptance gates
 
 `alba verify <TAG>` runs mechanical gates before a person approves an order. It checks the latest ready report's commits and evidence, the order's declared acceptance/evidence/path sections, protected gate files, the existing `alba check`, and merge readiness. It exits `0` only when no gate fails; `--json` returns the full result. Verification is recorded as an `order-verified` event, and a run ending with a ready report triggers that event once automatically.

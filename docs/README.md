@@ -22,6 +22,7 @@ Start with the [five-minute demo](../examples/demo/README.md), then choose a top
 | [009-checks-and-waiting.md](workflow/009-checks-and-waiting.md) | 009. Checks, reference values, waiting and watching |
 | [011-decisions-questions-evidence-clean-credits-lessons.md](workflow/011-decisions-questions-evidence-clean-credits-lessons.md) | Decisions, questions, evidence, clean, credits and lessons |
 | [026-acceptance-pipeline.md](workflow/026-acceptance-pipeline.md) | 026. Acceptance pipeline |
+| [037-capture-recipes.md](workflow/037-capture-recipes.md) | 037. Capture recipes |
 
 ## Workers
 

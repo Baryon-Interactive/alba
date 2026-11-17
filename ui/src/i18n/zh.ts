@@ -1662,4 +1662,7 @@ export const zh: Record<string, string> = {
   'The tool plugins this project can use: what each one brings, whether it is on, its settings and what the last tool jobs did. A change is checked with the whole project file before it is written.': '这个项目能用的工具插件：各自带来什么、是否开启、设定，以及最近的工具任务。每次修改都先和整个项目文件一起检查，再写入。',
   'No tool plugin': '没有工具插件',
   'Alba found no plugin, built in or in the project’s plugins.sources.': 'Alba 没有找到插件，内置的和项目 plugins.sources 里的都没有。',
+  "Alba's captures": 'Alba 自抓截图',
+  "Worker's pictures (secondary)": '工人提交的截图（次要）',
+  'revision': '提交版本',
 };

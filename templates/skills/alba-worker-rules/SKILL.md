@@ -97,6 +97,7 @@ The skills you were given are listed in the prompt. They are shared and read-onl
 - Several orders may run games on the same desktop. Capture only the window of the process you started (its window handle, e.g. `PrintWindow`, or the engine's own screenshot command); never a desktop region or a window found by its title, which picks up another order's game or records black for a DirectX 12 window. Use the project's capture script when its skill names one, or the scripts of the `game-capture-windows` skill when you have it.
 - Run every capture under the machine's capture lock, so captures take turns: `node .alba/bin/lock.mjs capture -- <program> <arguments>` (it waits while another run holds it; keep the locked step short: start, capture, stop).
 - Open every picture you name as evidence and say what it shows from looking at it, not from its file name. Two files with the same bytes are one picture.
+- When the project defines a capture recipe for your order, Alba builds and captures the branch HEAD itself during acceptance, and the pictures you name in your report must still match what the branch renders.
 
 ## 11. Done means
 

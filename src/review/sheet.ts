@@ -72,19 +72,11 @@ function fit(image: DecodedPng, cell: number, cellHeight: number, into: Buffer, 
   }
 }
 
-/**
- * A contact sheet of an order's evidence pictures (the ones its reports name, then the evidence folders; as the evidence list of the
- * order page) and, per picture, its size and mean luminance, its spread, how much of it is near black, its highlight share, p5 and p95
- * luminance and mean saturation, and with a `<name>.mask.png` the subject against its surround. Only PNG is decoded; other files are
- * listed as skipped; masks are not pictures of their own. Without `out` nothing is written.
- */
-export function contactSheet(project: ProjectConfig, orders: Orders, probes: Probes, tag: string, options: { out?: string; columns?: number; cell?: number } = {}): Sheet {
-  const list = listEvidence(project, orders, probes, tag);
+function buildSheet(tag: string, source: readonly { path: string; from: string }[], options: { out?: string; columns?: number; cell?: number }): Sheet {
   const columns = Math.max(1, Math.min(8, options.columns ?? 4)), cell = Math.max(64, Math.min(1024, options.cell ?? 320));
   const images: SheetImage[] = [];
   const decoded: DecodedPng[] = [];
-  // A subject mask belongs to its picture: it is read with it, never put on the sheet itself.
-  for (const f of list.files.filter(f => f.kind === 'image' && !MASK.test(f.path)).slice(0, MAX_IMAGES)) {
+  for (const f of source) {
     const entry: SheetImage = { index: images.length + 1, file: f.path, from: f.from };
     images.push(entry);
     if (!/\.png$/i.test(f.path)) { entry.skipped = 'not a PNG'; continue; }
@@ -96,7 +88,7 @@ export function contactSheet(project: ProjectConfig, orders: Orders, probes: Pro
     Object.assign(entry, { width: result.image.width, height: result.image.height, meanLuminance: s.meanLuminance, luminanceStddev: s.luminanceStddev, darkFraction: s.darkFraction, highlightFraction: p.highlightFraction, p5: p.p5, p95: p.p95, meanSaturation: p.meanSaturation }, maskFields(f.path, result.image));
     decoded.push(result.image);
   }
-  const sheet: Sheet = { tag: orders.get(tag).order.tag, columns, cell, images };
+  const sheet: Sheet = { tag, columns, cell, images };
   if (options.out && decoded.length) {
     // Cells are `cell` wide and as tall as the tallest picture needs (wide captures do not leave half the sheet empty).
     const gap = 8, cols = Math.min(columns, decoded.length), rows = Math.ceil(decoded.length / cols);
@@ -109,6 +101,25 @@ export function contactSheet(project: ProjectConfig, orders: Orders, probes: Pro
     sheet.out = options.out.replace(/\\/g, '/');
   }
   return sheet;
+}
+
+/** Build a contact sheet PNG from an explicit file list (for example Alba's own captures). */
+export function sheetFromFiles(files: readonly string[], options: { tag?: string; out?: string; columns?: number; cell?: number } = {}): Sheet {
+  const source = files.filter(f => !MASK.test(f)).slice(0, MAX_IMAGES).map(file => ({ path: file, from: 'capture' }));
+  return buildSheet(options.tag ?? 'capture', source, options);
+}
+
+/**
+ * A contact sheet of an order's evidence pictures (the ones its reports name, then the evidence folders; as the evidence list of the
+ * order page) and, per picture, its size and mean luminance, its spread, how much of it is near black, its highlight share, p5 and p95
+ * luminance and mean saturation, and with a `<name>.mask.png` the subject against its surround. Only PNG is decoded; other files are
+ * listed as skipped; masks are not pictures of their own. Without `out` nothing is written.
+ */
+export function contactSheet(project: ProjectConfig, orders: Orders, probes: Probes, tag: string, options: { out?: string; columns?: number; cell?: number } = {}): Sheet {
+  const list = listEvidence(project, orders, probes, tag);
+  // A subject mask belongs to its picture: it is read with it, never put on the sheet itself.
+  const source = list.files.filter(f => f.kind === 'image' && !MASK.test(f.path)).slice(0, MAX_IMAGES).map(f => ({ path: f.path, from: f.from }));
+  return buildSheet(orders.get(tag).order.tag, source, options);
 }
 
 /** The sheet as text: the file, then one line per picture in sheet order (left to right, top to bottom). */

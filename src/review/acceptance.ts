@@ -9,6 +9,11 @@ import { stateStore } from '../orders/backend.ts';
 import { writeFileAtomic } from '../orders/store.ts';
 import { checkIntake, intakeOutputDir } from '../design/docs.ts';
 import type { Orders } from '../orders/service.ts';
+import type { OrderDoc } from '../orders/model.ts';
+import { matchCaptureRecipe } from '../capture/config.ts';
+import { formatCaptureRun, runCapture } from '../capture/run.ts';
+import type { CaptureSummary } from '../capture/types.ts';
+export type { CaptureSummary } from '../capture/types.ts';
 import { baseRefOf } from '../run/worktree.ts';
 import { globToRegExp, type CheckItem } from '../check/general.ts';
 import { deliveryChecks } from '../check/delivery.ts';
@@ -17,12 +22,11 @@ import { parseOrderSections } from '../verify/verify.ts';
 import { acquireAcceptanceResources, releaseAcceptanceResources } from '../resources/leases.ts';
 import { independentChecks, needsIndependentCheck, assertIndependentCheckPassed, type IndependentCheck } from './independent.ts';
 
-/** Intake orders always have a mechanical acceptance step, even when the project
- * has no general acceptance pipeline configured. Other order kinds keep the
- * existing opt-in behaviour. */
-function acceptConfigFor(project: ProjectConfig, kind: string): NonNullable<ProjectConfig['accept']> | undefined {
+/** Intake orders and orders matching a capture recipe always have a mechanical
+ * acceptance step, even when the project has no general acceptance pipeline configured. */
+function acceptConfigFor(project: ProjectConfig, doc: OrderDoc): NonNullable<ProjectConfig['accept']> | undefined {
   if (project.accept) return project.accept;
-  if (kind !== 'intake') return undefined;
+  if (doc.order.kind !== 'intake' && !matchCaptureRecipe(project, doc)) return undefined;
   return {
     git_timeout_minutes: 2,
     conflicts: { take_base: [], take_branch: [], drop: [] },
@@ -35,7 +39,7 @@ function acceptConfigFor(project: ProjectConfig, kind: string): NonNullable<Proj
 }
 
 export interface ArtifactReceipt { path: string; size: number; sha256: string; modified: string; status?: 'refused'; reason?: string }
-export interface AcceptStepResult { name: string; status: 'passed' | 'failed' | 'skipped'; duration_ms: number; code?: number | null; tail: string; log?: string; issues?: string[]; classified?: number; blocks?: number; artifacts?: ArtifactReceipt[]; artifact_warnings?: string[]; truncated?: boolean }
+export interface AcceptStepResult { name: string; status: 'passed' | 'failed' | 'skipped'; duration_ms: number; code?: number | null; tail: string; log?: string; issues?: string[]; classified?: number; blocks?: number; artifacts?: ArtifactReceipt[]; artifact_warnings?: string[]; truncated?: boolean; capture?: CaptureSummary }
 export interface AcceptanceTrial {
   id: string;
   fingerprint: string;
@@ -61,6 +65,7 @@ export interface AcceptanceCard {
   href: string;
   lint: CheckItem[];
   trial?: AcceptanceTrial;
+  capture?: CaptureSummary;
   changed: string[];
   images: string[];
 }
@@ -191,7 +196,7 @@ export function recoverAcceptanceMerge(project: ProjectConfig, orders: Orders): 
 
 function inputs(project: ProjectConfig, orders: Orders, tag: string, override = false) {
   const doc = orders.get(tag), report = doc.reports.at(-1);
-  const accept = acceptConfigFor(project, doc.order.kind);
+  const accept = acceptConfigFor(project, doc);
   if (!accept) throw new Error('No acceptance pipeline configured.');
   const stage = orders.stage(doc).stage;
   if (!report || !((stage === 'awaiting-review' && report.status === 'ready') || (override && ['failed', 'awaiting-user'].includes(stage)))) throw new Error('Acceptance requires a ready delivery awaiting review, or an explicit override for a failed or awaiting-user delivery with a report.');
@@ -202,8 +207,17 @@ function inputs(project: ProjectConfig, orders: Orders, tag: string, override = 
   const changed = git(project.root, 'diff', '--name-only', '--no-renames', '-z', ancestor, branch).split('\0').filter(Boolean);
   // Change sets that live only in the worktree are part of what was tried: an edit after the trial makes the inputs stale.
   const pins = report.design_changes?.length ? pinnedDesignChanges(project, orders, tag, branch) : {};
-  const key = fingerprint({ base, branch, report: report.seq, accept, checks: project.checks, ...(Object.keys(pins).length ? { design: pins } : {}) });
-  return { doc, report, base, branch, changed, key, accept, pins };
+  const recipe = matchCaptureRecipe(project, doc);
+  const key = fingerprint({
+    base,
+    branch,
+    report: report.seq,
+    accept,
+    checks: project.checks,
+    ...(Object.keys(pins).length ? { design: pins } : {}),
+    ...(recipe ? { capture: { recipe, screenshots: project.verify.screenshots } } : {}),
+  });
+  return { doc, report, base, branch, changed, key, accept, pins, recipe };
 }
 
 export function latestAcceptanceTrial(orders: Orders, tag: string): AcceptanceTrial | undefined {
@@ -370,6 +384,30 @@ export function trialAcceptance(project: ProjectConfig, orders: Orders, tag: str
         orders.record(tag, 'accept-step', { trial: result.id, ...stepResult });
         if (stepResult.status === 'failed') { result.status = 'failed'; result.reason = `Step ${step.name} failed: ${stepResult.tail}`; break; }
       }
+      if (result.status !== 'failed' && input.recipe) {
+        const cap = runCapture(project, orders, tag, {
+          recipe: input.recipe.name,
+          trial: result.id,
+          outDir: path.join(logs, 'capture'),
+          expectedRevision: input.branch,
+        });
+        const stepResult: AcceptStepResult = {
+          name: 'capture',
+          status: cap.summary.status === 'passed' ? 'passed' : 'failed',
+          duration_ms: cap.duration_ms,
+          code: cap.busy ? 75 : cap.summary.status === 'passed' ? 0 : 1,
+          tail: cap.busy ? `capture lock "${input.recipe.lock}" busy` : tail(formatCaptureRun(input.doc.order.tag, cap)),
+          log: cap.summary.manifest,
+          capture: cap.summary,
+        };
+        result.steps.push(stepResult);
+        orders.record(tag, 'accept-step', { trial: result.id, ...stepResult });
+        if (stepResult.status === 'failed') {
+          result.status = 'failed';
+          result.reason = `Step capture failed: ${cap.busy ? stepResult.tail : (cap.summary.reason || stepResult.tail)}`;
+          if (cap.busy) result.retryable = true;
+        }
+      }
       if (result.status !== 'failed') result.status = 'passed';
     }
   } catch (e) { result.status = 'failed'; result.reason = errorText(e); if (interrupted(e)) result.retryable = true; }
@@ -396,8 +434,18 @@ export function acceptanceCard(project: ProjectConfig, orders: Orders, tag: stri
   const doc = orders.get(tag), root = doc.order.worktree ?? project.root;
   const independent = independentChecks(orders, doc.order.tag);
   const independentRequired = needsIndependentCheck(project, doc);
-  if (!acceptConfigFor(project, doc.order.kind) && !independentRequired && !independent.length) return undefined;
   const events = orders.store.events({ tag: doc.order.tag });
+  const reportSeq = doc.reports.at(-1)?.seq ?? null;
+  const trial = latestAcceptanceTrial(orders, doc.order.tag);
+  const trialCapture = (trial && (reportSeq === null || trial.report === reportSeq))
+    ? trial.steps.find(s => s.name === 'capture')?.capture
+    : undefined;
+  const runEventCapture = events
+    .filter(e => e.type === 'capture-run' && (e.data?.report ?? null) === reportSeq)
+    .at(-1)?.data?.summary as CaptureSummary | undefined;
+  const capture = trialCapture ?? runEventCapture;
+  const pipeline = !!acceptConfigFor(project, doc);
+  if (!pipeline && !independentRequired && !independent.length && !capture) return undefined;
   const lint = events.filter(e => e.type === 'check' && e.data?.delivery === true && e.data?.report === doc.reports.at(-1)?.seq).at(-1)?.data?.lint as CheckItem[] | undefined;
   let patterns: string[] = [];
   try { patterns = parseOrderSections(readFileSync(findOrderFile(project.work_orders, tag), 'utf8')).evidence.map(e => e.path.replace(/^`|`$/g, '').replace(/\{tag\}/g, tag).replace(/\{tag_lower\}/g, tag.toLowerCase())); } catch { /* absent body */ }
@@ -418,14 +466,13 @@ export function acceptanceCard(project: ProjectConfig, orders: Orders, tag: stri
     };
     walk(start);
   }
-  const trial = latestAcceptanceTrial(orders, doc.order.tag);
-  return { tag: doc.order.tag, title: doc.order.title, href: `/p/${encodeURIComponent(project.id)}/orders/${encodeURIComponent(tag)}#acceptance`, pipelineRequired: !!acceptConfigFor(project, doc.order.kind), lint: lint ?? [], ...(trial ? { trial } : {}), independent, independentRequired, changed: trial?.changed ?? [], images: [...images] };
+  return { tag: doc.order.tag, title: doc.order.title, href: `/p/${encodeURIComponent(project.id)}/orders/${encodeURIComponent(tag)}#acceptance`, pipelineRequired: pipeline, lint: lint ?? [], ...(trial ? { trial } : {}), ...(capture ? { capture } : {}), independent, independentRequired, changed: trial?.changed ?? [], images: [...images] };
 }
 
 /** Delivery entry points must keep a mechanical failure reviewable, even with missing Git metadata. */
 export function attemptAcceptance(project: ProjectConfig, orders: Orders, tag: string): AcceptanceTrial | undefined {
   const doc = orders.get(tag);
-  if (!acceptConfigFor(project, doc.order.kind)) return undefined;
+  if (!acceptConfigFor(project, doc)) return undefined;
   try { return trialAcceptance(project, orders, tag, false, false, 30 * 60 * 1000); }
   catch (e) {
     const doc = orders.get(tag), reason = errorText(e), previous = latestAcceptanceTrial(orders, tag);
@@ -437,7 +484,7 @@ export function attemptAcceptance(project: ProjectConfig, orders: Orders, tag: s
 }
 
 export function runAcceptanceTrials(project: ProjectConfig, orders: Orders): void {
-  for (const doc of orders.all()) if (acceptConfigFor(project, doc.order.kind) && orders.stage(doc).stage === 'awaiting-review' && doc.reports.at(-1)?.status === 'ready') attemptAcceptance(project, orders, doc.order.tag);
+  for (const doc of orders.all()) if (acceptConfigFor(project, doc) && orders.stage(doc).stage === 'awaiting-review' && doc.reports.at(-1)?.status === 'ready') attemptAcceptance(project, orders, doc.order.tag);
 }
 
 function requireCleanBase(project: ProjectConfig): string {

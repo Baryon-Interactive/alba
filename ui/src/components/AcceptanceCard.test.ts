@@ -39,3 +39,32 @@ it('uses Chinese acceptance controls', () => {
   const out = html(fixture());
   for (const text of [translated["Acceptance review"], translated["Changed paths"], translated["Accept and merge"]]) expect(out).toContain(text);
 });
+
+it('renders Alba captures before worker pictures with sheet, shot badges, gates and revision', () => {
+  setLang('en');
+  const card = fixture();
+  card.capture = {
+    recipe: 'battle',
+    manifest: '/state/capture/manifest.json',
+    sheet: '/state/capture/sheet.png',
+    revision: 'abcdef1234567890abcdef1234567890abcdef12',
+    status: 'passed',
+    shots: [
+      { name: 'menu', file: '/state/capture/menu.png', status: 'ok', width: 320, height: 180 },
+      { name: 'day', file: '/state/capture/day.png', status: 'failed', reason: 'exited with code 3 before writing the picture' },
+    ],
+    gates: [{ name: 'identical', status: 'pass', detail: 'Distinct shots: menu.' }],
+  };
+  const out = html(card);
+  for (const text of ['sheet.png', 'battle', 'abcdef123456', 'menu', '320x180', 'exited with code 3 before writing the picture', 'identical: PASS', 'screen.png']) {
+    expect(out).toContain(text);
+  }
+  expect(out.indexOf('sheet.png')).toBeLessThan(out.indexOf('screen.png'));
+  expect(out.indexOf('Alba')).toBeLessThan(out.indexOf('Worker'));
+
+  setLang('zh');
+  const zhOut = html(card);
+  expect(zhOut).toContain(translated["Alba's captures"]);
+  expect(zhOut).toContain(translated["Worker's pictures (secondary)"]);
+  expect(zhOut.indexOf(translated["Alba's captures"])).toBeLessThan(zhOut.indexOf(translated["Worker's pictures (secondary)"]));
+});
