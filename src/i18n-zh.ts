@@ -989,6 +989,10 @@ export const zh: Record<string, string> = {
   '{holder} for {min} min': '{holder} 已占用 {min} 分钟',
   'waiting for {name} slot ({place}, {eta})': '等待 {name} 槽位（{place}，预计 {eta}）',
   'waiting for {name} slot ({place}, {eta}; held by {who})': '等待 {name} 槽位（{place}，预计 {eta}；当前占用：{who}）',
+  // scorecard
+  'Invalid scorecard grouping: {value}': '无效的记分卡分组：{value}',
+  'unknown ({priced} of {runs} runs priced)': '未知（{runs} 次派工中 {priced} 次有价格）',
+  'Usage: alba usage scorecard [--project f ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]': '用法：alba usage scorecard [--project f ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

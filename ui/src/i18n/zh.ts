@@ -1667,4 +1667,15 @@ export const zh: Record<string, string> = {
   'revision': '提交版本',
   'machine': '机器',
   'about {time}': '约 {time}',
+  // scorecard
+  'Cost and time per accepted order': '每个验收工单的费用与用时',
+  'This project': '当前项目',
+  '14 days': '14 天',
+  '1st-pass': '一次通过',
+  'After rework': '返工后通过',
+  'Reworks': '打回返工',
+  'Cost / accept': '每次验收费用',
+  'Min / accept': '每次验收分钟',
+  'First-pass rate': '一次通过率',
+  'unknown ({priced} of {runs} runs priced)': '未知（{runs} 次派工中 {priced} 次有价格）',
 };

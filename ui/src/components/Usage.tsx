@@ -1,7 +1,11 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
-import type { OrderDetail, UsageDashboard, UsageReport, UsageTotal } from '@api';
+import type { OrderDetail, ScorecardRow, UsageDashboard, UsageReport, UsageTotal } from '@api';
+import { ErrorBox } from '@/components/common';
 import { getLang, t } from '@/i18n';
 import { SERIES_COLORS } from '@/lib/palette';
+import { useUsageScorecard } from '@/lib/queries';
+import { sortScorecardRows, toggleScorecardSort, type ScorecardColumn, type ScorecardSort } from '@/lib/scorecard';
 
 const colors = SERIES_COLORS;
 export const tokenNumber = (n: number) => new Intl.NumberFormat(getLang(), { notation: 'compact', maximumFractionDigits: 2 }).format(n);
@@ -30,4 +34,137 @@ export function OrderAccounting({ data }: { data?: OrderDetail['accounting'] }) 
   const runs = new Map<string, typeof data.rows>();
   for (const row of data.rows) { const list = runs.get(row.run) ?? []; list.push(row); runs.set(row.run, list); }
   return <section className="my-4 rounded-lg border bg-card p-4"><h2 className="mb-2 font-semibold">{t('Usage and cost')}</h2><p>{t('This order used {tokens} tokens; {rework}% in rework, {resume}% in resumes.', { tokens: tokenTotal(data.total), rework: Math.round(data.reworkShare * 100), resume: Math.round(data.resumeShare * 100) })} <Estimate total={data.total} /></p><div className="mt-3 space-y-1 text-xs">{[...runs].map(([id, rows]) => <div className="flex flex-wrap justify-between gap-2 border-t py-2" key={id}><span>{id} · {rows[0].worker} · {rows[0].engine} · {rows[0].model}</span><span>{rows.every(r => r.total_tokens === undefined) ? t('unknown') : tokenNumber(rows.reduce((n,r) => n + (r.total_tokens ?? 0), 0))} · {rows.map(r => r.source).filter((v,i,a) => a.indexOf(v) === i).join(', ')} {rows[0].rework && ` · ${t('Rework')}`}{rows[0].resume && ` · ${t('Resumes')}`}{rows.some(r => r.estimate !== undefined) && ` · ${rows.reduce((n,r) => n + (r.estimate ?? 0), 0).toFixed(4)} ${rows.find(r => r.currency)?.currency} ${t('estimate')}`}{rows[0].subscription && !rows[0].quota?.length && ` · ${t('Window share unknown')}`}{rows[0].quota?.map(q => ` · ${q.window}: ${q.percent.toFixed(1)}% ${q.shared ? t('shared window change') : t('window change')}`)}</span></div>)}</div>{data.total.unknown > 0 && <p className="text-sm text-muted-foreground">{t('{n} usage rows are unknown', { n: data.total.unknown })}</p>}{data.signals.map((s,i) => <p key={i} className="mt-2 text-sm text-warning">{s.text} · {s.run} · {t('Turns')} {s.turns.join('–')}</p>)}{data.warnings.map((w,i) => <p key={i} className="mt-2 text-sm text-warning">{w.text}</p>)}</section>;
+}
+
+const formatScoreUsd = (n: number) => (n > 0 && n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`);
+
+function renderScoreCost(row: ScorecardRow): string {
+  if (row.cost.usd !== undefined) return formatScoreUsd(row.cost.usd);
+  if (row.runs > 0 && row.cost.included_runs === row.runs) return t('included');
+  if (row.cost.priced_runs > 0) return t('unknown ({priced} of {runs} runs priced)', { priced: row.cost.priced_runs, runs: row.runs });
+  return t('unknown');
+}
+
+function renderScoreCostPerAccept(row: ScorecardRow): string {
+  if (row.cost_per_accept !== undefined) return formatScoreUsd(row.cost_per_accept);
+  if (row.runs > 0 && row.cost.included_runs === row.runs) return t('included');
+  if (row.cost.usd === undefined) return t('unknown');
+  return '—';
+}
+
+export function ScorecardSection({ project }: { project: string }) {
+  const [since, setSince] = useState<'7d' | '14d' | '30d'>('14d');
+  const [allProjects, setAllProjects] = useState(false);
+  const [sort, setSort] = useState<ScorecardSort>({ column: 'cost_per_accept', dir: 'asc' });
+  const q = useUsageScorecard(allProjects ? undefined : project, since);
+
+  const columns: { key: ScorecardColumn; label: string; numeric?: boolean }[] = [
+    { key: 'key', label: t('Worker') },
+    { key: 'kind', label: t('Kind') },
+    { key: 'runs', label: t('Runs'), numeric: true },
+    { key: 'accepted_first_pass', label: t('1st-pass'), numeric: true },
+    { key: 'accepted_after_rework', label: t('After rework'), numeric: true },
+    { key: 'reworks', label: t('Reworks'), numeric: true },
+    { key: 'failed', label: t('Failed'), numeric: true },
+    { key: 'cancelled', label: t('Cancelled'), numeric: true },
+    { key: 'minutes', label: t('Minutes'), numeric: true },
+    { key: 'cost', label: t('Cost'), numeric: true },
+    { key: 'cost_per_accept', label: t('Cost / accept'), numeric: true },
+    { key: 'minutes_per_accept', label: t('Min / accept'), numeric: true },
+    { key: 'first_pass_rate', label: t('First-pass rate'), numeric: true },
+  ];
+
+  const rows = q.data ? sortScorecardRows(q.data.rows, sort) : [];
+
+  return (
+    <section className="min-w-0 rounded-lg border bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-semibold">{t('Cost and time per accepted order')}</h2>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <div className="inline-flex overflow-hidden rounded border bg-background text-xs">
+            <button
+              type="button"
+              className={`px-2.5 py-1 ${!allProjects ? 'bg-primary text-primary-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setAllProjects(false)}
+            >
+              {t('This project')}
+            </button>
+            <button
+              type="button"
+              className={`border-l px-2.5 py-1 ${allProjects ? 'bg-primary text-primary-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setAllProjects(true)}
+            >
+              {t('All projects')}
+            </button>
+          </div>
+          <label className="flex items-center gap-2">
+            {t('Period')}
+            <select
+              className="rounded border bg-card px-2.5 py-1 text-xs"
+              value={since}
+              onChange={e => setSince(e.target.value as '7d' | '14d' | '30d')}
+            >
+              <option value="7d">{t('7 days')}</option>
+              <option value="14d">{t('14 days')}</option>
+              <option value="30d">{t('30 days')}</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      {q.isError ? (
+        <ErrorBox error={q.error} />
+      ) : !q.data ? (
+        <p className="text-sm text-muted-foreground">{t('Loading…')}</p>
+      ) : !rows.length ? (
+        <p className="text-sm text-muted-foreground">{t('No usage recorded in this period.')}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr>
+                {columns.map(col => {
+                  const active = sort.column === col.key;
+                  return (
+                    <th
+                      key={col.key}
+                      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      className="pb-2 pr-4 whitespace-nowrap"
+                    >
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                        onClick={() => setSort(cur => toggleScorecardSort(cur, col.key))}
+                      >
+                        <span>{col.label}</span>
+                        {active && <span>{sort.dir === 'asc' ? '↑' : '↓'}</span>}
+                      </button>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={`${r.key}:${r.kind}`} className="border-t">
+                  <td className="py-2 pr-4 whitespace-nowrap font-medium">{r.key}</td>
+                  <td className="pr-4 whitespace-nowrap">{r.kind}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.runs}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.accepted_first_pass}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.accepted_after_rework}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.reworks}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.failed}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.cancelled}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{Math.round(r.minutes)}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{renderScoreCost(r)}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{renderScoreCostPerAccept(r)}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.minutes_per_accept !== undefined ? Math.round(r.minutes_per_accept) : '—'}</td>
+                  <td className="pr-4 whitespace-nowrap tabular-nums">{r.first_pass_rate !== undefined ? `${Math.round(r.first_pass_rate * 100)}%` : 'n<3'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }

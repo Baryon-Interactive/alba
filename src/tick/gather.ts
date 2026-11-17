@@ -39,7 +39,9 @@ import { limitWords } from '../run/handoff.ts';
 import { applyNudges } from '../run/nudge.ts';
 import { pendingNotes } from '../run/prompt.ts';
 import { readReceipt } from '../run/progress.ts';
-import { collectUsage, budgetWarnings } from '../usage/accounting.ts';
+import { collectUsage, budgetWarnings, sinceDate } from '../usage/accounting.ts';
+import { scorecard } from '../usage/scorecard.ts';
+import { usageRows } from '../usage/store.ts';
 import { liveRuns } from '../run/live.ts';
 import { pickupOutbox } from '../run/messages.ts';
 import { lingeringOf } from '../run/lingering.ts';
@@ -330,6 +332,22 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
   const owner = (text: string | undefined) => ownerOf(workersFile.workers, text);
   const results = roleResults(docs, [], '', at);
   const histories = workerHistory(docs, workersFile.workers);
+  const hasRankBy = [...Object.values(workersFile.roles ?? {}), ...Object.values(project.roles ?? {})].some(r => r.rank_by && r.rank_by !== 'preference')
+    && Object.values(effectiveRoles(project, workersFile)).some(r => r.rank_by && r.rank_by !== 'preference');
+  const workerScorecards: Record<string, NonNullable<WorkerState['scorecard']>> = {};
+  if (hasRankBy) {
+    const scSince = sinceDate('14d', now);
+    const sc = scorecard({ docs: docs.map(doc => ({ project: project.id, doc })), rows: usageRows(project, scSince), workers: workersFile, since: scSince, until: at, by: 'worker' });
+    for (const r of sc.rows) {
+      (workerScorecards[r.key] ??= {})[r.kind] = {
+        first_attempts: r.first_attempts,
+        ...(r.first_pass_rate !== undefined ? { first_pass_rate: r.first_pass_rate } : {}),
+        accepts: r.accepts,
+        ...(r.cost_per_accept !== undefined ? { cost_per_accept: r.cost_per_accept } : {}),
+        ...(r.minutes_per_accept !== undefined ? { minutes_per_accept: r.minutes_per_accept } : {}),
+      };
+    }
+  }
   const checks = independentChecks(orders);
   const spent = spendToday(docs, workersFile.workers, probes, now);
   const workers: WorkerState[] = workersFile.workers.map(config => {
@@ -347,6 +365,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
       config, available: a.available, reasons: a.reasons, startable: !!config.launch || config.card_only === true,
       roleHistory: Object.fromEntries(results.filter(r => r.worker === config.id).map(r => [r.role, { samples: r.samples, ...(r.acceptedShare !== null ? { rate: r.acceptedShare } : {}) }])),
       running: own.filter(x => x.open).length + checks.filter(r => r.worker === config.id && r.status === 'running').length + (options.peers?.get(config.id) ?? 0), history: histories[config.id] ?? {},
+      ...(hasRankBy ? { scorecard: workerScorecards[config.id] ?? {} } : {}),
       runsToday: own.filter(x => !x.r.imported && !x.r.monitor && new Date(x.r.started).toDateString() === now.toDateString()).length + checks.filter(r => r.worker === config.id && new Date(r.started).toDateString() === now.toDateString()).length,
       ...(config.daily_cap_usd !== undefined ? { spendTodayUsd: today, overCap } : {}),
     };

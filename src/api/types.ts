@@ -1614,3 +1614,52 @@ export type PlanRequest = import('../orders/planned.ts').PlanInput & { project: 
 
 /** `GET /api/producer/config`: the text of the `producer:` section of the project file. */
 export type { ProducerConfigView, ProducerConfigEdit, DiffLine } from '../producer/config-edit.ts';
+
+// ---------------------------------------------------------------------------------------------------------------- scorecard
+
+export type ScorecardBy = 'worker' | 'model' | 'family';
+export type ScorecardCostSource = 'engine' | 'estimate' | 'run-record';
+
+export interface ScorecardCost {
+  /** Present only when every run in the row is priced (`priced_runs === runs`). */
+  usd?: number;
+  sources: ScorecardCostSource[];
+  priced_runs: number;
+  included_runs: number;
+  unknown_runs: number;
+}
+
+export interface ScorecardRow {
+  key: string;
+  kind: string;
+  projects: string[];
+  runs: number;
+  accepted_first_pass: number;
+  accepted_after_rework: number;
+  accepts: number;
+  reworks: number;
+  failed: number;
+  cancelled: number;
+  other: number;
+  pending: number;
+  open: number;
+  first_attempts: number;
+  minutes: number;
+  tokens?: number;
+  tokens_unknown_runs: number;
+  cost: ScorecardCost;
+  cost_per_accept?: number;
+  minutes_per_accept?: number;
+  first_pass_rate?: number;
+  acceptance_rate?: number;
+}
+
+/** `GET /api/usage/scorecard?project=&since=&kind=&by=`: cost and time per accepted order. */
+export interface Scorecard {
+  by: ScorecardBy;
+  since: string;
+  until: string;
+  kind?: string;
+  projects: string[];
+  rows: ScorecardRow[];
+}
