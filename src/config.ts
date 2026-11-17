@@ -46,6 +46,7 @@ export interface DispatchRules {
 /** A shared thing orders compete for (a machine, a lane of builds): at most `slots` leases at a time. */
 export interface ResourceConfig {
   slots: number;
+  scope?: 'project' | 'machine';    // default 'project'; 'machine' shares slots and a queue across projects on this OS account
   note?: string;
   exclusive: boolean;               // while it is held no other order of the `blocks` kinds is started, and an order that uses it waits until none of those runs
   blocks: string[];                 // kinds an exclusive resource keeps out (default: empty)
@@ -909,15 +910,17 @@ function validateResources(raw: unknown, file: string): Record<string, ResourceC
     const at = `resources.${name}`;
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) fail('{file}: "{at}": a resource name is letters, digits, ".", "-" and "_".', { file, at });
     if (!isRecord(v)) fail('{file}: "{at}" must be a mapping with "slots".', { file, at });
-    const unknown = Object.keys(v).filter(k => !['slots', 'note', 'exclusive', 'blocks', 'lease_minutes', 'match'].includes(k));
+    const unknown = Object.keys(v).filter(k => !['slots', 'scope', 'note', 'exclusive', 'blocks', 'lease_minutes', 'match'].includes(k));
     if (unknown.length) fail('{file}: unknown key(s) under "{at}": {keys}.', { file, at, keys: unknown.join(', ') });
     if (typeof v.slots !== 'number' || !Number.isInteger(v.slots) || v.slots < 1) fail('{file}: "{at}.slots" must be a whole number >= 1.', { file, at });
+    if (v.scope !== undefined && v.scope !== 'project' && v.scope !== 'machine') fail('{file}: "{at}.scope" must be "project" or "machine".', { file, at });
     if (v.exclusive !== undefined && typeof v.exclusive !== 'boolean') fail('{file}: "{at}.exclusive" must be true or false.', { file, at });
+    if (v.scope === 'machine' && v.exclusive === true) fail('{file}: "{at}": exclusive cannot be machine-scoped yet.', { file, at });
     if (v.note !== undefined && typeof v.note !== 'string') fail('{file}: "{at}.note" must be text.', { file, at });
     if (v.blocks !== undefined && (!Array.isArray(v.blocks) || v.blocks.some(x => typeof x !== 'string' || !x.trim()))) fail('{file}: "{at}.blocks" must be a list of kinds.', { file, at });
     if (v.lease_minutes !== undefined && (typeof v.lease_minutes !== 'number' || !(v.lease_minutes >= 1))) fail('{file}: "{at}.lease_minutes" must be a number >= 1.', { file, at });
     if (v.match !== undefined) { if (typeof v.match !== 'string' || !v.match) fail('{file}: "{at}.match" must be a regular expression.', { file, at }); regexOk(v.match, `"${at}.match"`, file); }
-    out[name] = { slots: v.slots, exclusive: v.exclusive === true, blocks: Array.isArray(v.blocks) ? (v.blocks as string[]).map(x => x.trim()) : [], lease_minutes: typeof v.lease_minutes === 'number' ? v.lease_minutes : 480, ...(typeof v.note === 'string' && v.note.trim() ? { note: v.note.trim() } : {}), ...(typeof v.match === 'string' ? { match: v.match } : {}) };
+    out[name] = { slots: v.slots, ...(v.scope === 'machine' ? { scope: 'machine' as const } : v.scope === 'project' ? { scope: 'project' as const } : {}), exclusive: v.exclusive === true, blocks: Array.isArray(v.blocks) ? (v.blocks as string[]).map(x => x.trim()) : [], lease_minutes: typeof v.lease_minutes === 'number' ? v.lease_minutes : 480, ...(typeof v.note === 'string' && v.note.trim() ? { note: v.note.trim() } : {}), ...(typeof v.match === 'string' ? { match: v.match } : {}) };
   }
   return out;
 }
