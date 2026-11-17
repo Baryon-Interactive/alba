@@ -291,7 +291,7 @@ test('metrics: self is 0, washed-out copy passes luminance and fails histogram a
   ].join('\n')).blocks[0]!.rows;
   for (const r of crossRules) {
     const res = evaluateTargetRule(r, capLarge, refSmall);
-    assert.equal(res.pass, true, `${r.metric} (${r.label}) passes across sizes: value=${res.value}`);
+    assert.equal(res.pass, true, `${r.metric} (${res.label}) passes across sizes: value=${res.value}`);
   }
 });
 
@@ -499,7 +499,7 @@ test('UI: TargetPanel inside AcceptanceCard renders missed rows in red, trends, 
   });
 
   try {
-    const React = uiReq('react') as typeof import('react');
+    const React = uiReq('react') as { createElement: (type: unknown, props: unknown, ...children: unknown[]) => unknown };
     const { renderToStaticMarkup } = uiReq('react-dom/server') as { renderToStaticMarkup: (el: unknown) => string };
     const rqPkgPath = uiReq.resolve('@tanstack/react-query/package.json');
     const rqPkg = JSON.parse(readFileSync(rqPkgPath, 'utf8')) as { module?: string; exports?: { '.'?: { import?: string | { default?: string } } } };
