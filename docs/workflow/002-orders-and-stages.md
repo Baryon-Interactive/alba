@@ -92,9 +92,40 @@ Importing records facts that match the table (a `running` row gets an open run, 
 
 By default every tag found in the needs column is a need, which also catches tags that are only mentioned ("A delivered (not merged)"). With `needs_markers` (a list of words such as `[merged, after]`, plus the `merged_marker`) only two forms count: the whole cell is a list of tags ("A, B", "A and B"), or tags are written right before a marker ("A, B merged", "after" styles). `base_pattern` is a regular expression with one group; the first match anywhere in the row (for example `from (\S+)` style text) becomes the order's `base_ref`, the local branch `alba run` makes its worktree from. A remote-tracking ref is refused. `alba orders add --base-ref <branch>` sets it by hand.
 
-## 6. Acceptance sections in an order
+## 6. Acceptance sections, templates and preflight
 
-An order file can make its mechanical expectations explicit with `## Acceptance`, `## Evidence`, and `## Paths` sections. Use one bullet per acceptance sentence; evidence bullets use `path: what`, while path bullets use `allow:`, `deny:`, or `max-lines: <number> for <glob>`. `alba verify` reports missing sections as warnings and enforces the declared evidence and path rules.
+An order file can make its mechanical expectations explicit with `## Acceptance`, `## Evidence`, `## Paths` and `## Standing rules` sections (numbered headings with notes such as `## 4. Acceptance (lead)` also count). Use one bullet per acceptance sentence; evidence bullets use `path: what`, while path bullets use `allow:`, `deny:`, `max-lines: <number> for <glob>` or `tool-dir: <dir> (<tool>)`. `alba verify` reports a missing Acceptance section as a warning and enforces the declared evidence and path rules.
+
+### Per-kind order templates
+
+`orders.templates` in `alba.yaml` supplies default sections by kind (`default` applies to kinds without their own entry; an empty mapping such as `docs: {}` fills nothing for that kind):
+
+```yaml
+orders:
+  templates:
+    ue:
+      file: templates/orders/ue.md
+      acceptance: ["Packaged autoplay of the changed screen exits 0 (python tools/run_autoplay.py)"]
+      evidence: ["artifacts/{tag_lower}/*.png: named captures of each changed screen"]
+      paths: ["allow: game/Source/**"]
+      rules: ["Unreal: C++ and generated assets only, no hand-made Blueprint assets."]
+    docs: {}
+```
+
+`file` is relative to `alba.yaml`; inline `acceptance`, `evidence`, `paths` and `rules` lists win over the same section in `file`. Placeholders `{tag}`, `{tag_lower}` and `{kind}` are expanded. When an order is created with a body (`createOrder`: `orders add --body-file`, the API, design intake and producer `add-order`) or a planned draft is accepted (`acceptDraft`), Alba appends only the sections missing from the body (even an empty written heading counts as present and is never altered), in the order `Acceptance`, `Evidence`, `Paths`, `Standing rules`, right before a trailing `Report` section when present or else at the end, and records `order-template-filled` (`{ kind, sections }`). Orders created without a body are not filled. When `drafting.template` is not set and the planned order's kind has a template, `draftingContext` places the kind's sections into the built-in drafting skeleton instead of empty `Acceptance` and `Evidence` headings. Shipped project-neutral examples live in [ue.md](../../templates/orders/ue.md), [code.md](../../templates/orders/code.md) and [docs.md](../../templates/orders/docs.md).
+
+### Preflight before dispatch
+
+`alba orders preflight <TAG> [--json]` checks an order against its base branch before a worker spends a run on it, records `preflight-checked` (`{ hash, base_head, ok, problems }`), prints each finding with its fix, and exits `1` when any `hold` problem is present (`0` otherwise):
+
+1. **`file`** (`hold`): the order has a work-order file and `parseOrderSections` finds a `## Acceptance` section with bullet items. Fix: create `<TAG>-<slug>.md` or add `## Acceptance` bullets.
+2. **`sections`** (`warn`): `## Evidence` or `## Paths` is missing while the kind's template defines it. Fix: the exact section bullets from the template.
+3. **`paths`** (`hold`): when `## Paths` declares `allow:` globs, every repository path named in the body outside reading headings (`read`, `background`, `context`, `reference`, `report`) that exists on the base (`git cat-file`) must match an `allow:` glob and no `deny:` glob. Fix: the exact `- allow: <path>` bullet.
+4. **`needs`** (`hold`): every listed need is a known order and is not `cancelled` (unmerged valid needs are already shown by stage `waiting-needs`). Fix: drop the need in the order's fields or dispatch table, or close the needed order if its work is on the base.
+5. **`tool-dirs`** (`warn`): for each `orders.preflight.tool_dirs.<tool>: { dir, kinds? }` matching the order's kind (or any kind when `kinds` is omitted), the body must name `dir`. Fix: `- tool-dir: <dir> (<tool>)` under `## Paths`.
+6. **`checks`** (`hold`, only when `orders.preflight.run_checks: true`): commands from fenced blocks under `## Checks` and Acceptance bullets of the form ``command: `<cmd>` `` run through the platform shell in a detached checkout of the base head under `<state_dir>/preflight/<TAG>` (after `dispatch.provision` if set), each bounded by `orders.preflight.check_timeout_seconds` (default `300`), stopping at the first failure. Any command naming a repository path absent from the base is skipped (`skipped: tests what the order creates`). The scratch checkout is removed afterwards; a cleanup failure is reported as `warn`, never `hold`. Fix: the failing command, its exit code and the last 20 output lines.
+
+Configure preflight under `orders.preflight` (`mode: hold | warn | off`, default `hold`). To bypass a preflight hold for the current order file only, run `alba orders act <TAG> queue --override --note "<why>"` with a note of at least 10 characters; this records `preflight-overridden` (`{ hash, note }`) without adding a duplicate `queue` action on an already-queued order, and editing the order file changes its SHA-256 hash so preflight checks it again.
 
 ##  report delivery and approval updates
 
