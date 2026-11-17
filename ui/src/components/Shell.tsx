@@ -119,15 +119,15 @@ export function Shell() {
         </Menu>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
-        {(['work', 'resources', 'reference'] as const).map(group => project && <div key={group} className="mb-2"><div className="px-2.5 pt-2 pb-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase">{group === 'work' ? t('Work') : group === 'resources' ? t('Resources') : t('Knowledge')}</div>{nav.filter(n => n.group === group).sort((a, b) => {
-          const order = ['Overview', 'Needs you', 'Board', 'Runs', 'Producer', 'Workers', 'Usage', 'Clean', 'Decision ledger', 'Skills', 'Lessons', 'Documents', 'Picks', 'Tick'].map(k => t(k));
+        {(['work', 'resources', 'reference'] as const).map(group => project && <div key={group} className="mb-1"><div className="px-2.5 pt-1 pb-0.5 text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase">{group === 'work' ? t('Work') : group === 'resources' ? t('Resources') : t('Knowledge')}</div>{nav.filter(n => n.group === group).sort((a, b) => {
+          const order = ['Overview', 'Needs you', 'Board', 'Runs', 'Producer', 'Workers', 'Usage', 'Clean', 'Decision ledger', 'Design', 'Skills', 'Lessons', 'Documents', 'Picks', 'Art', 'Tick'].map(k => t(k));
           return (order.indexOf(a.label) < 0 ? order.length : order.indexOf(a.label)) - (order.indexOf(b.label) < 0 ? order.length : order.indexOf(b.label));
         }).map(n => (
           <NavLink
             key={n.to}
             to={n.to}
             end={n.end}
-            className={({ isActive }) => cn('relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-active/60 hover:text-foreground', isActive && 'bg-sidebar-active text-foreground before:absolute before:inset-y-1.5 before:-left-2 before:w-[3px] before:rounded-r before:bg-brand [&_svg]:text-primary')}
+            className={({ isActive }) => cn('relative flex items-center gap-2.5 rounded-md px-2.5 py-[3px] text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-active/60 hover:text-foreground', isActive && 'bg-sidebar-active text-foreground before:absolute before:inset-y-1.5 before:-left-2 before:w-[3px] before:rounded-r before:bg-brand [&_svg]:text-primary')}
           >
             <n.icon className="size-4" />
             <span className="flex-1">{n.label}</span>
@@ -140,10 +140,12 @@ export function Shell() {
         ))}</div>)}
         {!project && (projects.data ?? []).slice(0, 12).map(p => <NavLink className="rounded-md px-2.5 py-1.5 text-sm hover:bg-accent" key={p.id} to={`/p/${encodeURIComponent(p.id)}`}>{p.name}</NavLink>)}
         {!project && (projects.data?.length ?? 0) > 12 && <NavLink to="/overview/projects">{t('+{n} more', { n: projects.data!.length - 12 })}</NavLink>}
-        {project && <Button asChild size="sm" variant="outline" className="mt-3 justify-start">
-          <NavLink to={`${base}/new`}><Plus />{t('New order')}</NavLink>
-        </Button>}
       </nav>
+      {project && <div className="px-2 pt-2">
+        <Button asChild size="sm" variant="outline" className="w-full justify-start">
+          <NavLink to={`${base}/new`}><Plus />{t('New order')}</NavLink>
+        </Button>
+      </div>}
       {project && <div className="space-y-1 border-t px-3 py-2.5 text-xs text-muted-foreground">
         {running > 0 ? (
           <div className="flex items-center gap-1.5 font-medium text-info"><span className="ping size-1.5 rounded-full bg-info" /><Play className="size-3" />{t('{n} running', { n: running })}</div>
