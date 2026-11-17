@@ -11,7 +11,7 @@
 
 # Alba
 
-Alba is a local control room for coordinating a team of AI coding agents across one workstation or a local fleet of machines. It turns written work orders into isolated Git worktrees, routes each task to the right agent CLI under hardware and quota guardrails, watches runs live, and merges nothing without evidence.
+Alba is a local control room for coordinating a team of AI coding agents across one workstation or a local fleet of machines. It turns written work orders into isolated Git worktrees, routes each task to the right agent CLI under hardware and quota guardrails, watches runs live, and merges nothing without independent evidence.
 
 ![Alba work-order board with running work, questions, review and merged deliveries](docs/img/board.png)
 
@@ -23,21 +23,21 @@ Running one coding agent in one chat window works for small edits. On a real gam
 
 Alba replaces ad-hoc chat loops with four layers of local control:
 
-### 1. Fact-driven workflow and Git isolation
+### 1. Fact-driven workflow, preflight gates, and visual verification
 
-- **Work orders, not chat.** Every task is a Markdown order with intent, dependencies, file boundaries and acceptance criteria. Card stages (`queued`, `running`, `monitoring`, `awaiting-user`, `awaiting-review`, `merged`, `cancelled`) are computed from append-only facts in SQLite, so cards cannot be dragged out of sync with Git. [Orders and stages](docs/workflow/002-orders-and-stages.md)
-- **One worktree per run.** Each worker attempt gets its own branch and Git worktree. Parallel runs never collide on disk, and abnormal exits snapshot uncommitted files into `refs/alba/wip/*` without touching `git stash`. [Runs and resume](docs/workflow/005-run-and-resume.md)
-- **Review by evidence.** A clean exit code approves nothing. Deliveries attach a structured report, branch diff, and acceptance evidence; optional pipelines verify independently and run expensive soak suites as nightly gates. [Review](docs/workflow/006-review.md), [acceptance pipeline](docs/workflow/026-acceptance-pipeline.md), [nightly gates](docs/operations/029-nightly-gates.md)
+- **Work orders, templates, and preflight.** Every task is a Markdown order with intent, dependencies, `allow:`/`deny:` file boundaries, and acceptance criteria. Per-kind templates (`ue`, `code`, `docs`) fill missing sections on creation, and preflight checks hold malformed orders before a worker run is spent. Card stages (`queued`, `running`, `monitoring`, `awaiting-user`, `awaiting-review`, `merged`, `cancelled`) are computed from append-only facts in SQLite, so cards cannot drift out of sync with Git. [Orders, templates and preflight](docs/workflow/002-orders-and-stages.md)
+- **One worktree per run and atomic end receipts.** Each worker attempt gets its own branch and Git worktree. Finished runs write atomic exit receipts classifying exact end causes (`report`, `output-limit`, `context-limit`, `stream-cut-mid-turn`, `quota`, `vanished`), and any non-report exit snapshots uncommitted files into `refs/alba/wip/*` without touching `git stash`. [Runs and resume](docs/workflow/005-run-and-resume.md)
+- **Capture recipes and visual target convergence.** A clean exit code approves nothing. With `capture.recipes`, Alba builds and launches the order's worktree itself under a machine lock, runs blank/dark/duplicate/luminance/motion gates, and places **Alba's captures** ahead of worker screenshots. Orders with a `## Target` block compare shots against base-commit reference images (`luminance`, `saturation`, 512-bin RGB `histogram`, `16x9` `structure`, and `motion`), generate a three-panel diff sheet, automatically bounce misses up to `max_visual_rounds`, and escalate `Not converging` with round trend history when progress stalls. [Capture recipes](docs/workflow/037-capture-recipes.md), [visual targets](docs/workflow/038-visual-targets.md), [review](docs/workflow/006-review.md), [nightly gates](docs/operations/029-nightly-gates.md)
 
-### 2. Agent-agnostic routing and quota guardrails
+### 2. Agent-agnostic routing, circuit breakers, and bounded lessons
 
-- **Routing above the workers.** Drives Codex, Claude Code, Grok CLI, OpenCode, or local scripts from one board. Ordered **worker groups** and **routes** decouple task kinds from specific CLIs, making model rerouting a one-line edit. [Routing](docs/workers/012-routing-and-skills.md#routing-worker-groups-and-routes)
-- **Quota-aware hand-over and spend caps.** Detects shared subscription pools across CLIs, pauses exhausted windows before they spill into metered billing, enforces daily USD caps, and rotates mid-flight orders to fallback workers with a generated hand-over brief. [Hand-over](docs/workers/014-monitor-leases-loops.md#4-handing-an-order-over-when-a-worker-runs-out), [usage and cost](docs/console/020-usage-and-cost.md)
-- **Live runs, scoped skills, and lessons.** Watch streaming logs, step progress, and token usage live; leave inbox notes read after the next commit; attach only matching skills and short tagged lessons instead of bloating global system prompts. [Live runs](docs/workers/019-live-runs-and-messages.md), [skills](docs/workers/012-routing-and-skills.md#skills)
+- **Routing above the workers.** Drives Codex, Claude Code, Antigravity CLI (`agy-cli`), Grok CLI, OpenCode, or local scripts from one board. Ordered **worker groups** and **routes** decouple task kinds from specific CLIs (with optional per-order `--run-model` overrides), making model rerouting a one-line edit. [Routing](docs/workers/012-routing-and-skills.md#routing-worker-groups-and-routes), [workers](docs/workers/003-workers-and-quota.md)
+- **Quota-aware hand-over, spend caps, and circuit breakers.** Detects shared subscription pools across CLIs, enforces per-run (`max_minutes_per_run`, `max_usd_per_run`, `max_tokens_per_run`) and daily USD caps, trips a temporary circuit breaker when a worker repeatedly dies without a report, and rotates capacity-limited orders to fallback workers with a generated hand-over brief. [Hand-over](docs/workers/014-monitor-leases-loops.md#4-handing-an-order-over-when-a-worker-runs-out), [usage and cost](docs/console/020-usage-and-cost.md)
+- **Live runs, scoped skills, and bounded lessons.** Watch streaming logs, step progress, and token usage live; leave inbox notes read after the next commit; mount matching skills plus priority-ranked tagged lessons within a strict byte budget (`max_bytes: 6000`, `max_items: 15`), and measure first-pass acceptance lift per lesson with `alba lessons stats`. [Live runs](docs/workers/019-live-runs-and-messages.md), [lessons library](docs/workflow/011-decisions-questions-evidence-clean-credits-lessons.md#lessons-library)
 
 ### 3. Local workstation and LAN machine scheduling (built for Unreal, Unity, Godot, and C++)
 
-- **Resource leases, named locks, and zero-token monitors.** Gate dispatches on live free-RAM floors, serialize compiles and single-window GPU captures with leases and machine-wide locks, and hand slow cook/package steps to a background **monitor** so the worker slot frees up immediately until the build finishes. [Monitors, leases and loops](docs/workers/014-monitor-leases-loops.md)
+- **Machine-wide resource queues, FIFO locks, and zero-token monitors.** Gate dispatches on live free-RAM floors, share `scope: machine` resource pools across multiple projects on the same workstation (`rework` prioritized ahead of `new`, with median wait estimates), serialize single-window GPU captures with FIFO locks, and hand slow cook/package steps to a background **monitor** so the worker slot frees up immediately until the build finishes. [Monitors, leases and loops](docs/workers/014-monitor-leases-loops.md)
 - **Per-run game editor MCP pools.** Compile a fresh C++ worktree under lock first (`skip_if_newer`), lease a dedicated game editor port (such as Unreal Engine 5.9's built-in MCP server), pause/restart around Windows `.dll` binary locks, and clean up process trees by PID creation timestamp. [Run editors](docs/workers/032-run-editors.md)
 - **Zero-daemon SSH fleet and Unreal provisioning.** Dispatch branches and serverless Git LFS deltas over standard SSH to spare Windows PCs on your desk, run GPU captures/editors inside the logged-on desktop session, scan hardware/toolchains, and copy a licensed local Unreal install across LAN in eight parallel compressed streams. [Scheduling across machines](#scheduling-across-machines), [Unreal module](docs/engines/unreal.md)
 
@@ -85,11 +85,11 @@ workers:
 
 When an order dispatches to `codex-gpu`:
 
-1. The tick claims the required resource leases and concurrency slots in one transaction.
+1. The tick claims the required project or machine-wide resource leases and concurrency slots in one transaction.
 2. Alba pushes the clean branch to a bare repository on the host, checks out an isolated host worktree, transfers only missing Git LFS objects (verifying no unsmudged pointers remain), and stages the prompt, selected skills, role config, and inbox.
 3. The worker launches over SSH. On a logged-on Windows host, runs can still open GPU windows on the desktop (for game captures, packaged smoke runs, or an editor MCP server) via Alba's desktop runner.
 4. Roughly every three minutes and at exit, Alba fetches commits and new Git LFS objects back, fast-forwarding local branches only when safe and keeping divergent commits as refs.
-5. Review, mechanical checks, and merge happen on the controller identically to local runs.
+5. Independent captures, visual target checks, review, and merge happen on the controller identically to local runs.
 
 Remote worker hosts are Windows today; Linux and macOS machines support health/capability probes, guided tool installation, and running the controller itself. Details: [Machines](docs/operations/028-machines.md#workers-on-another-machine).
 
@@ -123,20 +123,20 @@ npm install --global ./baryon-interactive-alba-0.1.0.tgz
 alba --help
 ```
 
-To set up Alba on your own repository (any game engine or language, single machine or multi-machine fleet, with Codex, Claude Code, OpenCode, or Grok subscriptions), follow [Adopt Alba in your own project](docs/concepts/033-adopt-alba.md).
+To set up Alba on your own repository (any game engine or language, single machine or multi-machine fleet, with Codex, Claude Code, Antigravity, OpenCode, or Grok subscriptions), follow [Adopt Alba in your own project](docs/concepts/033-adopt-alba.md).
 
 ## Core concepts
 
 | Concept | Meaning |
 |---|---|
 | Order | A bounded task with intent, dependencies, scope, and acceptance criteria |
-| Run | One worker attempt on an order in its own branch and worktree, tracked with PID identity |
-| Worker | Configured compute supply: agent CLI or script, capabilities, host, quota, and launch template |
+| Run | One worker attempt on an order in its own branch and worktree, tracked with PID identity and exit receipt |
+| Worker | Configured compute supply: agent CLI or script, capabilities, host, quota, caps, and launch template |
 | Worker group | An ordered preference list of workers with fallbacks |
 | Route | Maps work kinds and required capabilities to a worker group |
-| Lease | A transactional reservation on a scarce local or shared resource (builds, editors, GPUs, wallets) |
-| Review | An approval, rework, or cancel decision backed by committed diffs, reports, and evidence |
-| Gate | A deterministic check or nightly suite that blocks dispatch or merge when unmet |
+| Lease | A transactional reservation on a project or machine-wide resource (builds, editors, GPUs, wallets) |
+| Review | An approval, rework, or cancel decision backed by diffs, independent captures, target metrics, and evidence |
+| Gate | A preflight, capture, visual-target, or nightly condition that blocks dispatch or merge when unmet |
 
 ## Platform support
 
@@ -170,7 +170,7 @@ art:
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md). Key references: [philosophy](docs/concepts/000-philosophy.md), [adopt Alba](docs/concepts/033-adopt-alba.md), [machines](docs/operations/028-machines.md), [Unreal module](docs/engines/unreal.md), [run editors](docs/workers/032-run-editors.md), [tool plugins](docs/workers/031-tool-plugins.md), [worker adapters](docs/worker-adapters.md), [HTTP API](docs/console/010-api.md), and [contributing](CONTRIBUTING.md).
+Start at the [documentation index](docs/README.md). Key references: [philosophy](docs/concepts/000-philosophy.md), [adopt Alba](docs/concepts/033-adopt-alba.md), [capture recipes](docs/workflow/037-capture-recipes.md), [visual targets](docs/workflow/038-visual-targets.md), [machines](docs/operations/028-machines.md), [Unreal module](docs/engines/unreal.md), [run editors](docs/workers/032-run-editors.md), [tool plugins](docs/workers/031-tool-plugins.md), [worker adapters](docs/worker-adapters.md), [HTTP API](docs/console/010-api.md), and [contributing](CONTRIBUTING.md).
 
 ## Data and privacy
 
