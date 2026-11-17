@@ -41,7 +41,8 @@ export function parseOrderSections(markdown: string, file?: string): OrderSectio
   const maxLines: { glob: string; max: number }[] = [];
   for (const raw of markdown.replace(/^\uFEFF/, '').split(/\r?\n/)) {
     const h = sectionHead.exec(raw);
-    if (h) { section = h[1].trim().toLowerCase(); continue; }
+    // "## 4. Acceptance (the lead re-captures)" is the Acceptance section: numbering and a trailing note are not part of the name.
+    if (h) { section = h[1].trim().toLowerCase().replace(/^\d+[.)]?\s+/, '').replace(/\s*(?:\(.*|:.*|\s[-\u2013\u2014]\s.*)$/, '').trim(); continue; }
     const b = bullet.exec(raw);
     if (!b) continue;
     const item = b[1].trim();
@@ -60,7 +61,6 @@ export function parseOrderSections(markdown: string, file?: string): OrderSectio
   }
   const warnings: string[] = [];
   if (!acceptance.length) warnings.push('Order has no ## Acceptance section.');
-  if (!evidence.length) warnings.push('Order has no ## Evidence section.');
   for (const item of acceptance) if (vague.has(item.toLowerCase())) warnings.push(`Vague acceptance item: ${item}`);
   return { acceptance, evidence, allow, deny, maxLines, warnings, ...(file ? { file } : {}) };
 }
@@ -320,7 +320,10 @@ export function verifyOrder(project: ProjectConfig, orders: Orders, tag: string,
     if (!exists) { missing.push(commit); continue; }
     if (git(worktree, ['merge-base', '--is-ancestor', commit, base]).code === 0) onBase.push(commit);
   }
-  results.push({ name: 'report', status: missing.length || onBase.length ? 'fail' : 'pass', reason: missing.length ? `Commit(s) do not exist: ${short(missing)}.` : onBase.length ? `Commit(s) are already on the base branch: ${short(onBase)}.` : 'All reported commits exist on the order branch and are not on the base branch.' });
+  // Reported commits that are already on the base (the worker listed a merge of the base, or an earlier merged round) fail only
+  // when nothing new is left to deliver; alongside new commits they are a warning.
+  const allOnBase = onBase.length > 0 && onBase.length === commits.length - missing.length;
+  results.push({ name: 'report', status: missing.length || allOnBase ? 'fail' : onBase.length ? 'warn' : 'pass', reason: missing.length ? `Commit(s) do not exist: ${short(missing)}.` : onBase.length ? `Commit(s) are already on the base branch: ${short(onBase)}.` : 'All reported commits exist on the order branch and are not on the base branch.' });
 
   const started = run?.started ? Date.parse(run.started) : Date.now();
   const firstStarted = Math.min(started, ...doc.runs.map(r => Date.parse(r.started)).filter(Number.isFinite));
@@ -363,7 +366,8 @@ export function verifyOrder(project: ProjectConfig, orders: Orders, tag: string,
   if (requiredMissing.length) requiredDetails.push(`Required evidence is missing: ${short(requiredMissing)}.`);
   if (requiredStale.length) requiredDetails.push(`Required evidence is stale (older than the order's first run start): ${short(requiredStale)}. ${FRESHNESS_REPAIR}`);
   if (!sections.evidence.length) requiredDetails.push('The order declares no required evidence.');
-  results.push({ name: 'required evidence', status: requiredMissing.length || requiredStale.length ? 'fail' : requiredCarried.length || !sections.evidence.length ? 'warn' : 'pass', reason: requiredDetails.join(' ') });
+  // An order without an Evidence section is a choice of the order's author, not a defect of the delivery: it passes quietly.
+  results.push({ name: 'required evidence', status: requiredMissing.length || requiredStale.length ? 'fail' : requiredCarried.length ? 'warn' : 'pass', reason: requiredDetails.join(' ') });
 
   const screenshots = screenshotGate(project, worktree, sections, report);
   if (screenshots) results.push(screenshots);

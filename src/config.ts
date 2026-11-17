@@ -30,6 +30,8 @@ export interface DispatchRules {
   merge: 'manual';                  // how work gets into the base branch: a person merges, approve only checks
   start_receipt_minutes: number;    // a run with no progress file and no commit after this long failed to start (default 15)
   on_loop: 'report' | 'stop';       // a run that repeats itself is reported (default), or its process is stopped as well
+  on_stall: 'report' | 'continue';  // a run with no commit past stall_minutes is reported (default), or stopped and continued once on the same worker
+  max_reworks?: number;             // send-backs of one order before another one is refused without --force (default: no limit)
   on_lingering: 'report' | 'stop';  // a run whose log already ends with the report block but whose process is still there: reported (default), or that process is stopped and the report read
   lingering_minutes: number;        // how long the log must be quiet after the report block (default 10)
   loop_idle_minutes: number;        // output grows but no commit and no new command for this long counts as idling (default 45)
@@ -825,7 +827,7 @@ function validateClean(raw: unknown, file: string, root: string): CleanConfig {
 export const DEFAULT_LONG_COMMANDS: string[] = [];
 
 const dispatchDefaults = (): DispatchRules => ({
-  caps: {}, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', start_receipt_minutes: 15, on_loop: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6,
+  caps: {}, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6,
   long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45,
 });
 
@@ -833,7 +835,7 @@ function validateDispatch(raw: unknown, file: string): DispatchRules {
   if (raw === undefined) return dispatchDefaults();
   if (!isRecord(raw)) fail('{file}: "dispatch" must be a mapping.', { file });
   const out: DispatchRules = dispatchDefaults();
-  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "dispatch": {keys}.', { file, keys: unknown.join(', ') });
   if (raw.caps !== undefined) {
     if (!isRecord(raw.caps)) fail('{file}: "dispatch.caps" must be a mapping of name to a whole number.', { file });
@@ -859,6 +861,14 @@ function validateDispatch(raw: unknown, file: string): DispatchRules {
     if (v === undefined) continue;
     if (typeof v !== 'number' || !Number.isFinite(v) || v < 1) fail('{file}: "dispatch.{key}" must be a number >= 1.', { file, key });
     out[key] = v;
+  }
+  if (raw.on_stall !== undefined) {
+    if (raw.on_stall !== 'report' && raw.on_stall !== 'continue') fail('{file}: "dispatch.on_stall" must be "report" or "continue".', { file });
+    out.on_stall = raw.on_stall;
+  }
+  if (raw.max_reworks !== undefined) {
+    if (typeof raw.max_reworks !== 'number' || !Number.isInteger(raw.max_reworks) || raw.max_reworks < 1) fail('{file}: "dispatch.max_reworks" must be a whole number >= 1.', { file });
+    out.max_reworks = raw.max_reworks;
   }
   if (raw.on_loop !== undefined) {
     if (raw.on_loop !== 'report' && raw.on_loop !== 'stop') fail('{file}: "dispatch.on_loop" must be "report" or "stop".', { file });

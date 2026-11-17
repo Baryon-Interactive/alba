@@ -36,7 +36,7 @@ export function humanAction(project: ProjectConfig, orders: Orders, tag: string,
     case 'check-independent': case 'check-none': orders.update(tag, { check: action === 'check-independent' ? 'independent' : 'none' }); break;
     case 'review-manual': case 'review-auto': orders.update(tag, { review: action === 'review-manual' ? 'manual' : 'auto' }); break;
     case 'approve': approve(project, orders, tag, note, branch, override); break;
-    case 'rework': rework(orders, tag, note); break;
+    case 'rework': rework(orders, tag, note, { max: project.dispatch.max_reworks, override }); break;
     case 'queue': case 'cancel': case 'hold': case 'release': orders.act(tag, action, { note }); break;
     case 'stop': stopRun(orders, tag, note); break;
     default: fail('Unknown action "{action}".', { action: String(action) });

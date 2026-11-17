@@ -42,7 +42,11 @@ export function retentionItems(project: ProjectConfig, orders: Orders, now: numb
     const full = path.join(dir, name), st = lstatSync(full);
     if (!st.isFile() || now - st.mtimeMs < days * 86400000) continue;
     const run = docs.flatMap(d => d.runs).find(r => r.log && path.resolve(r.log) === full || r.events_file && path.resolve(r.events_file) === full);
-    items.push({ kind: 'log', pathClass: 'logs', path: full, targets: [], links: 0, bytes: st.size, action: run && !run.ended ? 'keep' : 'delete', reason: run && !run.ended ? 'Run is still open.' : `Run log older than ${days} days.` });
+    // The log of a run that ended badly (failed, stalled, no report) is what explains it later: kept four times as long.
+    const bad = !!run?.ended && (run.outcome !== 'completed' || !!run.missing_report) && run.outcome !== 'cancelled';
+    const keepBad = bad && now - st.mtimeMs < days * 4 * 86400000;
+    const open = !!run && !run.ended;
+    items.push({ kind: 'log', pathClass: 'logs', path: full, targets: [], links: 0, bytes: st.size, action: open || keepBad ? 'keep' : 'delete', reason: open ? 'Run is still open.' : keepBad ? `Log of a run that ended badly; kept for ${days * 4} days.` : `Run log older than ${days} days.` });
   }
   return items;
 }

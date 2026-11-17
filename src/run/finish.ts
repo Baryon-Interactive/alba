@@ -31,6 +31,12 @@ import { intakeProducer } from '../producer/producer.ts';
 import { MONITOR_CONTINUATION } from './prompt.ts';
 import { classifyEndpoint, unreachableWhy } from './endpoint.ts';
 
+function headOf(worktree: string): string | undefined {
+  if (!existsSync(worktree)) return undefined;
+  try { return execFileSync('git', ['--no-optional-locks', '-C', worktree, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 10000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined; }
+  catch { return undefined; }
+}
+
 /** What to record for a run whose process has gone away. */
 export interface Finish {
   live_summary?: LiveSummary;
@@ -137,9 +143,12 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       now: typeof probes.now === 'function' ? probes.now() : new Date(), // some callers pass partial probes
       reader: probesTailReader(probes),
     });
+    // A conversation the service no longer has (Codex `no rollout found`, Claude `No conversation found`): whatever this ending
+    // turns into (a capacity resume, a report repair, a failure), the next run starts a new session instead of the same error.
+    const lostSession = isLostSessionError(stderr) || isLostSessionError(eventTail);
     const push = (f: Omit<Finish, 'tag' | 'run' | 'session' | 'usage'>, hasFinalOrBroken = false) => {
       const end = f.end ?? { ...endReason(f.report?.status, hasFinalOrBroken), why: f.why };
-      out.push({ tag: doc.order.tag, run: run.id, live_summary: summary, ...(!readReport ? { missing_report: true } : {}), ...(session ? { session } : {}), ...(usage ? { usage } : {}), ...f, end });
+      out.push({ tag: doc.order.tag, run: run.id, live_summary: summary, ...(!readReport ? { missing_report: true } : {}), ...(session ? { session } : {}), ...(usage ? { usage } : {}), ...(lostSession && !readReport ? { lost_session: true } : {}), ...f, end });
     };
     const failed = (summary: string, why: string, question?: string, status: 'failed' | 'blocked' = 'failed') =>
       push({ outcome: 'failed', report: { status, summary, ...(question ? { question } : {}), evidence: run.log ? [run.log] : [], commits: [] }, why });
@@ -265,6 +274,12 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
   if (f.report) {
     const lastFile = orders.get(f.tag).runs.find(r => r.id === f.run)?.last_file;
     const deliveryText = f.report.delivery_text ?? f.writeLast?.text ?? (lastFile && existsSync(lastFile) ? readFileSync(lastFile, 'utf8') : undefined);
+    // The run has ended, so the branch HEAD now is the revision it delivered. A report that leaves the field out gets it from git
+    // instead of a bounce for one line (`revision_is_head` still catches a revision that is not HEAD).
+    if (!f.report.revision && worktree) {
+      const head = headOf(worktree);
+      if (head) f.report = { ...f.report, revision: head };
+    }
     orders.report(f.tag, { ...f.report, ...(project && hasDeliveryChecks(project.checks) && deliveryText !== undefined ? { delivery_text: deliveryText } : {}) }, f.from ?? 'tick');
     if (f.report.status === 'progress') {
       const doc = orders.get(f.tag);
@@ -289,7 +304,12 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
     // The main checkout changes for other reasons too (the lead commits there, edits a file): only a commit the run itself reports is
     // proof that it worked there; anything else is recorded as a warning for the review.
     const own = outside ? outside.commits.filter(c => f.report!.commits.some(r => r.length >= 7 && (c.startsWith(r.slice(0, 9)) || r.startsWith(c.split(' ')[0]!)))) : [];
-    if (outside) {
+    // Without a reported commit, only a sign that points at this run is worth a review warning: an uncommitted main-checkout file
+    // the run also changed, or a main commit that names the order. The lead's own commits on main during the run are not.
+    const runFiles = new Set((run?.live_summary?.files_changed ?? f.live_summary?.files_changed ?? []).map(x => x.replace(/\\/g, '/')));
+    const tagWord = new RegExp(`\\b${f.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    const pointsHere = !!outside && (outside.files.some(x => runFiles.has(x.replace(/\\/g, '/'))) || outside.commits.some(c => tagWord.test(c.slice(10))));
+    if (outside && (own.length || pointsHere)) {
       orders.record(f.tag, own.length ? 'outside-worktree' : 'accept-warning', { name: 'outside-worktree', run: f.run, ...outside, reported: own });
       if (own.length && (f.report.status === 'ready' || f.report.status === 'progress')) {
         const what = [outside.commits.length ? `${outside.commits.length} commit(s) on the base branch (${outside.commits.slice(0, 5).join('; ')})` : '', outside.files.length ? `${outside.files.length} changed file(s) (${outside.files.slice(0, 8).join(', ')})` : ''].filter(Boolean).join(' and ');

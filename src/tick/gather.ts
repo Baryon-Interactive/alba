@@ -25,6 +25,8 @@ import { orderSpend, ownerOf, spendToday } from '../usage/spend.ts';
 import { routingOf } from '../routing/classify.ts';
 import { foundationGaps, foundationStates, missingText } from '../foundations/foundations.ts';
 import { workerHistory } from '../routing/history.ts';
+import { workerTrip } from '../routing/breaker.ts';
+import { local } from '../time.ts';
 import { isGenericKind } from '../routing/kinds.ts';
 import { monitoringLines } from '../monitor/monitor.ts';
 import { activeLeases, heavyOf, occupants, usesOf } from '../resources/leases.ts';
@@ -337,6 +339,9 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
     if (overCap) { a.available = false; a.reasons.push(t('daily spend cap ${cap} reached (${spent} today)', { cap: config.daily_cap_usd!, spent: Number(today.toFixed(2)) })); }
     const own = docs.flatMap(d => d.runs.map(r => ({ r, open: r.ended === undefined })))
       .filter(x => owner(x.r.worker)?.id === config.id);
+    // Circuit breaker: runs in a row that died without a report pause the worker instead of feeding it the next order.
+    const trip = a.available && config.enabled ? workerTrip(own.map(x => x.r), config, now) : undefined;
+    if (trip) { a.available = false; a.reasons.push(t('paused: its last {n} runs ended failed without a report; one more may try after {when}', { n: trip.failures, when: local(trip.until) })); }
     return {
       config, available: a.available, reasons: a.reasons, startable: !!config.launch || config.card_only === true,
       roleHistory: Object.fromEntries(results.filter(r => r.worker === config.id).map(r => [r.role, { samples: r.samples, ...(r.acceptedShare !== null ? { rate: r.acceptedShare } : {}) }])),

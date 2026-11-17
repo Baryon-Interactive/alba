@@ -57,11 +57,31 @@ test('a run that committed on the main checkout is stopped at review; an unrelat
   assert.ok(f.orders.store.events({ tag: 'T1' }).some(e => e.type === 'outside-worktree'));
 });
 
-test('a commit on main that the run does not report (the lead\'s own) only warns', () => {
+test('a commit on main that the run does not report (the lead\'s own) records nothing', () => {
   const f = fixture();
   writeFileSync(path.join(f.root, 'alba.txt'), 'lead config');
   git(f.root, 'add', 'alba.txt'); git(f.root, 'commit', '-q', '-m', 'Lead config');
   applyFinish(f.orders, { tag: 'T1', run: 'r1', outcome: 'completed', report: { status: 'ready', summary: 'Theme done', evidence: [], commits: [] }, why: 'done' }, f.project);
   assert.equal(f.orders.stage(f.orders.get('T1')).stage, 'awaiting-review');
+  assert.ok(!f.orders.store.events({ tag: 'T1' }).some(e => e.data?.name === 'outside-worktree'));
+});
+
+test('an unreported main commit that names the order, or a main file the run also changed, only warns', () => {
+  const f = fixture();
+  writeFileSync(path.join(f.root, 'theme.txt'), 'theme');
+  git(f.root, 'add', 'theme.txt'); git(f.root, 'commit', '-q', '-m', 'T1: theme pass');
+  applyFinish(f.orders, { tag: 'T1', run: 'r1', outcome: 'completed', report: { status: 'ready', summary: 'Theme done', evidence: [], commits: [] }, why: 'done' }, f.project);
+  assert.equal(f.orders.stage(f.orders.get('T1')).stage, 'awaiting-review');
   assert.ok(f.orders.store.events({ tag: 'T1' }).some(e => e.type === 'accept-warning' && e.data?.name === 'outside-worktree'));
+
+  const g = fixture();
+  writeFileSync(path.join(g.root, 'Map.uasset'), 'changed map');
+  applyFinish(g.orders, { tag: 'T1', run: 'r1', outcome: 'completed', live_summary: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, turns: 1, commands: 1, failed_commands: 0, long_command_minutes: 0, files_changed: ['Map.uasset'] }, report: { status: 'ready', summary: 'Theme done', evidence: [], commits: [] }, why: 'done' }, g.project);
+  assert.ok(g.orders.store.events({ tag: 'T1' }).some(e => e.type === 'accept-warning' && e.data?.name === 'outside-worktree'));
+});
+
+test('a report without a revision gets the worktree HEAD from git', () => {
+  const f = fixture();
+  applyFinish(f.orders, { tag: 'T1', run: 'r1', outcome: 'completed', report: { status: 'ready', summary: 'Theme done', evidence: [], commits: [] }, why: 'done' }, f.project);
+  assert.equal(f.orders.get('T1').reports.at(-1)!.revision, git(f.worktree, 'rev-parse', 'HEAD'));
 });

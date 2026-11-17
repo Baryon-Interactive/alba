@@ -399,14 +399,16 @@ export class Orders {
 
   /**
    * Notes one run of a monitor's check command. The state keeps the number of checks and what the last said; an event is written only
-   * when what it said differs from the one before (the same result and the same end of output, again, is not logged again).
+   * when what it said differs from the one before (the same result and the same end of output, again, is not logged again; numbers
+   * such as percentages and timestamps do not count as a difference).
    */
   monitorChecked(tag: string, check: { result: MonitorResult; tail: string; observation?: string }): OrderDoc {
     return this.retry(() => {
       const doc = this.get(tag);
       const m = doc.monitor;
       if (!m) fail('{tag} has no monitor.', { tag: doc.order.tag });
-      const signature = `${check.result}|${check.tail.trim().slice(-300)}`;
+      // Numbers are left out of the comparison: a progress counter or a clock in the output is not a new state worth an event.
+      const signature = `${check.result}|${check.tail.trim().slice(-300).replace(/\d+/g, '#')}`;
       const changed = signature !== m.last_signature;
       if (check.observation !== undefined && check.observation !== m.observation) {
         m.observation = check.observation; m.changed_at = this.now();

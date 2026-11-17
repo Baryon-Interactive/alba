@@ -505,7 +505,15 @@ export function mergeAcceptance(project: ProjectConfig, orders: Orders, tag: str
     const reason = e instanceof DesignAcceptanceError ? e.message : errorText(e);
     // The design step's own record was rolled back with the transaction: keep why it refused.
     if (e instanceof DesignAcceptanceError) orders.record(tag, 'accept-step', { name: 'design-changesets', status: 'failed', duration_ms: 0, reason });
-    if (!journal) { orders.record(tag, 'accept-merge-failed', { reason, rollback: '' }); throw e instanceof DesignAcceptanceError ? e : new Error(reason); }
+    if (!journal) {
+      // A trial that is only waiting (lint not yet passed, another trial holds the slot) is not a failed merge. It is recorded
+      // once per reason, so a caller that retries approval in a loop does not bury the real failures.
+      if (/^Acceptance trial waiting:/.test(reason)) {
+        const last = orders.store.events({ tag }).filter(x => x.type === 'accept-merge-waiting' || x.type === 'accept-merge-failed' || x.type === 'accept-merged').at(-1);
+        if (last?.type !== 'accept-merge-waiting' || last.data?.reason !== reason) orders.record(tag, 'accept-merge-waiting', { reason });
+      } else orders.record(tag, 'accept-merge-failed', { reason, rollback: '' });
+      throw e instanceof DesignAcceptanceError ? e : new Error(reason);
+    }
     const problems = rollbackMerge(project, orders, journal);
     if (!problems) unlinkSync(journalFile(project));
     const rollback = problems ? `; rollback needs attention: ${problems}` : '';

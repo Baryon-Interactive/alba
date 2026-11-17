@@ -75,6 +75,36 @@ export function stopLoopingRun(_project: ProjectConfig, orders: Orders, probes: 
   return t('{tag}: stopped run {run} (going round in circles)', { tag, run: run.id });
 }
 
+/** The note a stalled run's automatic continuation starts with. */
+export const STALL_CONTINUATION = 'Alba stopped your previous run: it made no commit and no progress for longer than the stall limit. Your uncommitted files are still in the worktree (and saved in a WIP ref). First run `git status`, commit what is worth keeping, then continue the order from where it stopped. Run builds and packaging in the background with their output in a file, and check on them instead of waiting on one blocking command.';
+
+/**
+ * `dispatch.on_stall: continue`: a run with no commit and no progress past `stall_minutes` is stopped (its process, a WIP ref of
+ * its files), and continued once on the same worker with a hand-over note. A second stall after the last person's action is not
+ * continued again: the run ends failed and a person decides.
+ */
+export function stopStalledRun(_project: ProjectConfig, orders: Orders, probes: Probes, tag: string, why: string): string {
+  const doc = orders.get(tag);
+  const run = doc.runs.find(r => r.ended === undefined);
+  if (!run) return t('{tag}: no open run to stop', { tag });
+  if (run.pid && probes.isAlive(run.pid)) {
+    const stopped = !run.imported ? probes.kill?.(run.pid, run.process_started_at, run.started) : [];
+    if (!stopped?.includes(run.pid)) return t('Refusing to stop process {pid} of {tag}: it is not the process this run started.', { pid: run.pid, tag });
+  }
+  const lastPerson = Math.max(-1, ...doc.actions.filter(a => !a.bounce).map(a => a.seq));
+  const again = orders.store.events({ tag }).some(e => e.type === 'stall-stopped' && Number(e.data?.after_action ?? -1) === lastPerson);
+  const summary = `Stopped by alba: the run stalled (${why.replace(/\n/g, ' ')})`;
+  const wip = saveWipSnapshot(doc.order.worktree ?? run.cwd, { tag: doc.order.tag, runId: run.id, kind: 'killed-by-alba' });
+  orders.runEnd(tag, 'stalled', { kind: 'killed-by-alba', detail: 'stopped by alba (stall-stopped)', why: summary, ...wip });
+  orders.record(tag, 'stall-stopped', { run: run.id, after_action: lastPerson, continued: !again, ...(wip.wip_ref ? { wip_ref: wip.wip_ref } : {}) });
+  if (again) {
+    orders.report(tag, { status: 'failed', summary: `${summary}; it had already been continued once after a stall.`, evidence: run.log ? [run.log] : [], commits: [] }, 'tick');
+    return t('{tag}: stopped run {run} (stalled again; a person decides)', { tag, run: run.id });
+  }
+  orders.act(tag, 'message', { note: STALL_CONTINUATION, force: true, bounce: true });
+  return t('{tag}: stopped run {run} (stalled) and queued one continuation', { tag, run: run.id });
+}
+
 /** The evidence lines of a finding, as a problem shows them: the command, the error, and how many times. */
 export function evidenceOf(f: LoopFinding): string[] {
   return [...(f.command ? [`${t('command')}: ${f.command}`] : []), ...(f.error ? [`${t('error')}: ${f.error}`] : []), `${f.kind === 'idle' ? t('minutes') : t('times')}: ${f.count}`];

@@ -81,6 +81,10 @@ export interface WorkerConfig {
   on_limit?: 'wait' | 'rotate';      // a capacity error or a used-up quota window: resume on this worker later (wait, default) or hand the order to the next worker (rotate)
   rotate_paid?: boolean;             // with on_limit rotate: a capacity or quota ending may hand the order to a worker whose cost is paid (stored only when true)
   max_tokens_per_run?: number;       // stop at the next dispatcher pass once observed usage exceeds this
+  max_minutes_per_run?: number;      // stop at the next dispatcher pass once the run has gone on longer than this
+  max_usd_per_run?: number;          // stop at the next dispatcher pass once the run's cost (engine figure or price estimate) exceeds this
+  trip_after_failures?: number;      // this many runs in a row ending failed without a report pause the worker (default 3, 0 = never)
+  trip_minutes?: number;             // how long such a pause lasts before one more run may try (default 60)
   max_resumes?: number;              // consecutive capacity resumes before failing (default 3)
   resume_backoff_minutes?: number[]; // waits before each resume; the last value repeats (default [1, 5, 15])
 }
@@ -154,7 +158,7 @@ export function routingOf(raw: Record<string, unknown>, file: string): { roles?:
 
 function validateWorker(raw: unknown, where: string): WorkerConfig {
   if (!isRecord(raw)) fail('{where} must be a mapping.', { where });
-  const known = ['capabilities', 'notes', 'model', 'id', 'engine', 'route', 'paid', 'concurrency', 'daily_runs', 'aliases', 'quota', 'enabled', 'disabled_when', 'card_only', 'launch', 'price', 'daily_cap_usd', 'cost', 'skills_mount', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes', 'pricing', 'max_tokens_per_run', 'host', 'tunnel'];
+  const known = ['capabilities', 'notes', 'model', 'id', 'engine', 'route', 'paid', 'concurrency', 'daily_runs', 'aliases', 'quota', 'enabled', 'disabled_when', 'card_only', 'launch', 'price', 'daily_cap_usd', 'cost', 'skills_mount', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes', 'pricing', 'max_tokens_per_run', 'max_minutes_per_run', 'max_usd_per_run', 'trip_after_failures', 'trip_minutes', 'host', 'tunnel'];
   const unknown = Object.keys(raw).filter(k => !known.includes(k));
   if (unknown.length) fail('{where}: unknown key(s): {keys}.', { where, keys: unknown.join(', ') });
   const text = (key: string, required: boolean): string | undefined => {
@@ -277,6 +281,10 @@ function validateWorker(raw: unknown, where: string): WorkerConfig {
   if (raw.daily_cap_usd !== undefined) worker.daily_cap_usd = money(raw.daily_cap_usd, 'daily_cap_usd');
   const route = text('route', false); if (route) worker.route = route;
   const tokenCap = whole('max_tokens_per_run', undefined, 1); if (tokenCap !== undefined) worker.max_tokens_per_run = tokenCap;
+  const minuteCap = whole('max_minutes_per_run', undefined, 1); if (minuteCap !== undefined) worker.max_minutes_per_run = minuteCap;
+  if (raw.max_usd_per_run !== undefined) worker.max_usd_per_run = money(raw.max_usd_per_run, 'max_usd_per_run');
+  const tripAfter = whole('trip_after_failures', undefined, 0); if (tripAfter !== undefined) worker.trip_after_failures = tripAfter;
+  const tripMinutes = whole('trip_minutes', undefined, 1); if (tripMinutes !== undefined) worker.trip_minutes = tripMinutes;
   const daily = whole('daily_runs', undefined, 0); if (daily !== undefined) worker.daily_runs = daily;
   const quota = text('quota', false); if (quota) worker.quota = quota;
   if (raw.disabled_when !== undefined) {

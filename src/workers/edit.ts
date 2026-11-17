@@ -5,9 +5,9 @@ import type { Orders } from '../orders/service.ts';
 import { loadWorkers, validateWorkers } from './config.ts';
 
 /** The keys of a worker the console may set one by one (the rest goes through the YAML editor). */
-export const EDITABLE_FIELDS = ['notes', 'capabilities', 'model', 'pricing', 'max_tokens_per_run', 'cost', 'concurrency', 'daily_runs', 'enabled', 'aliases', 'disabled_when', 'daily_cap_usd', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes', 'route', 'quota', 'price', 'skills_mount', 'paid', 'card_only'] as const;
+export const EDITABLE_FIELDS = ['notes', 'capabilities', 'model', 'pricing', 'max_tokens_per_run', 'max_minutes_per_run', 'max_usd_per_run', 'trip_after_failures', 'trip_minutes', 'cost', 'concurrency', 'daily_runs', 'enabled', 'aliases', 'disabled_when', 'daily_cap_usd', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes', 'route', 'quota', 'price', 'skills_mount', 'paid', 'card_only'] as const;
 
-const WORKER_KEYS = ['notes', 'capabilities', 'model', 'pricing', 'max_tokens_per_run', 'id', 'engine', 'route', 'paid', 'concurrency', 'daily_runs', 'aliases', 'quota', 'enabled', 'disabled_when', 'card_only', 'launch', 'price', 'daily_cap_usd', 'cost', 'skills_mount', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes'];
+const WORKER_KEYS = ['notes', 'capabilities', 'model', 'pricing', 'max_tokens_per_run', 'max_minutes_per_run', 'max_usd_per_run', 'trip_after_failures', 'trip_minutes', 'id', 'engine', 'route', 'paid', 'concurrency', 'daily_runs', 'aliases', 'quota', 'enabled', 'disabled_when', 'card_only', 'launch', 'price', 'daily_cap_usd', 'cost', 'skills_mount', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes'];
 
 const SECRET_PATTERNS: RegExp[] = [/\bsk-[A-Za-z0-9_-]{10,}/, /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/i, /\b(?:ghp|gho|ghs|github_pat)_[A-Za-z0-9_]{16,}/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /\bAIza[A-Za-z0-9_-]{20,}/, /\b(?:api[_-]?key|token|secret|password)\s*[=:]\s*[^\s{}"']{8,}/i];
 

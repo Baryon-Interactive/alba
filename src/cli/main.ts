@@ -15,6 +15,7 @@ import { collectUsage, usageReport, sinceDate } from '../usage/accounting.ts';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { mergeListFlags } from './args.ts';
 import { loadProject, type ProjectConfig } from '../config.ts';
 import { enabledTools, runPlugins } from './plugins.ts';
 import { runTools } from './tools.ts';
@@ -326,7 +327,8 @@ function resolveFile(file: string, cfg: ProjectConfig): string {
   return fail('File not found: {file} (also looked in {dir}).', { file, dir: cfg.work_orders });
 }
 
-async function run(argv: string[]): Promise<string> {
+async function run(rawArgv: string[]): Promise<string> {
+  const argv = mergeListFlags(rawArgv);
   const orderAdd = argv.includes('orders') && argv.includes('add');
   const { values, positionals } = parseArgs({ args: argv, options: { ...options, check: { type: orderAdd ? 'string' : 'boolean' } }, allowPositionals: true, strict: true });
   let [group, command, ...rest] = positionals;
@@ -870,7 +872,7 @@ ${t('Stopped run {run}. The order is held: start it on a worker with "alba run {
       const r = approve(cfg, orders, command!, values.note, values.branch, values.override === true); // same step as humanAction(..., 'approve')
       return t('{tag}: merged. Wrote {file} (branch {branch} is in the base branch; accept: {accept})', { tag: command!, file: r.acceptFile, branch: r.merge, accept: r.accept });
     }
-    if (action === 'rework') { rework(orders, command!, values.note); return tagLine(orders.get(command!)); }
+    if (action === 'rework') { rework(orders, command!, values.note, { max: cfg.dispatch.max_reworks, override: values.override === true }); return tagLine(orders.get(command!)); }
     if (action === 'sheet') {
       const tag = orders.get(command!).order.tag;
       const out = values.out ? path.resolve(values.out) : path.join(cfg.state_dir, 'review', `${tag}-sheet.png`);

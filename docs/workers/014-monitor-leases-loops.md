@@ -7,6 +7,7 @@ Five things that keep a worker from holding a slot for nothing, or from wasting 
 | A long job is handed to the monitor | report `status: "monitoring"` with a `monitor` object; stage `monitoring` | always available |
 | Shared resources and leases | `resources` in the project file, `uses` on orders, `alba resources`, `alba leases` | no resources declared |
 | Loops and idle runs | `dispatch.on_loop`, `loop_*`, `long_commands`, `alba loops` | report only |
+| Stalled runs | `dispatch.stall_minutes`, `dispatch.on_stall` | report only |
 | Hand-over when a worker runs out | `on_limit: rotate` on a worker | `wait` |
 | Start receipt and step list | `<TAG>.progress.json`, `dispatch.start_receipt_minutes` | 15 minutes |
 
@@ -88,6 +89,10 @@ A command that failed only because a search program found nothing (`grep`, `rg`,
 `dispatch.on_loop` is `report` (default: the problem is listed, nothing else happens) or `stop`: the run is killed, ended as `stalled`, the order gets a `failed` report that carries the evidence, and a `loop-stopped` event is recorded.
 
 `alba loops [TAG] [--all]` reads the logs of open runs (every run with `--all`) and prints, per run, how many commands it ran, how many failed and what it found; for Codex logs, which carry timestamps, it also lists gaps longer than `loop_idle_minutes` between two commands. It changes nothing. Use it to see what the rules would say about runs that are over.
+
+### A run that stalls
+
+A run with no commit and no new activity for `dispatch.stall_minutes` (and no long command still open) is the `stalled` problem. `dispatch.on_stall` is `report` (default: only the problem) or `continue`: the tick stops the run's process tree with the same identity checks, saves its uncommitted files in a WIP ref (the files stay in the worktree), ends the run as `stalled` and queues one continuation on the same worker whose note tells it to commit what is there first and run long builds in the background (event `stall-stopped`, `continued: true`). If the order stalls again before a person acts on it, the run is stopped the same way but not continued: the order gets a `failed` report and a person decides. This is the answer to a run that hangs in the night and is found five hours later.
 
 ### A run that has delivered but whose process stays
 

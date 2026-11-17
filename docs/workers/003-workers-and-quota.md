@@ -39,6 +39,10 @@ workers:
     on_limit: wait              # `wait` (default) or `rotate`: when its usage window is used up or the service is at capacity, hand the order to another worker (document 014)
     rotate_paid: false          # permits a paid handover; the same role's ranking selects the next worker (document 014)
     max_resumes: 12              # consecutive capacity resumes before failing (default 3)
+    max_minutes_per_run: 240     # stop a run that goes on longer than this (optional)
+    max_usd_per_run: 30          # stop a run whose cost exceeds this (optional)
+    trip_after_failures: 3       # this many runs in a row failing without a report pause the worker (default 3, 0 = off)
+    trip_minutes: 60             # how long that pause lasts (default 60)
     resume_backoff_minutes: [1, 5, 15, 30] # minutes before each resume; the last value repeats (default [1, 5, 15], about 5 hours for 12 resumes)
     quota: gateway-a
     enabled: true
@@ -188,6 +192,14 @@ Alba sets `CLAUDE_CONFIG_DIR` to `<state_dir>/workers/<worker-id>/claude`; this 
 The launcher supplies the required headless, stream-output, model and permission flags, and automatically adds `--resume <session>` when continuing a Claude run; no `launch.session` block is needed. Standard output goes to the run's `.events.jsonl` and standard error to `.log`. Alba reads the session id, last assistant message/report, input and output usage, cache reads and writes, and tool calls/results. Assistant-message usage is counted once; cumulative result usage is reconciled rather than added twice. Final text is saved as `<TAG>.last.txt`. No environment values are recorded in run metadata or launch events.
 
 `max_tokens_per_run` is an optional positive whole number. At the next dispatcher pass after observed usage **exceeds** the cap, Alba stops the run through its process-identity checks, records its usage, and creates a failed report and a `token-cap-stopped` event. This also handles a worker that already exited between passes. The total includes ordinary input, output, cache reads and cache writes. It is an observed-usage stop, so usage can exceed the cap between passes; it is not a provider-side spending limit. Unlike a transient capacity error, a cap stop is left for review and is not automatically retried. The cap is also available to other engines with structured usage. A `codex-cli` run reports its usage only when its turn ends, at the end of the run (see [live runs](019-live-runs-and-messages.md)), so the cap cannot stop a Codex run before it finishes; it marks the run failed afterwards.
+
+`max_minutes_per_run` (a whole number of minutes) and `max_usd_per_run` (US dollars) stop a run the same way: the first once the run has gone on longer than that, the second once its cost exceeds it. The cost is the engine's own figure, or an estimate from the worker's `price`; a run with neither has an unknown cost and is never stopped by this cap. The `token-cap-stopped` event says which cap it was (`kind`: `tokens`, `minutes` or `usd`) and the value. These are the guard against a run that goes on for hours or spends far more than the order is worth: a time cap also stops a Codex run, whose usage is only known at its end.
+
+### When a worker keeps failing: the breaker
+
+A worker whose last `trip_after_failures` runs (default 3; `0` turns the breaker off) all ended failed **without a report block**, the process died, could not start or stopped without saying anything, is paused: it counts as not available, with the reason "paused: its last 3 runs ended failed without a report; one more may try after 14:20", until `trip_minutes` (default 60) after the last of those failures. Then one run may start; if it fails the same way the pause starts again, and any other ending (a delivery, a failed report written by the worker, a send-back) closes the breaker. Cancelled runs, capacity endings, monitor wake-ups and runs alba stopped itself (caps, loops, stalls) neither count nor close it. The breaker looks at the runs of one project.
+
+Such runs also count in the worker's routing history as `failed`, next to `accepted` and `reworked`: a worker whose runs keep dying no longer shows as "100% of 7 accepted".
 
 ### A Codex template that can resume
 

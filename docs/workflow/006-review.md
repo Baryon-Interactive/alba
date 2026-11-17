@@ -24,6 +24,8 @@ Records where an order's work is, for an order that never got it (imported from 
 
 Sends the order back. The note is required: it goes into the prompt of the next run, under "Rework requested by the reviewer". The stage goes to `queued` (or `waiting-needs`), and the old report stops counting. A reworked order is sorted first by the tick and may use the reserved extra slot of a capped class (`dispatch.rework_reserve`), so new orders cannot push out one a person is pushing forward.
 
+With `dispatch.max_reworks` set (a whole number, no limit by default), a send-back past that many is refused unless `--override` is given: an order that went back that often needs a new approach, a split, a new order or a person, not one more round of the same. Automatic bounces (report repair, design change sets, evidence images) do not count.
+
 For evidence failures, review and rework briefs follow this rule: Do not change file times or move files to pass this check; rerun the step or cite files from this run. Evidence carried over from an earlier run of the same order is a warning.
 
 ## `alba review <TAG> sheet [--out file.png] [--columns 4] [--cell 320] [--json]`
@@ -40,7 +42,7 @@ A mean in range does not make a good picture: a grey, flat capture can meet a br
 
 `alba verify <TAG>` runs mechanical gates before a person approves an order. It checks the latest ready report's commits and evidence, the order's declared acceptance/evidence/path sections, protected gate files, the existing `alba check`, and merge readiness. It exits `0` only when no gate fails; `--json` returns the full result. Verification is recorded as an `order-verified` event, and a run ending with a ready report triggers that event once automatically.
 
-An order can declare `## Acceptance`, `## Evidence`, and `## Paths` sections. Evidence bullets use `path: what`; path bullets use `allow:`, `deny:`, or `max-lines: <number> for <glob>`. Missing sections and vague acceptance text are warnings. A project can protect gate definitions with `verify.protected_gates` in `alba.yaml`; changing one fails verification with `only a person can accept`.
+An order can declare `## Acceptance`, `## Evidence`, and `## Paths` sections. Evidence bullets use `path: what`; path bullets use `allow:`, `deny:`, or `max-lines: <number> for <glob>`. A missing `## Acceptance` section and vague acceptance text are warnings; an order without `## Evidence` simply declares no required evidence. Headings may be numbered and carry a note: `## 4. Acceptance (the lead re-captures)` is the Acceptance section. Reported commits that are already on the base fail only when no new commit is left; next to new ones they are a warning. A project can protect gate definitions with `verify.protected_gates` in `alba.yaml`; changing one fails verification with `only a person can accept`.
 
 Evidence newer than the current run's start is fresh. Evidence newer than the order's first run but older than the current run is carried over, giving `warn`; evidence predating the first run is stale and fails, as does missing evidence. Directories are judged by their recursive regular-file contents, reporting `n of m files fresh` and the carried-over count; an empty directory is missing. A required evidence glob passes with at least one fresh match, warns with carried-over matches and no fresh ones, and fails only with no usable matches. Reasons name fresh matches first and count leftover matches instead of listing old files.
 

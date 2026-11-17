@@ -435,7 +435,8 @@ export interface OrderDefinition {
 export interface Routing { kind: string; tags: string[]; source: 'table' | 'manual' | 'rules' | 'model' | 'none'; why: string; at: string }
 
 /** How often a worker's runs of one kind were accepted without being sent back. `rate` is only there with at least 3 samples. */
-export interface WorkerKindHistory { kind: string; accepted: number; reworked: number; samples: number; rate?: number }
+/** `failed`: runs that ended failed without a report block; they count against the accepted share like a rework. */
+export interface WorkerKindHistory { kind: string; accepted: number; reworked: number; failed?: number; samples: number; rate?: number }
 
 /** One worker looked at for one order. */
 export interface RouteCandidate {

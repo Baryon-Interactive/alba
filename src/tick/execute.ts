@@ -7,7 +7,7 @@ import { runMonitors } from '../monitor/monitor.ts';
 import { reconcileLeases } from '../resources/leases.ts';
 import { continueToolJobs } from '../plugins/jobs.ts';
 import { reconcileEditors } from '../editors/pool.ts';
-import { stopLoopingRun } from '../run/watch.ts';
+import { stopLoopingRun, stopStalledRun } from '../run/watch.ts';
 import { stopLingeringRun } from '../run/lingering.ts';
 import { stopTokenCappedRuns } from '../run/token-cap.ts';
 import { tick, type TickResult } from './gather.ts';
@@ -58,6 +58,12 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
     const loopers = ctx.project.dispatch.on_loop === 'stop' ? result.report.problems.filter(p => p.kind === 'looping' && p.tag && !stopped.has(p.tag)) : [];
     if (loopers.length) {
       for (const p of loopers) { stopped.add(p.tag!); done.push(stopLoopingRun(ctx.project, ctx.orders, ctx.probes, p.tag!, p.evidence ?? [])); }
+      continue;
+    }
+    // `dispatch.on_stall: continue`: a stalled run is stopped and continued once on the same worker (a second stall goes to a person).
+    const stallers = ctx.project.dispatch.on_stall === 'continue' ? result.report.problems.filter(p => p.kind === 'stalled' && p.tag && !stopped.has(p.tag)) : [];
+    if (stallers.length) {
+      for (const p of stallers) { stopped.add(p.tag!); done.push(stopStalledRun(ctx.project, ctx.orders, ctx.probes, p.tag!, p.text)); }
       continue;
     }
     // `dispatch.on_lingering: stop`: a run that has handed in its report but whose process stays is stopped (that process only), and its end is recorded as usual.

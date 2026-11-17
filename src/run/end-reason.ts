@@ -441,7 +441,7 @@ export interface ClassifyEndInput {
   expectsReceipt?: boolean;
 }
 
-const ALBA_KILL_EVENTS = ['loop-stopped', 'lingering-stopped', 'token-cap-stopped'] as const;
+const ALBA_KILL_EVENTS = ['loop-stopped', 'lingering-stopped', 'token-cap-stopped', 'stall-stopped'] as const;
 
 export function classifyEndReason(input: ClassifyEndInput): EndReason {
   const { receipt, eventsTail = '', stderrTail = '', rolloutTail = '' } = input;
