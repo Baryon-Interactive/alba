@@ -241,6 +241,8 @@ export const usePicks = (project: string, enabled = true) => useQuery({ queryKey
 export const useArt = (project: string) => useQuery({ queryKey: keys.art(project), queryFn: () => api.art(project), enabled: !!project, staleTime: 15_000 });
 export const useSpend = (project: string) => useQuery({ queryKey: keys.spend(project), queryFn: () => api.spend(project), enabled: !!project, staleTime: 15_000 });
 export const useUsage = (project: string, enabled = true, days = 7) => useQuery({ queryKey: keys.usage(project, days), queryFn: () => api.usage(project, days), enabled: enabled && !!project, staleTime: 30_000, refetchInterval: 120_000 });
+export const useUsageScorecard = (project: string | undefined, since = '14d', kind?: string, by?: import('@api').ScorecardBy) =>
+  useQuery({ queryKey: ['usage-scorecard', project ?? '*', since, kind ?? '', by ?? 'worker'], queryFn: () => api.usageScorecard({ project, since, kind, by }), staleTime: 15_000, refetchInterval: 30_000 });
 
 /** A choice on a pick set; the order that waited on it (a set from a report) is read again too. */
 export function useChoosePick(project: string) {

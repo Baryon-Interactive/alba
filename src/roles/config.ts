@@ -1,6 +1,9 @@
 import path from 'node:path';
 import { fail } from '../i18n.ts';
 
+export const RANK_BY_VALUES = ['preference', 'acceptance', 'cost-per-accept'] as const;
+export type RankBy = (typeof RANK_BY_VALUES)[number];
+
 export interface RoleServer { /** An HTTP (streamable) MCP server instead of a program: the run's editor. */ url?: string; command: string; args: string[]; env_from?: string[]; engines?: string[]; /** Only these of the server's tools are offered (absent: all); set for tool plugin servers. */ tools?: string[] }
 export interface RoleDefinition {
   description?: string;
@@ -15,6 +18,7 @@ export interface RoleDefinition {
   workers?: { prefer?: string[]; avoid?: string[]; only?: string[] };
   /** A route's worker group (`routing.routes.<id>.group`): its members, in order, become `workers.prefer` and `workers.only`. */
   group?: string;
+  rank_by?: RankBy;
 }
 export interface RoleConfig extends RoleDefinition { sources: Record<string, string> }
 export type Roles = Record<string, RoleConfig>;
@@ -44,9 +48,13 @@ export function validateRoles(raw: unknown, file: string, prefix = 'roles'): Rol
     if (!identifier.test(id)) error(at, 'role names must contain letters, digits, underscores or hyphens');
     if (!record(value)) error(at, 'must be a mapping');
     rejectSecrets(value, at);
-    const known = ['description', 'kinds', 'skills', 'mcp', 'rules', 'workers', 'default', 'requires', 'effort', 'reasoning'];
+    const known = ['description', 'kinds', 'skills', 'mcp', 'rules', 'workers', 'default', 'requires', 'effort', 'reasoning', 'rank_by'];
     for (const k of Object.keys(value)) if (!known.includes(k)) error(`${at}.${k}`, 'unknown key');
     const role: RoleConfig = { sources: {} };
+    if (value.rank_by !== undefined) {
+      if (!(RANK_BY_VALUES as readonly unknown[]).includes(value.rank_by)) error(`${at}.rank_by`, 'must be preference, acceptance or cost-per-accept');
+      role.rank_by = value.rank_by as RankBy; role.sources.rank_by = file;
+    }
     for (const k of ['description', 'rules', 'effort', 'reasoning'] as const) if (value[k] !== undefined) {
       if (typeof value[k] !== 'string' || !value[k].trim()) error(`${at}.${k}`, 'must be non-empty text');
       role[k] = k === 'rules' ? path.resolve(path.dirname(path.resolve(file)), value[k]) : value[k];
@@ -134,7 +142,10 @@ export function validateRouting(raw: unknown, file: string): { roles: Roles; gro
     if (!record(value)) error(at, 'must be a mapping');
     for (const k of Object.keys(value)) {
       if (Object.hasOwn(MOVED, k)) error(`${at}.${k}`, MOVED[k]);
-      if (!['description', 'kinds', 'requires', 'group', 'avoid', 'workers', 'default'].includes(k)) error(`${at}.${k}`, 'unknown key (description, kinds, requires, group, avoid, workers, default)');
+      if (!['description', 'kinds', 'requires', 'group', 'avoid', 'workers', 'default', 'rank_by'].includes(k)) error(`${at}.${k}`, 'unknown key (description, kinds, requires, group, avoid, workers, default, rank_by)');
+    }
+    if (value.rank_by !== undefined && !(RANK_BY_VALUES as readonly unknown[]).includes(value.rank_by)) {
+      error(`${at}.rank_by`, 'must be preference, acceptance or cost-per-accept');
     }
     const workers = value.workers === undefined ? undefined : value.workers;
     if (workers !== undefined && !record(workers)) error(`${at}.workers`, 'must be a mapping');

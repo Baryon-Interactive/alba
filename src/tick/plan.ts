@@ -4,7 +4,7 @@ import { t } from '../i18n.ts';
 import { local } from '../time.ts';
 import { MAX_RESUMES, backoffMinutes } from '../run/transient.ts';
 import type { ProgressView, WorkerKindHistory } from '../api/types.ts';
-import { chooseWorker, type RolePolicy } from '../routing/choose.ts';
+import { chooseWorker, type RolePolicy, type WorkerKindScore } from '../routing/choose.ts';
 import type { ResourceConfig } from '../config.ts';
 import type { LoopFinding } from '../run/loops.ts';
 import { startBlocked, type Occupant, type StartWanted, type StoredLease } from '../resources/leases.ts';
@@ -70,6 +70,7 @@ export interface WorkerState {
   overCap?: boolean;            // the daily cap is reached
   roleHistory?: Record<string, { samples: number; rate?: number }>;
   history?: Record<string, WorkerKindHistory>;   // accepted vs sent back, by kind
+  scorecard?: Record<string, WorkerKindScore>;
 }
 
 export interface TickInput {

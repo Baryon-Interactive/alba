@@ -83,3 +83,36 @@ To reduce waste, point work orders at specific files instead of pasting their co
 ## Results by role and worker
 
 The Usage page and `/api/usage/runs` include accepted-without-rework share, median tokens and median wall time by the role and worker recorded on each completed run. Each metric needs three applicable samples; unknown token totals remain unknown. The Routing page shows lifetime results alongside definitions and current worker eligibility; Workers shows supply. Routing uses role × worker first-pass yield only when both compared workers have at least three reviewed runs, after role preference and before cost. Producer snapshots publish corresponding fact ids for 24 hours and seven days. See [role result definitions](../workers/012-routing-and-skills.md#role--worker-results) for attribution, review boundaries and sample rules.
+
+## Cost and time per accepted order
+
+`alba usage scorecard [--project alba.yaml ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]` measures delivery yield, wall time and USD cost per accepted order across one or more projects. The default window is 14 rolling days; `--project` is repeatable and refreshes the ledger the same way `alba usage` does. `--by` groups by resolved worker id (default), `run.model` (`unknown` when unrecorded) or the worker's `model_family` (falling back to its worker id). A run belongs to the window when it **started** in it; its verdict may arrive later, and imported runs never count. Each run's kind is `run.routing.kind`, else the order's classified kind, else `order.kind`.
+
+### Columns and verdict credit
+
+The text table is sorted by kind, then cost per accepted order (`included` and `unknown` last):
+
+`WORKER  KIND  RUNS  1ST-PASS  AFTER-RW  REWORK  FAILED  CANCELLED  MIN  COST  $/ACCEPT  MIN/ACCEPT  FIRST-PASS`
+
+(`MODEL` or `FAMILY` replaces `WORKER` when grouped accordingly; `--json` prints the `Scorecard` object, which also carries `other`, `pending`, `open`, `first_attempts`, `tokens`, `tokens_unknown_runs` and `acceptance_rate`.)
+
+Each `approve` or `rework` action counts once, for the latest run before it by `seq`, whatever that run's outcome; a run receives at most its first verdict. This differs from `src/routing/history.ts` on purpose: an override approval after a failed run credits that run as accepted (`1ST-PASS` when no `rework` action preceded the run on the order, else `AFTER-RW`) instead of leaving it failed or unattributed. Runs with no verdict are partitioned into `FAILED` (`brokenRun`), `CANCELLED`, `other` (capacity, Alba-stopped or failed with a report), `pending` (completed, awaiting review) and `open`. `FIRST-PASS` (`accepted_first_pass / first_attempts`, where first attempts are runs with no prior rework on the order that got a verdict or `failed`) and `acceptance_rate` (`accepts / (verdicts + failed)`) require at least three samples and display `n<3` below that minimum.
+
+### Cost order, unknown and included
+
+Per run, the first applicable rule determines cost:
+
+1. **Engine figure (`engine`)**: the sum of `cost_usd` across the run's ledger rows, as in order spend. Claude reports a running session `total_cost_usd` on each `result` event; the usage fold stores only each turn's increment, so the sum counts every dollar once.
+2. **Pricing-table estimate (`estimate`)**: the sum of row `estimate` values when every row of the run has one in USD.
+3. **Legacy worker price (`estimate`)**: `withCost` over the run's summed tokens using the worker's `price`.
+4. **Run record (`run-record`)**: `run.usage.cost_usd` when the run has no ledger rows.
+5. **Subscription (`included`)**: when the worker's `cost` is `included`.
+6. **Unknown**: paid or unconfigured runs with no usable price.
+
+A group row receives a numeric `cost.usd` (and `cost_per_accept = usd / accepts` when `accepts >= 1`) only when **every** run in the row is priced. Subscription rows show `included`; partially priced or unpriced rows show `unknown` (for example `unknown (2 of 9 runs priced)`), never `0`. Runs without a known token total increment `tokens_unknown_runs` and are never counted as zero.
+
+### API and console view
+
+`GET /api/usage/scorecard?project=&since=&kind=&by=` returns the `Scorecard` JSON for the named project or, when `project` is omitted, across every project loaded in `alba serve` (`ctx.projects`). Unlike `/api/usage/runs`, it reads persisted ledger rows (`usageRows`) directly and does not run `collectUsage` per project.
+
+On the Usage page, **Cost and time per accepted order** provides its own period selector (`7`, `14` or `30` days; default `14`) and a **This project / All projects** switch. Every column header sorts the plain table (click again to reverse), keeping `included` and `unknown` values last in both directions.

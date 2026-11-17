@@ -1627,3 +1627,51 @@ export type { ProducerConfigView, ProducerConfigEdit, DiffLine } from '../produc
 export type { FirstPassItem, FirstPassVerdict, FirstPassReview, FirstPassDispute, FirstPassView } from '../review/first-pass.ts';
 export type { FirstPassStats, FirstPassStatsMetrics, FirstPassFamilyRow, FirstPassKindRow, FirstPassFamilyKindRow } from '../review/first-pass-stats.ts';
 export interface FirstPassDisputeResult { ok: true; tag: string; id: string; report: number; note: string }
+// ---------------------------------------------------------------------------------------------------------------- scorecard
+
+export type ScorecardBy = 'worker' | 'model' | 'family';
+export type ScorecardCostSource = 'engine' | 'estimate' | 'run-record';
+
+export interface ScorecardCost {
+  /** Present only when every run in the row is priced (`priced_runs === runs`). */
+  usd?: number;
+  sources: ScorecardCostSource[];
+  priced_runs: number;
+  included_runs: number;
+  unknown_runs: number;
+}
+
+export interface ScorecardRow {
+  key: string;
+  kind: string;
+  projects: string[];
+  runs: number;
+  accepted_first_pass: number;
+  accepted_after_rework: number;
+  accepts: number;
+  reworks: number;
+  failed: number;
+  cancelled: number;
+  other: number;
+  pending: number;
+  open: number;
+  first_attempts: number;
+  minutes: number;
+  tokens?: number;
+  tokens_unknown_runs: number;
+  cost: ScorecardCost;
+  cost_per_accept?: number;
+  minutes_per_accept?: number;
+  first_pass_rate?: number;
+  acceptance_rate?: number;
+}
+
+/** `GET /api/usage/scorecard?project=&since=&kind=&by=`: cost and time per accepted order. */
+export interface Scorecard {
+  by: ScorecardBy;
+  since: string;
+  until: string;
+  kind?: string;
+  projects: string[];
+  rows: ScorecardRow[];
+}

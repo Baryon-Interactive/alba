@@ -19,6 +19,8 @@ import { DESIGN_OFF, DesignError } from '../design/model.ts';
 import { rolesView } from '../roles/view.ts';
 import { roleResults } from '../roles/statistics.ts';
 import { collectUsage, usageDashboard, budgetWarnings, sinceDate } from '../usage/accounting.ts';
+import { scorecard } from '../usage/scorecard.ts';
+import { usageRows } from '../usage/store.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { closeSync, createReadStream, existsSync, openSync, readSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -422,6 +424,24 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const view = light(q('project'));
       const ledger = collectUsage(view.config, view.orders.all(), ctx.workers, ctx.probes);
       return json(res, 200, usageDashboard(ledger.rows, ledger.signals, budgetWarnings(view.config, ledger.rows, ctx.probes.now()), sinceDate(q('since') ?? '7d', ctx.probes.now()), ctx.probes.now(), roleResults(view.orders.all(), ledger.rows, sinceDate(q('since') ?? '7d', ctx.probes.now()), ctx.probes.now().toISOString())));
+    }
+    if (parts[0] === 'usage' && parts[1] === 'scorecard' && parts.length === 2) {
+      const projectId = q('project') || undefined;
+      const selected = projectId
+        ? (() => {
+            const p = ctx.projects.find(x => x.id === projectId);
+            if (!p) throw new ApiFailure(404, 'not_found', `No project "${projectId}".`);
+            return [p];
+          })()
+        : ctx.projects;
+      const now = ctx.probes.now();
+      const since = sinceDate(q('since') ?? '14d', now);
+      const until = now.toISOString();
+      const kind = q('kind') || undefined;
+      const by = (q('by') ?? 'worker') as A.ScorecardBy;
+      const docs = selected.flatMap(config => readOrders(new Orders(stateStore(config), () => until, 'web')).all().map(doc => ({ project: config.id, doc })));
+      const rows = selected.flatMap(config => usageRows(config));
+      return json(res, 200, scorecard({ docs, rows, workers: ctx.workers, since, until, kind, by }) satisfies A.Scorecard);
     }
     if (parts[0] === 'projects' && parts.length === 1) {
       const hit = projectCaches.get(ctx);

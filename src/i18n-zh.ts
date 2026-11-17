@@ -1021,6 +1021,10 @@ export const zh: Record<string, string> = {
   '{tag}: commit or ref "{ref}" could not be resolved in {root}.': '{tag}：在 {root} 中无法解析提交或引用“{ref}”。',
   '{tag}: commit {sha} is not an ancestor of {base}.': '{tag}：提交 {sha} 不在基线 {base} 上。',
   '{file}: "dispatch.auto_merge_base" must be true or false.': '{file}：“dispatch.auto_merge_base”必须是 true 或 false。',
+  // scorecard
+  'Invalid scorecard grouping: {value}': '无效的记分卡分组：{value}',
+  'unknown ({priced} of {runs} runs priced)': '未知（{runs} 次派工中 {priced} 次有价格）',
+  'Usage: alba usage scorecard [--project f ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]': '用法：alba usage scorecard [--project f ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

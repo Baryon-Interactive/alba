@@ -12,6 +12,7 @@ import { roleRules, withRoleRules } from '../roles/mount.ts';
 import { planOrder, editPlan } from '../orders/planned.ts';
 import { usageRows } from '../usage/store.ts';
 import { collectUsage, usageReport, sinceDate } from '../usage/accounting.ts';
+import { runUsageScorecard } from './scorecard.ts';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -213,7 +214,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
                                              the reference board: add a card (the picture is the page's og:image or twitter:image), fetch the pictures once into the state folder (https, one request per host every 1.5 s, images up to 15 MB; exit 1 when some failed)
   settings [list] | settings approve <id> [--note t] [--who n]   confirm the text of a setting (its section of the Markdown file, by sha256); no picture is made before that
   spend [list] [--json] | spend approve <quote id> --cap N [--note t] [--who n]   the quote and spend files of "credits: dir" with balance chain and cap checks; approve a quote file up to a cap
-  usage [--since 24h|7d|30d|date] [--by day|worker|project|order|kind] [--top N] [--json]   run tokens and estimates; --days N selects external tool ledgers
+  usage [--since 24h|7d|30d|date] [--by day|worker|project|order|kind] [--top N] [--json] | usage scorecard [--kind k] [--since 14d] [--by worker|model|family] [--json]   run tokens and estimates, or cost and time per accepted order; --days N selects external tool ledgers
   lock <name> [--wait-minutes 60] -- <program> [args...] | lock list   run one command under a machine-wide named lock
   image lum <png> [--region x,y,w,h] [--json] | image motion <a.png> <b.png> [--region x,y,w,h] [--json]   measure screenshot brightness or frame motion
   producer [status|cases|actions|would-do|log [--since <time>]|usage [--days N]|pause|resume|act <CASE> <ACTION>|session status|start|stop|mcp] [--json]   observe cases and policy-gated actions
@@ -409,6 +410,9 @@ async function run(rawArgv: string[]): Promise<string> {
       });
       serve.server.once('error', e => { serve.stop(); reject(e); });
     });
+  }
+  if (group === 'usage' && command === 'scorecard') {
+    return runUsageScorecard(projectFiles(values.project), values, rest);
   }
   if (group === 'usage' && values.days === undefined) {
     const now = new Date(), all = projectFiles(values.project).flatMap(file => {

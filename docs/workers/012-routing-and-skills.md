@@ -58,7 +58,7 @@ For each order:
 2. Filter workers by every `requires` capability, `workers.avoid`, and `workers.only` when present. An empty `only: []` excludes all automatic candidates. Lists match worker ids, aliases or model families, case-insensitively. Extra order tags remain classifier/skill metadata; they do not create worker fit rules.
 3. An explicit worker id or alias in the order overrides the role's capability/avoid/only restrictions. Missing required capabilities are warnings in route reasons and run metadata. Availability and limits still apply.
 4. Exclude disabled workers, unreadable/exhausted quota, daily spend limits, concurrency/daily-run limits and missing launch templates, each with its reason. Card workers keep their existing manual-start behavior. Project/resource/memory/order-spend limits still control dispatch.
-5. Rank eligible workers by ordered role `prefer` (unlisted workers last), then this role and worker's accepted-without-rework share (both compared workers need at least three reviewed runs), then included before paid, fewer open runs, and file order. Unknown/small-sample yield does not count as zero.
+5. Rank eligible workers: when the resolved route or role sets `rank_by: acceptance` or `rank_by: cost-per-accept` (default `preference`), compare this project's 14-day [scorecard](../console/020-usage-and-cost.md#cost-and-time-per-accepted-order) for the order's kind first (`first_pass_rate` with at least three first attempts and at least a 10-percentage-point gap for `acceptance`; `cost_per_accept` when both workers have a USD figure and at least a 20% gap for `cost-per-accept`), then fall through on ties or missing numbers to ordered role `prefer` (unlisted workers last), this role and worker's accepted-without-rework share (both compared workers need at least three reviewed runs), included before paid, fewer open runs, and file order. Unknown/small-sample yield does not count as zero, and when every effective role uses `preference` the tick does no scorecard work.
 
 Every exclusion and tie-break is visible in `alba route TAG`, the order page, and recorded run-start routing metadata. The role, its resolution source and optional effort/reasoning hints are recorded at launch; hints do not generate engine flags. `alba route` is read-only and starts no model.
 
@@ -218,8 +218,8 @@ routing:
   default: main                         # orders that no route takes
   avoid: [claude-opus]                  # never chosen by a route (an order that names it still gets it)
   routes:
-    ue:   { kinds: [ue, build], group: main, requires: [shell, git, windows] }
-    art:  { kinds: [art], group: cheap, avoid: [grok] }
+    ue:   { kinds: [ue, build], group: main, requires: [shell, git, windows], rank_by: cost-per-accept }
+    art:  { kinds: [art], group: cheap, avoid: [grok], rank_by: acceptance }
     docs: { kinds: [docs, research], group: all }
 ```
 
@@ -230,8 +230,12 @@ How a route resolves:
 - The order's route is its explicit `role` (`--role`), else the first route whose `kinds` has the order's kind, else the default.
   An order whose worker text names a worker still goes to that worker, as before.
 - The group's workers, in order, are the route's preference; without `"*"` they are also the only workers it may use. Within the
-  group the usual rules choose: required capabilities, availability, limits, then the group's order, accepted-without-rework share,
-  included before paid, load and file order ([Choosing the worker](#choosing-the-worker)).
+  group the usual rules choose: required capabilities, availability, limits, optional `rank_by` (`preference`, `acceptance` or
+  `cost-per-accept`), then the group's order, accepted-without-rework share, included before paid, load and file order
+  ([Choosing the worker](#choosing-the-worker)). Any other `rank_by` value fails configuration validation naming the key (on both
+  `routing.routes.<id>.rank_by` and legacy `roles.<id>.rank_by`). When `rank_by` decides or falls back, `alba route` states the
+  14-day numbers (`cost per accepted ue order $12 vs $41 (5 and 4 accepted, 14 days)`, `first pass 80% of 10 ue orders vs 45% of 11`,
+  or `rank_by cost-per-accept: no dollar figure for codex (included)`).
 - A route may also write `workers: { prefer, avoid, only }` instead of `group` (not both `group` and `prefer`/`only`).
 - Routing in `alba.yaml` adds to the workers file's: a project group replaces the shared group of the same name, a project route the
   shared route of the same name (a project route with its own worker list drops the shared route's group).

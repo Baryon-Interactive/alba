@@ -1701,4 +1701,15 @@ export const zh: Record<string, string> = {
   'Commit or ref on the base branch (required)': '基线分支上的提交或引用（必填）',
   'Commit or ref on the base branch (optional)': '基线分支上的提交或引用（可选）',
   'Note (at least 10 characters)': '说明（至少 10 个字符）',
+  // scorecard
+  'Cost and time per accepted order': '每个验收工单的费用与用时',
+  'This project': '当前项目',
+  '14 days': '14 天',
+  '1st-pass': '一次通过',
+  'After rework': '返工后通过',
+  'Reworks': '打回返工',
+  'Cost / accept': '每次验收费用',
+  'Min / accept': '每次验收分钟',
+  'First-pass rate': '一次通过率',
+  'unknown ({priced} of {runs} runs priced)': '未知（{runs} 次派工中 {priced} 次有价格）',
 };

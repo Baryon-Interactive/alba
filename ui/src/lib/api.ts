@@ -180,6 +180,7 @@ export const api = {
   spend: (project: string) => request<SpendView>(`/api/spend${qs({ project })}`),
   approveSpend: (id: string, body: SpendApproveRequest & { project: string }) => post<SpendQuote>(`/api/spend/${enc(id)}/approve`, body),
   runUsage: (project: string, since = '7d') => request<import('@api').UsageDashboard>(`/api/usage/runs${qs({ project, since })}`),
+  usageScorecard: (q: { project?: string; since?: string; kind?: string; by?: import('@api').ScorecardBy } = {}) => request<import('@api').Scorecard>(`/api/usage/scorecard${qs(q)}`),
   usage: (project: string, days = 7) => request<ExternalUsage>(`/api/usage${qs({ project, days })}`),
   docs: (project: string) => request<DocList>(`/api/docs${qs({ project })}`),
   doc: (project: string, path: string) => request<DocFile>(`/api/docs/file${qs({ project, path })}`),
