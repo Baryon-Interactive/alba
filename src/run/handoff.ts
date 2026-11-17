@@ -3,11 +3,11 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
-import type { Lesson, OrderSkill } from '../api/types.ts';
+import type { OrderSkill } from '../api/types.ts';
 import type { OrderDoc, Run } from '../orders/model.ts';
 import type { Probes } from '../tick/gather.ts';
 import { baseRefOf } from './worktree.ts';
-import { findOrderFile, promptFor } from './prompt.ts';
+import { findOrderFile, promptFor, type PromptLessons } from './prompt.ts';
 
 const slash = (p: string) => p.replace(/\\/g, '/');
 
@@ -36,7 +36,7 @@ export interface HandoffInput {
   worktree: string;
   runId: string;
   probes: Probes;
-  lessons: readonly Lesson[];
+  lessons: PromptLessons;
   skills: readonly OrderSkill[];
 }
 

@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { fail } from '../i18n.ts';
 import type { Lesson, OrderSkill } from '../api/types.ts';
 import { lessonsSection } from '../lessons/lessons.ts';
+import type { LessonSelection } from '../lessons/select.ts';
 import type { OrderDoc, Run } from '../orders/model.ts';
+
+export type PromptLessons = readonly Lesson[] | LessonSelection;
+const isLessonSelection = (v: PromptLessons | undefined): v is LessonSelection => !!v && !Array.isArray(v);
 
 const templates = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../templates');
 export const readTemplate = (name: string): string => readFileSync(path.join(templates, name), 'utf8');
@@ -29,7 +33,7 @@ export interface PendingNote { kind: 'rework' | 'answer' | 'monitor' | 'message'
 export const MISSING_REPORT_REMINDER = 'The previous run ended without a report block; end this run with one.';
 export const MONITOR_CONTINUATION = 'Use the monitor result to continue the order\'s remaining work, including its acceptance checks. A progress report alone does not finish the order.';
 
-export interface PromptParts { roleRules?: string; orderFile: string; /** The skills put into the worktree for this order (name, what for, file): a list for engines that do not show them. */ skills?: readonly OrderSkill[]; /** Lessons that match the order's tags: id, title and rule go into the prompt. */ lessons?: readonly Lesson[]; rework?: string; /** What the monitor found (the worker handed a long job to it): the result, the end of the check's output and the worker's own note. */ monitor?: string; /** The answer to the worker's own question, with the question. */ answer?: { text: string; question?: string }; /** Every note still waiting, oldest first. When set, this replaces the single rework, monitor and answer sections. */ notes?: readonly PendingNote[]; missingReport?: boolean; recovery: boolean; /** A long lesson rule is cut to this many lines. */ lessonLines?: number }
+export interface PromptParts { roleRules?: string; orderFile: string; /** The skills put into the worktree for this order (name, what for, file): a list for engines that do not show them. */ skills?: readonly OrderSkill[]; /** Lessons (or a ranked selection) that match the order's tags: id, title and rule go into the prompt. */ lessons?: PromptLessons; rework?: string; /** What the monitor found (the worker handed a long job to it): the result, the end of the check's output and the worker's own note. */ monitor?: string; /** The answer to the worker's own question, with the question. */ answer?: { text: string; question?: string }; /** Every note still waiting, oldest first. When set, this replaces the single rework, monitor and answer sections. */ notes?: readonly PendingNote[]; missingReport?: boolean; recovery: boolean; /** A long lesson rule is cut to this many lines. */ lessonLines?: number }
 
 /**
  * The prompt file a worker is pointed at: a one-line pointer to the order file (non-ASCII text in a command
@@ -38,7 +42,7 @@ export interface PromptParts { roleRules?: string; orderFile: string; /** The sk
  */
 export function buildPrompt(parts: PromptParts): string {
   const out = [`Read the UTF-8 file ${parts.orderFile} in full and follow it exactly.`];
-  const lessons = lessonsSection(parts.lessons ?? [], parts.lessonLines);
+  const lessons = !parts.lessons ? [] : isLessonSelection(parts.lessons) ? parts.lessons.section : lessonsSection(parts.lessons, parts.lessonLines);
   if (lessons.length) out.push('', ...lessons);
   if (parts.skills?.length) out.push('', ...skillsSection(parts.skills));
   if (parts.notes?.length) out.push('', ...notesSection(parts.notes));
@@ -117,13 +121,58 @@ export function launchArgs(launch: { args: readonly string[]; session?: { new: r
  * The prompt file of an order as the tool would write it for its next run: the pointer, every note that no run has
  * really followed yet (oldest first, each with its time), a recovery note when the tool has already run it, and the report footer.
  */
-export function promptFor(workOrders: string, doc: OrderDoc, lessons: readonly Lesson[] = [], skills: readonly OrderSkill[] = [], lessonLines?: number): string {
+export function promptFor(workOrders: string, doc: OrderDoc, lessons: PromptLessons = [], skills: readonly OrderSkill[] = [], lessonLines?: number): string {
   const notes = pendingNotes(doc);
   const previous = [...doc.runs].filter(r => r.ended !== undefined).sort((a, b) => b.seq - a.seq)[0];
   const missingReport = previous?.missing_report && !notes.some(n => n.bounce) && notes.some(n => n.seq > previous.seq);
   return buildPrompt({
     orderFile: findOrderFile(workOrders, doc.order.tag), lessons, skills, lessonLines, ...(notes.length ? { notes } : {}), missingReport, recovery: doc.runs.some(r => !r.imported),
   });
+}
+
+/** Measures the UTF-8 byte breakdown of the written prompt or hand-over continuation file for `Run.lessons` and `Run.prompt_bytes`. */
+export function recordRunPrompt(input: {
+  workOrders: string;
+  doc: OrderDoc;
+  skills: readonly OrderSkill[];
+  selection?: LessonSelection;
+  promptText: string;
+  writtenPrompt: string;
+  rules?: string;
+  handoff?: string;
+}): { lessons: NonNullable<Run['lessons']>; prompt_bytes: NonNullable<Run['prompt_bytes']> } {
+  const utf8 = (s: string) => Buffer.byteLength(s, 'utf8');
+  const sel = input.selection;
+  const lessons: NonNullable<Run['lessons']> = sel
+    ? { mounted: sel.mounted.map(l => l.id), listed: sel.listed.map(l => l.id), bytes: sel.bytes, ...(sel.over_budget ? { over_budget: true } : {}) }
+    : { mounted: [], listed: [], bytes: 0 };
+
+  const fullPromptBreakdown = (total: number, rules: number, file: 'prompt' | 'handoff'): NonNullable<Run['prompt_bytes']> => {
+    const order = utf8(`Read the UTF-8 file ${findOrderFile(input.workOrders, input.doc.order.tag)} in full and follow it exactly.`);
+    const lessonsBytes = sel?.bytes ?? 0;
+    const skillsBytes = input.skills.length ? utf8(skillsSection(input.skills).join('\n')) : 0;
+    const notes = pendingNotes(input.doc);
+    const previous = [...input.doc.runs].filter(r => r.ended !== undefined).sort((a, b) => b.seq - a.seq)[0];
+    const missingReport = previous?.missing_report && !notes.some(n => n.bounce) && notes.some(n => n.seq > previous.seq);
+    const notesBytes = (notes.length ? utf8(notesSection(notes).join('\n')) : 0) + (missingReport ? utf8(MISSING_REPORT_REMINDER) : 0);
+    const alba = total - rules - lessonsBytes - skillsBytes - notesBytes - order;
+    return { rules, lessons: lessonsBytes, skills: skillsBytes, notes: notesBytes, order, alba, total, file };
+  };
+
+  if (input.handoff) {
+    const total = utf8(readFileSync(input.handoff, 'utf8'));
+    return { lessons, prompt_bytes: fullPromptBreakdown(total, 0, 'handoff') };
+  }
+
+  const total = utf8(input.writtenPrompt);
+  const rules = input.rules !== undefined ? utf8(`## Role rules\n\n${input.rules.trim()}`) : 0;
+  if (!sel) {
+    const footerSuffix = `\n\n${readTemplate('report-footer.md').trim()}\n`;
+    const notesBytes = Math.max(0, utf8(input.promptText) - utf8(footerSuffix));
+    const alba = total - rules - notesBytes;
+    return { lessons, prompt_bytes: { rules, lessons: 0, skills: 0, notes: notesBytes, order: 0, alba, total, file: 'prompt' } };
+  }
+  return { lessons, prompt_bytes: fullPromptBreakdown(total, rules, 'prompt') };
 }
 
 const NOTE_KINDS = new Set(['queue', 'rework', 'answer', 'monitor', 'message']);
