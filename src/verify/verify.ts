@@ -15,6 +15,7 @@ import { t } from '../i18n.ts';
 import { decodePng, imageFormat, meanAbsoluteLuminanceDifference, meanLuminance, regionError, summarizePng, type DecodedPng, type ImageFormat, type ImageSummary, type PixelRegion } from './png.ts';
 import type { LuminanceGate, MotionGate } from '../config.ts';
 import { decodeJpegBlocks } from './jpeg.ts';
+import { parseTargetLines } from './target.ts';
 
 export type VerifyStatus = 'pass' | 'fail' | 'warn';
 export interface VerifyItem { name: string; status: VerifyStatus; reason: string; file?: string; details?: Record<string, unknown> }
@@ -26,6 +27,7 @@ export interface OrderSections {
   allow: string[];
   deny: string[];
   maxLines: { glob: string; max: number }[];
+  target?: string[];
   warnings: string[];
   file?: string;
 }
@@ -37,14 +39,14 @@ const bullet = /^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+?)\s*$/;
 /** Parse the optional deterministic acceptance sections in an order markdown file. */
 export function parseOrderSections(markdown: string, file?: string): OrderSections {
   let section = '';
-  const acceptance: string[] = [], evidence: { path: string; what: string }[] = [], allow: string[] = [], deny: string[] = [];
+  const acceptance: string[] = [], evidence: { path: string; what: string }[] = [], allow: string[] = [], deny: string[] = [], target: string[] = [];
   const maxLines: { glob: string; max: number }[] = [];
   for (const raw of markdown.replace(/^\uFEFF/, '').split(/\r?\n/)) {
     const h = sectionHead.exec(raw);
     // "## 4. Acceptance (the lead re-captures)" is the Acceptance section: numbering and a trailing note are not part of the name.
     if (h) { section = h[1].trim().toLowerCase().replace(/^\d+[.)]?\s+/, '').replace(/\s*(?:\(.*|:.*|\s[-\u2013\u2014]\s.*)$/, '').trim(); continue; }
     const b = bullet.exec(raw);
-    if (!b) continue;
+    if (!b) { if (section === 'target' && raw.trim() && !/^(`{3,}|~{3,})/.test(raw.trim())) target.push(raw.trim()); continue; }
     const item = b[1].trim();
     if (section === 'acceptance') acceptance.push(item);
     else if (section === 'evidence') {
@@ -57,12 +59,13 @@ export function parseOrderSections(markdown: string, file?: string): OrderSectio
         const n = /^max-lines\s*:\s*(\d+)\s*(?:for|per)?\s*(.*)$/i.exec(item);
         if (n) maxLines.push({ glob: n[2].trim() || '**', max: Number(n[1]) });
       }
-    }
+    } else if (section === 'target') target.push(item);
   }
   const warnings: string[] = [];
   if (!acceptance.length) warnings.push('Order has no ## Acceptance section.');
   for (const item of acceptance) if (vague.has(item.toLowerCase())) warnings.push(`Vague acceptance item: ${item}`);
-  return { acceptance, evidence, allow, deny, maxLines, warnings, ...(file ? { file } : {}) };
+  if (target.length) warnings.push(...parseTargetLines(target).warnings);
+  return { acceptance, evidence, allow, deny, maxLines, ...(target.length ? { target } : {}), warnings, ...(file ? { file } : {}) };
 }
 
 function git(cwd: string, args: string[]): { code: number; out: string; err: string } {

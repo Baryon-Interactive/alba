@@ -6,6 +6,7 @@ import { listEvidence } from '../evidence/evidence.ts';
 import type { Orders } from '../orders/service.ts';
 import type { Probes } from '../tick/gather.ts';
 import { decodePng, pictureStats, subjectStats, summarizePng, type DecodedPng } from '../verify/png.ts';
+import { cellLuminance } from '../verify/target.ts';
 
 /**
  * One picture on the sheet, with what a reviewer checks first: is it black, flat, or the size it should be; then its range (highlights,
@@ -107,6 +108,47 @@ function buildSheet(tag: string, source: readonly { path: string; from: string }
 export function sheetFromFiles(files: readonly string[], options: { tag?: string; out?: string; columns?: number; cell?: number } = {}): Sheet {
   const source = files.filter(f => !MASK.test(f)).slice(0, MAX_IMAGES).map(file => ({ path: file, from: 'capture' }));
   return buildSheet(options.tag ?? 'capture', source, options);
+}
+
+/**
+ * Side-by-side visual target sheet: reference left, capture middle, and a third panel on the right showing per-cell
+ * luminance difference as grey levels (0 black = identical, 255 white = most different).
+ */
+export function targetSheet(
+  reference: DecodedPng,
+  capture: DecodedPng,
+  out: string,
+  options: { cols?: number; rows?: number; cell?: number } = {},
+): { out: string; width: number; height: number; cell: number; cellHeight: number; gap: number; panels: 3 } {
+  const gridCols = Math.max(1, Math.min(256, options.cols ?? 16));
+  const gridRows = Math.max(1, Math.min(256, options.rows ?? 9));
+  const refCells = cellLuminance(reference, gridCols, gridRows);
+  const capCells = cellLuminance(capture, gridCols, gridRows);
+  const diffPixels = Buffer.alloc(capture.width * capture.height * 3);
+  for (let y = 0; y < capture.height; y++) {
+    const cy = Math.min(gridRows - 1, Math.floor((y * gridRows) / capture.height));
+    for (let x = 0; x < capture.width; x++) {
+      const cx = Math.min(gridCols - 1, Math.floor((x * gridCols) / capture.width));
+      const diff = Math.abs(capCells[cy * gridCols + cx]! - refCells[cy * gridCols + cx]!);
+      const level = Math.round(Math.min(1, diff) * 255);
+      const o = (y * capture.width + x) * 3;
+      diffPixels[o] = level;
+      diffPixels[o + 1] = level;
+      diffPixels[o + 2] = level;
+    }
+  }
+  const diffImage: DecodedPng = { width: capture.width, height: capture.height, channels: 3, pixels: diffPixels };
+  const panels = [reference, capture, diffImage] as const;
+  const cell = Math.max(64, Math.min(1024, options.cell ?? 320));
+  const gap = 8;
+  const cellHeight = Math.min(cell * 2, Math.max(16, Math.round(Math.max(...panels.map(p => (cell * p.height) / p.width)))));
+  const width = 3 * cell + 4 * gap;
+  const height = cellHeight + 2 * gap;
+  const rgb = Buffer.alloc(width * height * 3, 24);
+  panels.forEach((panel, i) => fit(panel, cell, cellHeight, rgb, width, gap + i * (cell + gap), gap));
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, encodePng(width, height, rgb));
+  return { out: out.replace(/\\/g, '/'), width, height, cell, cellHeight, gap, panels: 3 };
 }
 
 /**
