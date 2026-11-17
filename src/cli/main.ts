@@ -75,6 +75,7 @@ import { runLibrary } from './library.ts';
 import { machinesEdit } from './machines.ts';
 import { migrateState, exportState, checkState } from '../orders/state.ts';
 import { verifyOrder, formatVerify } from '../verify/verify.ts';
+import { dryRunCapture, formatCaptureDryRun, formatCaptureRun, runCapture } from '../capture/run.ts';
 import { producerAct, producerActions, producerCases, producerPolicy, producerState, producerWouldDo, intakeProducer, setProducerPaused } from '../producer/producer.ts';
 import { producerLog } from '../producer/activity.ts';
 import { producerUsage } from '../producer/session-usage.ts';
@@ -103,7 +104,7 @@ const options = {
   results: { type: 'string', multiple: true }, tag: { type: 'string' }, from: { type: 'string' }, names: { type: 'string' }, source: { type: 'string' }, every: { type: 'string' },
   'stall-minutes': { type: 'string' }, 'timeout-minutes': { type: 'string' }, 'poll-minutes': { type: 'string' }, 'wait-minutes': { type: 'string' },
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
-  page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' },
+  page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -152,6 +153,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
                                              blocks until the order's run ends (recorded like a tick does, exit 0), stalls (exit 2) or the time runs out (exit 3)
   check <TAG> [--results file]... [--worktree dir] [--json]   before accepting: worktree checks from the project's "checks:", and the result files against the reference values (later files replace earlier ones); exit 0 all fine, 1 differs/missing/failed, 2 bad configuration
   verify <TAG> [--json]                      run deterministic acceptance gates and record the verification result
+  capture <TAG> [--recipe name] [--dry-run] [--json]   build and capture the order's worktree under the capture lock, run screenshot gates and write a contact sheet
   refs adopt --from <file> (--names a,b | --all) --source <text> [--tag T]
                                              take values from a result file into the reference values, after a person decided the change is expected
   run <TAG> --worker id [--dry-run] [--over-cap]  start a queued order: worktree, prompt, background process, run record; a held order (for example after "stop") starts on the worker named; a full kind cap refuses unless --over-cap
@@ -747,6 +749,21 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
     return values.json ? JSON.stringify(report, null, 2) : formatVerify(report);
   }
 
+  if (group === 'capture') {
+    need0(command, 'alba capture <TAG> [--recipe name] [--dry-run] [--json]');
+    const doc = orders.get(command!);
+    if (values['dry-run']) {
+      const plan = dryRunCapture(cfg, orders, doc.order.tag, { recipe: values.recipe });
+      return values.json ? JSON.stringify(plan, null, 2) : formatCaptureDryRun(plan);
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const outDir = path.join(cfg.state_dir, 'capture', `${doc.order.tag}-${stamp}`);
+    const result = runCapture(cfg, orders, doc.order.tag, { recipe: values.recipe, outDir });
+    orders.record(doc.order.tag, 'capture-run', { report: doc.reports.at(-1)?.seq ?? null, summary: result.summary });
+    exitCode = result.summary.status === 'passed' ? 0 : 1;
+    return values.json ? JSON.stringify(result.summary, null, 2) : formatCaptureRun(doc.order.tag, result);
+  }
+
   if (group === 'refs') {
     if (command !== 'adopt') return fail('Usage: alba refs adopt --from <file> (--names a,b | --all) --source <text>');
     if (!cfg.checks.references || !cfg.checks.result_parser) fail('{file}: "checks.references" and "checks.result_parser" are needed.', { file: cfg.file });
@@ -931,7 +948,7 @@ try {
   else console.error(e);
   // For tick, anything that stops it before it can decide is a configuration problem (exit 3).
   const argv = process.argv.slice(2);
-  process.exitCode = argv.includes('tick') ? 3 : argv.includes('check') || (argv.includes('refs') && argv.includes('adopt')) ? 2 : 1;
+  process.exitCode = argv.includes('tick') ? 3 : argv.includes('check') || argv.includes('capture') || (argv.includes('refs') && argv.includes('adopt')) ? 2 : 1;
 }
 
 export type { Stage };
