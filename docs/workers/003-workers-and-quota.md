@@ -51,7 +51,7 @@ workers:
       - { balance_drop: 5 }         # the balance fell by more than 5 since the previous reading
 ```
 
-`capabilities` describe what a supply can do. Roles own the required capabilities and preferences; `notes` are display-only text and never affect routing. `skills_mount` says where selected skills are copied. Workers with the same `quota` share a subscription or balance, and route reasons name those peers. `model_family` identifies equivalent models across shells and can be used in role prefer/avoid/only lists, as can ids and aliases. The console and `alba workers set` edit supply fields while keeping comments (document 013).
+`capabilities` describe what a supply can do. Roles own the required capabilities and preferences; `notes` are display-only text and never affect routing. `skills_mount` says where selected skills are copied. Workers with the same `quota` share a subscription or balance, and route reasons name those peers. `model_family` identifies equivalent models across shells and can be used in role prefer/avoid/only lists, as can ids and aliases. [First-pass review](../workflow/039-first-pass-review.md) also requires `model_family` on both the delivering and reviewing workers so a ready delivery is checked by a different model family. The console and `alba workers set` edit supply fields while keeping comments (document 013).
 
 The documented capability vocabulary is `shell`, `edit`, `git`, `vision`, `web`, `long-context`, `long-run`, `windows`, `mcp`, `fast`, `cheap`, `strong-reasoning`. Free extra tags are valid and listed as `extraCapabilities` in configuration/API views. Matching is exact; a missing capability is never inferred from a model name or notes. An empty list claims no capabilities.
 

@@ -569,6 +569,7 @@ export interface OrderDetail {
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };
   acceptance?: import('../review/acceptance.ts').AcceptanceCard;
+  firstPass?: import('../review/first-pass.ts').FirstPassView;
   accounting?: { rows: import('../usage/types.ts').UsageRow[]; signals: import('../usage/types.ts').UsageSignal[]; total: import('../usage/types.ts').UsageTotal; reworkShare: number; resumeShare: number; warnings: { order?: string; text: string }[] };
   thread?: import('./live-types.ts').ThreadEntry[];
   project: string;
@@ -1621,3 +1622,8 @@ export type PlanRequest = import('../orders/planned.ts').PlanInput & { project: 
 
 /** `GET /api/producer/config`: the text of the `producer:` section of the project file. */
 export type { ProducerConfigView, ProducerConfigEdit, DiffLine } from '../producer/config-edit.ts';
+
+/** Cross-model first-pass review and agreement statistics (`GET /api/review/stats`, `POST /api/orders/:tag/first-pass-wrong`). */
+export type { FirstPassItem, FirstPassVerdict, FirstPassReview, FirstPassDispute, FirstPassView } from '../review/first-pass.ts';
+export type { FirstPassStats, FirstPassStatsMetrics, FirstPassFamilyRow, FirstPassKindRow, FirstPassFamilyKindRow } from '../review/first-pass-stats.ts';
+export interface FirstPassDisputeResult { ok: true; tag: string; id: string; report: number; note: string }

@@ -2,6 +2,7 @@ import { workerAdapter } from '../workers/adapters/index.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { producerNotes } from '../producer/notes.ts';
 import { acceptanceCard } from '../review/acceptance.ts';
+import { currentFirstPass } from '../review/first-pass.ts';
 import { readOrders } from './read-orders.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import type { ProjectConfig } from '../config.ts';
@@ -312,6 +313,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const live = open ? liveRuns.peek(open) : undefined;
   const messages = worktree ? readInbox(worktree, live?.inbox_opened_at) : [];
   const nudge = open ? readNudges(view.config)[nudgeKey(o.tag, open.id)] : undefined;
+  const firstPass = currentFirstPass(view.orders, doc);
   return {
     producerNotes: { project: producerNotes(view.config), order: producerNotes(view.config, o.tag) },
     ...(doc.reroutes?.length ? { reroutes: doc.reroutes.slice(-10).map(r => ({ id: r.id, at: r.at, from: r.from, to: r.to, note: r.note, brief: doc.runs.find(run => run.reroute === r.id)?.previous_attempts ?? r.brief })) } : {}),
@@ -330,7 +332,8 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     referencedDecisions: referencedDecisions(view.config, doc, file?.markdown), questions: (doc.questions ?? []).map(toQuestion), quotes: (doc.quotes ?? []).map(q => toQuote(view.config.id, o.tag, q)), lessons: lessonsForOrder(view.config, doc),
     decisions: doc.actions.map(a => ({ seq: a.seq, at: a.at, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.imported ? { imported: true } : {}), ...(a.override ? { override: true } : {}) })),
     ...(check ? { lastCheck: check } : {}), ...(deliveryLint ? { deliveryLint } : {}), ...(verify ? { verify } : {}), ...(spend ? { spend } : {}),
-    acceptance: acceptanceCard(view.config, view.orders, o.tag),
+    acceptance: acceptanceCard(view.config, view.orders, o.tag) ?? (firstPass ? { tag: o.tag, title: o.title, href: `/p/${encodeURIComponent(view.config.id)}/orders/${encodeURIComponent(o.tag)}#acceptance`, pipelineRequired: false, lint: [], changed: [], images: [] } : undefined),
+    firstPass,
     ...(monitorViewOf(doc, stage.stage) ? { monitor: monitorViewOf(doc, stage.stage) } : {}), ...(row?.activity?.progress && doc.runs.some(r => r.ended === undefined) ? { progress: row.activity.progress } : {}),
     ...(external.length ? { externalCalls: external } : {}),
     accounting, pendingNotes: notes, messages, thread: [...threadOf(doc, live), ...events.filter(e => e.type === 'usage-budget').map((e,i) => ({ id: `usage-budget-event-${i}`, at: e.at, kind: e.type, text: String(e.data?.text ?? '') })), ...warnings.filter(w => !events.some(e => e.type === 'usage-budget' && e.data?.text === w.text)).map((w,i) => ({ id: `usage-budget-${i}`, at: env.probes.now().toISOString(), kind: 'usage-budget', text: w.text }))].sort((a,b) => a.at.localeCompare(b.at)), ...(nudge ? { commitNudge: nudge } : {}),

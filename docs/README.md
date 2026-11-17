@@ -18,6 +18,7 @@ Start with the [five-minute demo](../examples/demo/README.md), then choose a top
 | [004-tick.md](workflow/004-tick.md) | 004. Tick |
 | [005-run-and-resume.md](workflow/005-run-and-resume.md) | 005. Run and resume |
 | [006-review.md](workflow/006-review.md) | 006. Review |
+| [039-first-pass-review.md](workflow/039-first-pass-review.md) | 039. First-pass review |
 | [008-shadow-run.md](workflow/008-shadow-run.md) | 008. Shadow run |
 | [009-checks-and-waiting.md](workflow/009-checks-and-waiting.md) | 009. Checks, reference values, waiting and watching |
 | [011-decisions-questions-evidence-clean-credits-lessons.md](workflow/011-decisions-questions-evidence-clean-credits-lessons.md) | Decisions, questions, evidence, clean, credits and lessons |

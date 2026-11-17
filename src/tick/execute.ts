@@ -15,6 +15,7 @@ import type { TickReport } from './plan.ts';
 import { refreshFacts } from '../producer/facts/snapshot.ts';
 import { saveBriefReadings } from '../producer/briefs.ts';
 import { pollIndependentChecks } from '../review/independent.ts';
+import { runFirstPass } from '../review/first-pass.ts';
 
 /**
  * The real tick:
@@ -47,6 +48,7 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
   // Tool jobs: one whose quote a person decided, or that waited for a resource, is started again.
   if (ctx.project.plugins) done.push(...continueToolJobs(ctx.project, ctx.orders, ctx.probes.spawnDetached));
   runAcceptanceTrials(ctx.project, ctx.orders);
+  runFirstPass(ctx);
   const tried = new Set<string>();
   const stopped = new Set<string>();
   let dispatched = 0;

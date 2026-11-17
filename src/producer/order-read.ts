@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { acceptanceCard } from '../review/acceptance.ts';
+import { currentFirstPass } from '../review/first-pass.ts';
 import type { ProjectConfig } from '../config.ts';
 import type { Orders } from '../orders/service.ts';
 import { headings } from '../library/markdown.ts';
@@ -52,6 +53,7 @@ export function readProducerOrder(project: ProjectConfig, orders: Orders, tag: s
     producerNotes: { project: producerNotes(project), order: producerNotes(project, doc.order.tag) },
     body: boundedBody(body),
     acceptance: acceptanceCard(project, orders, doc.order.tag),
+    firstPass: currentFirstPass(orders, doc),
     report: report ? { status: report.status, summary: report.summary, evidence: report.evidence, commits: report.commits } : null,
     verify: results.map(({ name, status, reason }) => ({ name, status, reason })),
     actions: [...doc.actions].sort((a, b) => b.seq - a.seq).slice(0, 5).map(({ kind, note, at }) => ({ kind, note: note ?? '', at })),
