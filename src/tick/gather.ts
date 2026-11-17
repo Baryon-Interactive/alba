@@ -431,7 +431,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
           const pf = preflight(project, orders, o.tag, {
             needsOnly: actualStage === 'waiting-needs',
             runChecks: checkBudget > 0,
-            requireAcceptance: project.orders !== undefined,
+            checkFile: project.orders !== undefined,
             record: false,
           });
           if (pf.checksExecuted && !hadCachedChecks && (pf.checks ?? []).some(c => c.status !== 'skipped')) {

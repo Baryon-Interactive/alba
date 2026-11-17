@@ -54,8 +54,8 @@ export interface PreflightOptions {
   runChecks?: boolean;
   /** Ignore cached check-command results for the current file hash and run them fresh (used by `alba orders preflight`). */
   forceChecks?: boolean;
-  /** Whether a file without `## Acceptance` bullets is a `file` hold (default true; false in tick gather when `orders:` is absent). */
-  requireAcceptance?: boolean;
+  /** Whether check 1 (`file`: order file and `## Acceptance` bullets) runs (default true; false in tick gather when `orders:` is absent). */
+  checkFile?: boolean;
 }
 
 const READING_HEADING = /(?:read|background|context|reference|report)/i;
@@ -411,22 +411,24 @@ export function preflight(project: ProjectConfig, orders: Orders, tag: string, o
     const template = resolveOrderTemplate(project, doc.order.kind || 'default', doc.order.tag);
 
     // 1. file (hold)
-    if (!orderFile) {
-      problems.push({
-        code: 'file',
-        severity: 'hold',
-        text: `${doc.order.tag} has no work-order file in ${project.work_orders}.`,
-        fix: `Write ${path.posix.join(project.work_orders.replace(/\\/g, '/'), `${doc.order.tag}-<slug>.md`)} with a "## Acceptance" bullet list.`,
-      });
-    } else if (options.requireAcceptance !== false && (!sections || sections.acceptance.length === 0)) {
-      problems.push({
-        code: 'file',
-        severity: 'hold',
-        text: `${path.basename(orderFile)} has no "## Acceptance" section with bullet items.`,
-        fix: template?.acceptance.length
-          ? `## Acceptance\n${template.acceptance.map(b => `- ${b}`).join('\n')}`
-          : `Add "## Acceptance" with at least one "- <verifiable condition>" bullet to ${path.basename(orderFile)}.`,
-      });
+    if (options.checkFile !== false) {
+      if (!orderFile) {
+        problems.push({
+          code: 'file',
+          severity: 'hold',
+          text: `${doc.order.tag} has no work-order file in ${project.work_orders}.`,
+          fix: `Write ${path.posix.join(project.work_orders.replace(/\\/g, '/'), `${doc.order.tag}-<slug>.md`)} with a "## Acceptance" bullet list.`,
+        });
+      } else if (!sections || sections.acceptance.length === 0) {
+        problems.push({
+          code: 'file',
+          severity: 'hold',
+          text: `${path.basename(orderFile)} has no "## Acceptance" section with bullet items.`,
+          fix: template?.acceptance.length
+            ? `## Acceptance\n${template.acceptance.map(b => `- ${b}`).join('\n')}`
+            : `Add "## Acceptance" with at least one "- <verifiable condition>" bullet to ${path.basename(orderFile)}.`,
+        });
+      }
     }
 
     // 2. sections (warn)
