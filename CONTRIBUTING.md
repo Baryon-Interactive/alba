@@ -27,7 +27,7 @@ Skip only the specific assertion that does not apply to the platform, with a rea
 
 ## Implementation conventions
 
-Use English for source, comments, docs and fixtures; Chinese belongs only in translation catalogs. Store UTF-8 without BOM and LF endings. Keep public contracts explicit, reject invalid input, preserve unknown metrics and isolate project-specific rules in configuration. Tests use disposable state and repositories, assigned ports and local scripts; never use a real project's saves, credentials or running workers.
+Use English for source, comments, docs and fixtures; Chinese belongs only in translation catalogs and [README.zh-CN.md](README.zh-CN.md). Store UTF-8 without BOM and LF endings. Keep public contracts explicit, reject invalid input, preserve unknown metrics and isolate project-specific rules in configuration. Tests use disposable state and repositories, assigned ports and local scripts; never use a real project's saves, credentials or running workers.
 
 Add a worker adapter under `src/workers/adapters`, register it in `index.ts` and follow the [adapter contract](docs/worker-adapters.md). Keep engine flags, stream formats, usage and resume behavior in that adapter. Exercise launch through a real subprocess and require a valid report before review.
 

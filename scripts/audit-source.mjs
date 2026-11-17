@@ -34,8 +34,9 @@ export function auditSource(root = path.resolve(import.meta.dirname, '..')) {
     catch { problems.push(`${file}: invalid UTF-8 text; remove binary data from text sources or declare a supported binary format`); continue; }
     if (legacy.test(text)) problems.push(`${file}: obsolete product or library name`);
     if (internal.test(text)) problems.push(`${file}: internal ticket identifier`);
-    const translation = file === 'src/i18n-zh.ts' || /^ui\/src\/i18n\/(?:zh|machines|design-goals|independent-check|nightly-gates|producer-activity)\.ts$/.test(file);
-    if (!translation && cjk.test(text)) problems.push(`${file}: translation outside its catalog`);
+    const translation = file === 'README.zh-CN.md' || file === 'src/i18n-zh.ts' || /^ui\/src\/i18n\/(?:zh|machines|design-goals|independent-check|nightly-gates|producer-activity)\.ts$/.test(file);
+    const cjkScan = file === 'README.md' ? text.replace(/(?:\[\u7b80\u4f53\u4e2d\u6587\]\(README\.zh-CN\.md\)|<a href="README\.zh-CN\.md">\u7b80\u4f53\u4e2d\u6587<\/a>)/u, '') : text;
+    if (!translation && cjk.test(cjkScan)) problems.push(`${file}: translation outside its catalog`);
     if (drive.test(text) || home.test(text) || absolute.test(text)) problems.push(`${file}: machine-specific absolute path`);
     if (username.test(text)) problems.push(`${file}: private username`);
     if (secret.test(text)) problems.push(`${file}: credential-shaped literal`);

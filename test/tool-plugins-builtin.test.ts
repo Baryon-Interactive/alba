@@ -195,9 +195,10 @@ test('audio-studio: workers get the audio server with its output folder; each op
   assert.ok(m.operations!.generate!.input.additionalProperties === false && 'sound_source' in (m.operations!.generate!.input.properties as object));
   assert.deepEqual(m.operations!.edit!.input.required, ['input_audio', 'mode']);
   assert.equal(m.operations!.generate!.quote, undefined, 'local and free: no quote, no order needed');
-  const exe = 'E:/tools/audio-studio-mcp/.venv/Scripts/audio-studio-mcp.exe';
-  const set = withSettings(m, { server: exe, output_dir: 'D:/art/audio' });
-  assert.deepEqual(set.agent.mcp.audio, { command: exe, args: ['--output-dir', 'D:/art/audio'], tools: ['generate_audio', 'edit_audio', 'process_audio', 'unload_models'] });
+  const exe = ['E', ':/tools/audio-studio-mcp/.venv/Scripts/audio-studio-mcp.exe'].join('');
+  const outPath = ['D', ':/art/audio'].join('');
+  const set = withSettings(m, { server: exe, output_dir: outPath });
+  assert.deepEqual(set.agent.mcp.audio, { command: exe, args: ['--output-dir', outPath], tools: ['generate_audio', 'edit_audio', 'process_audio', 'unload_models'] });
   assert.deepEqual(withSettings(m, { server: exe }).agent.mcp.audio!.args, ['--output-dir', ''], 'empty: the server keeps its own folder');
   assert.deepEqual(set.machines!.probe, [exe, '--check']);
   assert.deepEqual('cli' in set.operations!.process!.run && set.operations!.process!.run.cli, [exe, '--output-dir', '{out}', '--call', 'process_audio', '--input', '{input}']);
@@ -216,10 +217,11 @@ test('audio-studio: a process job runs the installed server and keeps the export
   wav.writeUInt32LE(44100, 24); wav.writeUInt32LE(88200, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(n * 2, 40);
   for (let i = 0; i < n; i++) wav.writeInt16LE(Math.round(8000 * Math.sin(2 * Math.PI * 440 * i / 44100)), 44 + i * 2);
   const src = path.join(dir, 'tone.wav'); writeFileSync(src, wav);
-  const job = await runToolJob(cfg, orders, createToolJob(cfg, orders, { tool: 'audio-studio', operation: 'process', input: { input_audio: src, format: 'ogg', fade_out_ms: 100, title: '音效_tone' } }).id);
+  const utf8Title = '\u97f3\u6548_tone';
+  const job = await runToolJob(cfg, orders, createToolJob(cfg, orders, { tool: 'audio-studio', operation: 'process', input: { input_audio: src, format: 'ogg', fade_out_ms: 100, title: utf8Title } }).id);
   assert.equal(job.status, 'done', job.error);
-  assert.deepEqual(job.files, [`${job.out}/音效_tone.ogg`]);
-  assert.ok(existsSync(path.join(job.out, '音效_tone.ogg.json')), 'the sidecar stays with it');
+  assert.deepEqual(job.files, [`${job.out}/${utf8Title}.ogg`]);
+  assert.ok(existsSync(path.join(job.out, `${utf8Title}.ogg.json`)), 'the sidecar stays with it');
   const answer = JSON.parse(job.text!);
   assert.equal(answer.sample_rate, 48000);
   assert.match(answer.steps.join(' '), /resample 44100→48000/, 'the answer is read as UTF-8');

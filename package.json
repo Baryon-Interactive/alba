@@ -20,7 +20,9 @@
     "examples/",
     "ui/dist/",
     "CHANGELOG.md",
-    "NOTICE"
+    "NOTICE",
+    "README.md",
+    "README.zh-CN.md"
   ],
   "scripts": {
     "alba": "node --disable-warning=ExperimentalWarning src/cli/main.ts",

@@ -5,47 +5,50 @@
   </picture>
 </p>
 
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
 # Alba
 
-Alba is a local control room for a team of coding agents. It turns work orders into isolated Git worktrees, sends each one to the
-right worker on the right machine, watches the run live and accepts nothing without evidence.
+Alba is a local control room for coordinating a team of AI coding agents across one workstation or a local fleet of machines. It turns written work orders into isolated Git worktrees, routes each task to the right agent CLI under hardware and quota guardrails, watches runs live, and merges nothing without evidence.
 
 ![Alba work-order board with running work, questions, review and merged deliveries](docs/img/board.png)
 
-**Status: pre-1.0 (0.1.0).** Public contracts and migration expectations are documented in [compatibility](docs/compatibility.md).
+**Status: pre-1.0 (0.1.0), Apache-2.0.** Public contracts and migration expectations are documented in [compatibility](docs/compatibility.md).
 
-## What it does
+## Why Alba
 
-- **Work orders, not chat.** Each task is an order with intent, dependencies and acceptance criteria. Its stage is worked out from
-  facts (commits, reports, decisions), so the board cannot drift from what happened. [Orders and stages](docs/workflow/002-orders-and-stages.md)
-- **One worktree per run.** Every run gets its own branch and worktree, so parallel workers never step on each other, and a review
-  looks at exactly what the worker committed. [Runs and resume](docs/workflow/005-run-and-resume.md)
-- **Routing above the workers.** Worker groups are ordered lists of workers with a fallback: the first that can start takes the
-  order, then the next. Routes send each kind of work to a group, so "Codex first everywhere" is one edit of one group, and workers
-  you never want chosen are listed once. [Routing](docs/workers/012-routing-and-skills.md#routing-worker-groups-and-routes)
-- **Scheduling across workers and machines.** A tick picks the next orders and the worker for each: by route, capability, quota left,
-  daily spend, concurrency, shared resources and caps. A worker can live on another machine; Alba ships the work there over SSH and
-  brings the commits back. [Scheduling across machines](#scheduling-across-machines)
-- **Quota-aware hand-over.** When a worker's usage window runs out or its service is at capacity, the order waits for it or goes to the
-  next suitable worker with a hand-over brief; a paid worker is used only when allowed. [Hand-over](docs/workers/014-monitor-leases-loops.md#4-handing-an-order-over-when-a-worker-runs-out)
-- **Long jobs and stuck runs.** A cook or package step can be handed to a monitor so it does not hold a worker slot. Runs that stop
-  committing, loop on the same error or never write a start receipt are flagged. [Monitors, leases and loops](docs/workers/014-monitor-leases-loops.md)
-- **Live runs.** The console shows each run's current command, plan, tokens and messages as they happen, and you can leave a note the
-  worker reads after its next commit. [Live runs](docs/workers/019-live-runs-and-messages.md)
-- **Review by evidence.** A worker's exit code approves nothing. A delivery shows its report, diff, acceptance evidence and merge
-  readiness; an optional pipeline checks, verifies independently and merges, and nightly gates run the expensive suites once per
-  batch. [Review](docs/workflow/006-review.md), [acceptance pipeline](docs/workflow/026-acceptance-pipeline.md), [nightly gates](docs/operations/029-nightly-gates.md)
-- **Skills and lessons.** Skills are attached by kind, by order or by a tool, and a run sees only the skills Alba chose for it; the
-  prompt carries the lessons that share a tag with the order. [Skills](docs/workers/012-routing-and-skills.md#skills)
-- **Tool plugins and spend.** Image, 3D and other paid services come in as plugins with their MCP server, skill and resources; a paid
-  call is quoted first and waits for approval. [Tool plugins](docs/workers/031-tool-plugins.md), [usage and cost](docs/console/020-usage-and-cost.md)
-- **An optional producer.** A policy-gated assistant turns facts into cases and proposed actions, and acts by itself only where your
-  policy says `auto`. [Producer](docs/producer/021-producer.md)
+Running one coding agent in one chat window works for small edits. On a real game or C++ codebase, parallel agents overwrite each other's files, starve local RAM during builds, freeze screen captures when two game windows open at once, burn through subscription windows or API credits overnight, and report "done" when nothing works on screen.
+
+Alba replaces ad-hoc chat loops with four layers of local control:
+
+### 1. Fact-driven workflow and Git isolation
+
+- **Work orders, not chat.** Every task is a Markdown order with intent, dependencies, file boundaries and acceptance criteria. Card stages (`queued`, `running`, `monitoring`, `awaiting-user`, `awaiting-review`, `merged`, `cancelled`) are computed from append-only facts in SQLite, so cards cannot be dragged out of sync with Git. [Orders and stages](docs/workflow/002-orders-and-stages.md)
+- **One worktree per run.** Each worker attempt gets its own branch and Git worktree. Parallel runs never collide on disk, and abnormal exits snapshot uncommitted files into `refs/alba/wip/*` without touching `git stash`. [Runs and resume](docs/workflow/005-run-and-resume.md)
+- **Review by evidence.** A clean exit code approves nothing. Deliveries attach a structured report, branch diff, and acceptance evidence; optional pipelines verify independently and run expensive soak suites as nightly gates. [Review](docs/workflow/006-review.md), [acceptance pipeline](docs/workflow/026-acceptance-pipeline.md), [nightly gates](docs/operations/029-nightly-gates.md)
+
+### 2. Agent-agnostic routing and quota guardrails
+
+- **Routing above the workers.** Drives Codex, Claude Code, Grok CLI, OpenCode, or local scripts from one board. Ordered **worker groups** and **routes** decouple task kinds from specific CLIs, making model rerouting a one-line edit. [Routing](docs/workers/012-routing-and-skills.md#routing-worker-groups-and-routes)
+- **Quota-aware hand-over and spend caps.** Detects shared subscription pools across CLIs, pauses exhausted windows before they spill into metered billing, enforces daily USD caps, and rotates mid-flight orders to fallback workers with a generated hand-over brief. [Hand-over](docs/workers/014-monitor-leases-loops.md#4-handing-an-order-over-when-a-worker-runs-out), [usage and cost](docs/console/020-usage-and-cost.md)
+- **Live runs, scoped skills, and lessons.** Watch streaming logs, step progress, and token usage live; leave inbox notes read after the next commit; attach only matching skills and short tagged lessons instead of bloating global system prompts. [Live runs](docs/workers/019-live-runs-and-messages.md), [skills](docs/workers/012-routing-and-skills.md#skills)
+
+### 3. Local workstation and LAN machine scheduling (built for Unreal, Unity, Godot, and C++)
+
+- **Resource leases, named locks, and zero-token monitors.** Gate dispatches on live free-RAM floors, serialize compiles and single-window GPU captures with leases and machine-wide locks, and hand slow cook/package steps to a background **monitor** so the worker slot frees up immediately until the build finishes. [Monitors, leases and loops](docs/workers/014-monitor-leases-loops.md)
+- **Per-run game editor MCP pools.** Compile a fresh C++ worktree under lock first (`skip_if_newer`), lease a dedicated game editor port (such as Unreal Engine 5.9's built-in MCP server), pause/restart around Windows `.dll` binary locks, and clean up process trees by PID creation timestamp. [Run editors](docs/workers/032-run-editors.md)
+- **Zero-daemon SSH fleet and Unreal provisioning.** Dispatch branches and serverless Git LFS deltas over standard SSH to spare Windows PCs on your desk, run GPU captures/editors inside the logged-on desktop session, scan hardware/toolchains, and copy a licensed local Unreal install across LAN in eight parallel compressed streams. [Scheduling across machines](#scheduling-across-machines), [Unreal module](docs/engines/unreal.md)
+
+### 4. Tool plugins for 2D, 3D, and audio pipelines
+
+- **Declarative `alba-plugin.yaml` bundles.** Package cross-CLI MCP server flags, tool allowlists, scoped `SKILL.md` guides, `env_from` secret variable names (never values), and GPU/wallet leases into one unit attached by order kind (`image-gateway`, `tripo-3d`, `audio-studio`). [Tool plugins](docs/workers/031-tool-plugins.md)
+- **Workerless batch operations and quote-before-spend.** Run schema-checked asset jobs directly via `alba tools run` without spending coding-agent LLM tokens. Every paid call is priced and gated by an order-bound quote (human-approved or capped by atomic `auto_approve` limits), with crash-safe wallet accounting.
 
 ## Scheduling across machines
 
-Alba runs on one computer, the controller. A **machine registry** lists the others, and a **worker** with a `host` runs on that
-machine. The controller decides what runs where; a worker host needs SSH, Git, Node and the worker's own CLI, and no Alba agent.
+Alba runs on one computer, the controller. A **machine registry** lists your other local or LAN machines, and a **worker** with a `host` runs on that machine over SSH. Worker hosts need only SSH, Git, Node, and the worker's CLI; no Alba daemon is installed on remote machines.
 
 ```mermaid
 flowchart LR
@@ -77,58 +80,22 @@ workers:
   - id: codex-gpu
     engine: codex
     host: gpu-box                       # this worker runs on gpu-box
-    tunnel: 8000                        # optional: a reverse tunnel to a model gateway on the controller
+    tunnel: 8000                        # optional: reverse tunnel to a local gateway on the controller
 ```
 
-When an order goes to `codex-gpu`:
+When an order dispatches to `codex-gpu`:
 
-1. The tick chooses the order and the worker as for any run, and takes the leases and cap slots the order needs.
-2. Alba pushes the clean worktree's branch to a bare repository on the host, checks out a host worktree, copies the Git LFS objects
-   the host lacks, and stages the prompt, skills, role configuration and inbox there.
-3. The worker starts over SSH. On a Windows host a run can still open windows on the logged-on desktop, for example a game capture
-   or the editor, although an SSH session has none.
-4. About every three minutes, and at the end, Alba fetches the commits back, copies new LFS objects and fast-forwards the local branch
-   only when that is safe. Divergent work is kept as refs, never overwritten.
-5. Review, merge and approval happen on the controller, as for a local run.
+1. The tick claims the required resource leases and concurrency slots in one transaction.
+2. Alba pushes the clean branch to a bare repository on the host, checks out an isolated host worktree, transfers only missing Git LFS objects (verifying no unsmudged pointers remain), and stages the prompt, selected skills, role config, and inbox.
+3. The worker launches over SSH. On a logged-on Windows host, runs can still open GPU windows on the desktop (for game captures, packaged smoke runs, or an editor MCP server) via Alba's desktop runner.
+4. Roughly every three minutes and at exit, Alba fetches commits and new Git LFS objects back, fast-forwarding local branches only when safe and keeping divergent commits as refs.
+5. Review, mechanical checks, and merge happen on the controller identically to local runs.
 
-Around that:
-
-- **Health at a glance.** Probes read memory, disks, load and service checks of every machine, keep 24 hours of history, and raise a
-  problem when a machine is down or short of memory or disk.
-- **Capability scan.** A read-only scan finds the CPU, GPU, memory and tools (Git, LFS, Python, CMake, compilers, Node, Docker) and,
-  when you select an engine, its Unreal, Unity or Godot install. It suggests roles for the machine and names what is missing.
-- **Add and set up from the board.** A guide prepares the SSH server and key, writes the SSH config, tests the connection and appends
-  the machine. Missing tools are installed from a plan you approve first (winget, apt or dnf, Homebrew); the Unreal module can also
-  copy the engine over in eight parallel compressed streams.
-- **An editor per run, on the right machine.** An editor pool gives a run its own game editor with an MCP server on a port of the run's
-  machine, prepares the worktree first (for example, compiles the game module) and stops the editor when the run ends.
-  [Run editors](docs/workers/032-run-editors.md)
-- **Shared resources and caps.** Build lanes, packaging slots and exclusive performance machines are leases; a run that needs one
-  waits for it, and a lease that outlives its run is flagged. [Resources and leases](docs/workers/014-monitor-leases-loops.md#2-resources-and-leases)
-- **The fleet map.** The console's Machines page draws the controller and every machine, which workers live where and which runs are
-  out on them right now.
-
-Remote worker hosts are Windows today. Linux and macOS machines can be probed, scanned and given installs, and the controller runs on
-Windows, Linux or macOS. Placement is explicit: a worker's `host` decides where it runs; machine roles and slots are information for
-people. Details: [Machines](docs/operations/028-machines.md#workers-on-another-machine).
-
-## Who it is for
-
-For individual developers and small teams coordinating several coding workers, especially game projects with scarce build capacity or model quotas. Workers can be local scripts or explicitly configured agent CLIs. The demo needs no model account.
-
-## Platform support
-
-| Platform | Implementation | Test coverage |
-|---|---|---|
-| Windows | Process identity/tree cleanup, machine probes, service locks, Task Scheduler | Backend and console tested locally |
-| Linux | POSIX process identity/tree cleanup, probes, locks, systemd timer | Backend and console tested on native Linux |
-| macOS | POSIX process identity/tree cleanup, probes, locks, launchd | Covered by CI |
-
-Requires Node 24, pnpm 10.34.5 and Git. See [platform details](docs/platforms.md).
+Remote worker hosts are Windows today; Linux and macOS machines support health/capability probes, guided tool installation, and running the controller itself. Details: [Machines](docs/operations/028-machines.md#workers-on-another-machine).
 
 ## Quick start: five minutes, local scripts only
 
-In a clean Alba checkout:
+Requires **Node 24**, **pnpm 10.34.5**, and **Git**. The built-in demo runs offline with zero model accounts, API keys, or game engines:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -136,46 +103,54 @@ pnpm -C ui build
 node examples/demo/run.ts
 ```
 
-Expect a printed disposable demo directory and accepted commit. The demo creates an order, dispatches `examples/demo/worker.mjs` into a worktree, ingests its report, merges and approves its commit, and checks the HTTP console. No model, remote worker, credential or engine is needed.
+The demo creates an order, dispatches `examples/demo/worker.mjs` into an isolated worktree, ingests its report, merges and approves its commit, and verifies the HTTP console.
 
-Copy the printed directory in place of `<demo-directory>`:
+Open the demo in the web console (replacing `<demo-directory>` with the printed path):
 
 ```sh
 node bin/alba.mjs --project <demo-directory>/project/alba.yaml serve --port 0 --every 0
 ```
 
-Open the address printed by `serve` (no sign-in on your own machine; `--sign-in` asks for a key, see [Access](docs/console/010-api.md#access)). Select **Alba Demo** to inspect the merged greeting order. Stop with Ctrl+C. The demo lives in the checkout's ignored `.alba/demo` folder; after stopping the service, its printed directory can be deleted. See [the demo guide](examples/demo/README.md).
+Visit the printed loopback URL (no sign-in required on localhost; pass `--sign-in` to require a session key, see [Access](docs/console/010-api.md#access)) and select **Alba Demo**. Stop with `Ctrl+C`. See [the demo guide](examples/demo/README.md).
 
 ## Install as a package
 
-A checkout runs the TypeScript sources directly, with nothing to build. Alba can also be installed as an npm package, for example from a tarball made with `npm pack` (or `pnpm pack`) in a checkout:
+A checkout runs TypeScript sources directly with no build step. To pack and install globally:
 
 ```sh
-npm install --global ./baryon-interactive-alba-0.1.0.tgz    # or: pnpm add <tarball>, npm install <tarball> in a project
+pnpm pack
+npm install --global ./baryon-interactive-alba-0.1.0.tgz
 alba --help
 ```
 
-Node does not strip types under `node_modules`, so packing builds the JavaScript first: `prepack` runs `scripts/build.mjs`, which compiles `src/` to `dist/`, copies the helper scripts beside it and builds the console (`ui/dist`) when the console's dependencies are installed (`pnpm install`). `bin/alba.mjs` runs `src/` when it is there and `dist/` otherwise. `pnpm build` runs the same build by hand; a checkout does not need it.
-
-To use Alba with your own repository (any engine, one machine, a Codex or Claude subscription), follow [Adopt Alba in your own project](docs/concepts/033-adopt-alba.md).
+To set up Alba on your own repository (any game engine or language, single machine or multi-machine fleet, with Codex, Claude Code, OpenCode, or Grok subscriptions), follow [Adopt Alba in your own project](docs/concepts/033-adopt-alba.md).
 
 ## Core concepts
 
 | Concept | Meaning |
 |---|---|
-| Order | A bounded task with intent, dependencies and acceptance criteria |
-| Run | One worker attempt on an order, recorded with process identity and outcome |
-| Worker | Configured compute supply: CLI/script, capabilities, quota and launch template |
-| Worker group | An ordered list of workers with a fallback; the layer routes draw on |
-| Route | Sends kinds of work to a worker group, with the capabilities they need |
-| Review | A decision based on the report, committed changes and acceptance evidence |
-| Gate | A deterministic condition that blocks dispatch or approval when unmet |
+| Order | A bounded task with intent, dependencies, scope, and acceptance criteria |
+| Run | One worker attempt on an order in its own branch and worktree, tracked with PID identity |
+| Worker | Configured compute supply: agent CLI or script, capabilities, host, quota, and launch template |
+| Worker group | An ordered preference list of workers with fallbacks |
+| Route | Maps work kinds and required capabilities to a worker group |
+| Lease | A transactional reservation on a scarce local or shared resource (builds, editors, GPUs, wallets) |
+| Review | An approval, rework, or cancel decision backed by committed diffs, reports, and evidence |
+| Gate | A deterministic check or nightly suite that blocks dispatch or merge when unmet |
 
-A successful worker exit does not approve an order. [Workflow reference](docs/workflow/002-orders-and-stages.md) describes stage inference and report blocks.
+## Platform support
+
+| Platform | Controller and console | Remote SSH worker host | Native features |
+|---|---|---|---|
+| Windows | Supported (tested locally and in CI) | Supported | Process creation-time tree cleanup, CIM probes, junction-safe `clean`, desktop GPU runner, Task Scheduler |
+| Linux | Supported (tested on native Linux and CI) | Probes and tool installs | POSIX process tree cleanup, `/proc` probes, locks, `systemd` timer |
+| macOS | Supported (covered by CI) | Probes and tool installs | POSIX process tree cleanup, `sysctl`/`vm_stat` probes, locks, `launchd` |
+
+See [platform details](docs/platforms.md).
 
 ## Optional modules
 
-All three modules below are disabled when omitted. Add only the sections you need to `alba.yaml`:
+All optional modules are off until configured in `alba.yaml`:
 
 ```yaml
 producer:
@@ -188,24 +163,27 @@ art:
   format: alba
 ```
 
-The [producer](docs/producer/023-producer-host.md) stores cases and policy-gated actions; a model session requires separate explicit configuration. The [design library](docs/libraries/027-design-library.md) uses SQLite to track systems, rules, parameters and measured targets. The [art library](docs/libraries/015-art-library.md) reads references and setting cards from the configured folder; picks and credit records have separate opt-in sections. No game engine is selected implicitly; [engine modules](examples/engines/README.md) are optional.
+- **Producer** ([docs](docs/producer/023-producer-host.md)): Turns project facts into cases and policy-gated action proposals; acts autonomously only on rules explicitly set to `auto`.
+- **Design library** ([docs](docs/libraries/027-design-library.md)): SQLite-backed tracking for game systems, rules, parameters, and measured targets.
+- **Art library** ([docs](docs/libraries/015-art-library.md)): Manages visual references, setting cards, human picks, and credit ledgers.
+- **Engine modules** ([docs](examples/engines/README.md)): Opt-in capability scans and provisioning helpers for Unreal, Unity, and Godot (`engine: unreal | unity | godot`).
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md). See [worker adapters](docs/worker-adapters.md), [library formats](docs/library-formats.md), [HTTP API](docs/console/010-api.md), [scheduling](examples/scheduling.md) and [contributing](CONTRIBUTING.md) for development checks.
+Start at the [documentation index](docs/README.md). Key references: [philosophy](docs/concepts/000-philosophy.md), [adopt Alba](docs/concepts/033-adopt-alba.md), [machines](docs/operations/028-machines.md), [Unreal module](docs/engines/unreal.md), [run editors](docs/workers/032-run-editors.md), [tool plugins](docs/workers/031-tool-plugins.md), [worker adapters](docs/worker-adapters.md), [HTTP API](docs/console/010-api.md), and [contributing](CONTRIBUTING.md).
 
 ## Data and privacy
 
-Alba has **no telemetry**. Configuration selects the repository, work-order folder, state directory and worktree parent. SQLite records, logs, prompts, reports, conversations and approvals stay there; console preferences and drafts use browser local storage.
+Alba has **no telemetry**. SQLite state, logs, prompts, reports, conversations, and approvals stay in your configured local directories; console preferences stay in browser local storage.
 
-The following can leave the machine:
+Only what you explicitly configure leaves the controller machine:
 
-- Worker engines send prompts, code and tool results to their configured model services or gateways.
-- User-configured remote machines receive SSH probes and configured commands. Remote workers also receive branch history, worktree code, order/prompt files, selected skills and explicit worker settings, and return commits, changed files and reports.
-- External document links and remote images contact their destination when opened or rendered; requested art-reference downloads contact their selected HTTPS source.
+- Worker CLIs and enabled tool plugins send prompts, files, and tool calls to their configured model services or local gateways.
+- Configured SSH machines receive health probes, branch history, worktree files, missing Git LFS objects, prompts, and selected skills, and return commits, changed files, and reports.
+- Opening external links or requesting art-reference downloads contacts those HTTPS URLs.
 
-Other Alba processing and state stay local. User-configured programs control their own network activity; dependency installation contacts the configured package registry. The demo contacts no service. Workers inherit ordinary environment variables, including model credentials, but inherited `ALBA_*` settings and console/service tokens are removed. Explicit adapter protocol values are added; use `launch.env_unset` to restrict other variables. See [security and privacy](docs/security-and-privacy.md) and [private vulnerability reporting](SECURITY.md).
+Workers inherit standard environment variables, while internal `ALBA_*` settings and console/service tokens are stripped automatically; use `launch.env_unset` to restrict additional variables. See [security and privacy](docs/security-and-privacy.md) and [private vulnerability reporting](SECURITY.md).
 
 ## License
 
-Source code is licensed under [Apache-2.0](LICENSE), copyright Baryon Interactive. **The Alba name and logo are excluded from the license grant**; see [NOTICE](NOTICE). Dependencies retain their [own licenses and notices](docs/third-party-licenses.md).
+Source code is licensed under [Apache-2.0](LICENSE), copyright Baryon Interactive. **The Alba name and logo are excluded from the license grant**; see [NOTICE](NOTICE). Third-party runtime dependencies retain their [own licenses and notices](docs/third-party-licenses.md).

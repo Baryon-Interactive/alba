@@ -50,7 +50,12 @@ test('release scan covers new files and each prohibited class without reading ig
     execFileSync('git', ['-C', root, 'rm', '-f', '.pnpm-store/tracked.txt'], { stdio: 'ignore', windowsHide: true });
     mkdirSync(path.join(root, 'ui/src/i18n'), { recursive: true });
     writeFileSync(path.join(root, 'ui/src/i18n/zh.ts'), '\u4e2d');
+    writeFileSync(path.join(root, 'README.zh-CN.md'), '# Alba \u4e2d\u6587\n');
+    writeFileSync(path.join(root, 'README.md'), '**English** | [\u7b80\u4f53\u4e2d\u6587](README.zh-CN.md)\n');
     assert.deepEqual(auditSource(root).problems, []);
+    writeFileSync(path.join(root, 'README.md'), '# Alba \u4e2d\u6587\n');
+    assert.ok(auditSource(root).problems.some(p => p.includes('README.md: translation outside its catalog')));
+    writeFileSync(path.join(root, 'README.md'), '**English** | [\u7b80\u4f53\u4e2d\u6587](README.zh-CN.md)\n');
     writeFileSync(path.join(root, 'ui/src/i18n/index.ts'), '\u4e2d');
     assert.ok(auditSource(root).problems.length, 'non-catalog files in the translation directory are scanned');
   } finally { rmSync(root, { recursive: true, force: true }); }
