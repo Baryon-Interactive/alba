@@ -88,6 +88,7 @@ import { runProducerMcp } from '../producer/mcp.ts';
 import { createIntake, runDesignDocs, runIntake } from './intake.ts';
 import { listNamedLocks, runNamedLock, usage as lockUsage } from '../run/named-lock.mjs';
 import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance, regionError, type PixelRegion } from '../verify/png.ts';
+import { runNotifyCli } from './notify.ts';
 
 /** What a person needs to open the console: the sign-in link (it carries this start's key) and the file programs read the key from. */
 const signInLines = (port: number, key: string): string => t('Sign in: {url}\nKey file (for programs of this account): {file}', { url: `http://127.0.0.1:${port}/login?key=${key}`, file: keyFile(port) });
@@ -107,7 +108,7 @@ const options = {
   results: { type: 'string', multiple: true }, tag: { type: 'string' }, from: { type: 'string' }, names: { type: 'string' }, source: { type: 'string' }, every: { type: 'string' },
   'stall-minutes': { type: 'string' }, 'timeout-minutes': { type: 'string' }, 'poll-minutes': { type: 'string' }, 'wait-minutes': { type: 'string' },
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
-  page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' },
+  page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' }, channel: { type: 'string' },
   'merged-elsewhere': { type: 'string' }, 'done-by-lead': { type: 'boolean' }, commit: { type: 'string' },
 } as const;
 
@@ -224,8 +225,10 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   machines jobs [id] [--json]                 jobs run on machines (installs), newest first
   machines edit <id> [field=value ...] [ssh.hostname=H ssh.user=U ssh.port=P] [--dry-run]
                                              without changes: the entry and the Host block of its SSH alias; with them: change the registry entry (name, os, connect, hardware.ram_gb, roles, slots, min_free_mem_gb, timing_allowed, notes, workspace, repos, services; null removes) and the alias's address in the SSH config, then test the connection and probe
+  notify test [--channel id] [--workers file] | notify status [--json] [--workers file]
+                                             send a test notification or show channels, open conditions, quiet hours and next digest
 
-Options: --workers <workers.yaml> (or ALBA_WORKERS, or "workers:" in alba.yaml) for tick, run and workers.
+Options: --workers <workers.yaml> (or ALBA_WORKERS, or "workers:" in alba.yaml) for tick, run, workers and notify.
 `;
 
 let exitCode = 0;
@@ -520,6 +523,11 @@ ${editorLines(editors, projects.length > 1)}` : body;
     if (secondRegionProblem) return bad(`${rest[1]}: ${secondRegionProblem}`);
     try { const value = meanAbsoluteLuminanceDifference(first.image, second.image, region); return values.json ? JSON.stringify({ a: path.resolve(rest[0]!), b: path.resolve(rest[1]!), width: first.image.width, height: first.image.height, mean_difference: value, ...(region ? { region } : {}) }) : value.toFixed(6); }
     catch (e) { exitCode = 3; return `alba: ${(e as Error).message}`; }
+  }
+  if (group === 'notify') {
+    const res = await runNotifyCli(command, rest, { channel: values.channel, workers: values.workers, project: values.project, json: values.json });
+    exitCode = res.code;
+    return res.output;
   }
   const { cfg, orders } = projectOf(values.project);
   if (group === 'design-docs') return runDesignDocs(cfg, command, rest, { json: values.json, out: values.out, id: values.id, order: values.version ?? values.order, status: values.status });

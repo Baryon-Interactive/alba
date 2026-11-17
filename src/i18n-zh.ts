@@ -1025,6 +1025,26 @@ export const zh: Record<string, string> = {
   'Invalid scorecard grouping: {value}': '无效的记分卡分组：{value}',
   'unknown ({priced} of {runs} runs priced)': '未知（{runs} 次派工中 {priced} 次有价格）',
   'Usage: alba usage scorecard [--project f ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]': '用法：alba usage scorecard [--project f ...] [--kind k] [--since 14d] [--by worker|model|family] [--json]',
+  // notifications
+  '{where}: "{key}" may not hold a value; pass an environment variable name in "url_env" instead.': '{where}：“{key}”不能直接填写值，请在 "url_env" 中指定环境变量名。',
+  '{where}: "token" may not hold a value; pass an environment variable name in "token_env" instead.': '{where}："token" 不能直接填写值，请在 "token_env" 中指定环境变量名。',
+  '{where}: "{key}" must be an environment variable name matching [A-Z_][A-Z0-9_]*.': '{where}：“{key}”必须是匹配 [A-Z_][A-Z0-9_]* 的环境变量名。',
+  '{where}: "{key}" must be a 24-hour local time HH:MM.': '{where}：“{key}”必须是 24 小时制本地时间 HH:MM。',
+  '{where} must be a list of channel ids.': '{where} 必须是通知渠道 ID 列表。',
+  '{where}: unknown channel "{channel}" (known: {known}).': '{where}：未知通知渠道“{channel}”（已知：{known}）。',
+  '{where}: "type" must be "webhook", "ntfy", "slack" or "windows-toast".': '{where}："type" 必须是 "webhook"、"ntfy"、"slack" 或 "windows-toast"。',
+  '{where}: "after_minutes" must be a number >= 0.': '{where}："after_minutes" 必须是大于等于 0 的数字。',
+  '{where}: "off" must be true or false.': '{where}："off" 必须是 true 或 false。',
+  '{where}: "projects" must be a list of non-empty project ids.': '{where}："projects" 必须是非空项目 ID 列表。',
+  '{where}: "channels" must be a non-empty mapping.': '{where}："channels" 必须是非空映射。',
+  '{where}: invalid channel id "{id}".': '{where}：无效的通知渠道 ID“{id}”。',
+  '{where}: "except" must be a list of trigger names.': '{where}："except" 必须是触发器名称列表。',
+  '{where}: unknown trigger "{name}" (known: {known}).': '{where}：未知触发器“{name}”（已知：{known}）。',
+  '{where}: "to" must name at least one channel.': '{where}："to" 必须至少指定一个通知渠道。',
+  '{file} has no "notify" section.': '{file} 中未配置 "notify" 段。',
+  'Unknown notification channel "{channel}" in {file}. Known channels: {known}.': '{file} 中没有通知渠道“{channel}”。已知渠道：{known}。',
+  'Notifications are not configured ({file} has no "notify" section).': '未配置通知（{file} 中没有 "notify" 段）。',
+  'Usage: alba notify test [--channel id] [--workers file] | alba notify status [--json] [--workers file]': '用法：alba notify test [--channel id] [--workers file] | alba notify status [--json] [--workers file]',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

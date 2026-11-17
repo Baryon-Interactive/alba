@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import { fail } from '../i18n.ts';
 import { loadSkillsConfig, type SkillsRegistryConfig } from '../skills/registry.ts';
 import { validateUsageLedgers, type UsageLedgerConfig } from '../library/config.ts';
+import { validateNotify, type NotifyConfig } from '../notify/config.ts';
 
 /** Where a worker's quota is read from. No secrets here: a command may read them from wherever it likes. */
 export interface CommandQuota {
@@ -106,6 +107,7 @@ export interface WorkersFile {
   skills?: SkillsRegistryConfig;
   /** : files in which other tools record their calls (an image generator, for example); the project file may list its own. */
   usage_ledgers?: UsageLedgerConfig[];
+  notify?: NotifyConfig;
   file: string;
 }
 
@@ -120,7 +122,7 @@ export function loadWorkers(file: string): WorkersFile {
 
 export function validateWorkers(raw: unknown, file: string): WorkersFile {
   if (!isRecord(raw)) fail('{file}: the top level must be a mapping with "workers" (and optionally "quota_sources").', { file });
-  const unknownTop = Object.keys(raw).filter(k => !['workers', 'quota_sources', 'skills', 'usage_ledgers', 'pricing', 'roles', 'routing'].includes(k));
+  const unknownTop = Object.keys(raw).filter(k => !['workers', 'quota_sources', 'skills', 'usage_ledgers', 'pricing', 'roles', 'routing', 'notify'].includes(k));
   if (unknownTop.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknownTop.join(', ') });
   const sources: Record<string, QuotaConfig> = {};
   if (raw.quota_sources !== undefined) {
@@ -144,9 +146,10 @@ export function validateWorkers(raw: unknown, file: string): WorkersFile {
   }
   const skills = loadSkillsConfig(file, raw.skills);
   const ledgers = raw.usage_ledgers === undefined ? undefined : validateUsageLedgers(raw.usage_ledgers, file, path.dirname(path.resolve(file)));
+  const notify = raw.notify === undefined ? undefined : validateNotify(raw.notify, `${file}: notify`);
   return { workers, pricing, quota_sources: sources, warnings,
     extraCapabilities: [...new Set(workers.flatMap(w => w.capabilities).filter(c => !(CAPABILITIES as readonly string[]).includes(c)))],
-    ...routingOf(raw, file), ...(skills ? { skills } : {}), ...(ledgers ? { usage_ledgers: ledgers } : {}), file };
+    ...routingOf(raw, file), ...(skills ? { skills } : {}), ...(ledgers ? { usage_ledgers: ledgers } : {}), ...(notify ? { notify } : {}), file };
 }
 
 /** The routes and worker groups of a file: `routing` (the current form) or `roles` (the earlier one), never both. */
