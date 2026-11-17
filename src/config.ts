@@ -204,7 +204,34 @@ export interface ProjectSkills {
   exclude: string[];
 }
 
+export interface OrderTemplateConfig {
+  file?: string;
+  acceptance?: string[];
+  evidence?: string[];
+  paths?: string[];
+  rules?: string[];
+}
+
+export interface PreflightToolDir {
+  dir: string;
+  kinds?: string[];
+}
+
+export interface OrdersPreflightConfig {
+  mode: 'hold' | 'warn' | 'off';
+  run_checks: boolean;
+  check_timeout_seconds: number;
+  tool_dirs: Record<string, PreflightToolDir>;
+}
+
+export interface OrdersConfig {
+  templates: Record<string, OrderTemplateConfig>;
+  preflight: OrdersPreflightConfig;
+}
+
 export interface ProjectConfig {
+  /** Per-kind order templates and preflight rules (`orders:` in alba.yaml). */
+  orders?: OrdersConfig;
   /** Selects a machine engine module; no engine is selected by default. */
   engine?: string;
   /** Who accepts an order that does not say (`review` of the order wins): `manual`, a person; `auto` (the default), the producer may too. */
@@ -549,7 +576,8 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.art !== undefined) cfg.art = validateArt(raw.art, file, base, cfg.root, id);
   if (raw.credits !== undefined) cfg.credits = validateCredits(raw.credits, file, base, cfg.root, id);
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors'].includes(k));
+  if (raw.orders !== undefined) cfg.orders = validateOrdersConfig(raw.orders, file, base);
+  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }
@@ -1131,4 +1159,75 @@ function validateTable(raw: unknown, file: string, base: string): TableConfig {
     table.merged_list = { prefix: raw.merged_list.prefix };
   }
   return table;
+}
+
+function validateOrdersConfig(raw: unknown, file: string, base: string): OrdersConfig {
+  if (!isRecord(raw)) fail('{file}: "orders" must be a mapping.', { file });
+  const unknown = Object.keys(raw).filter(k => !['templates', 'preflight'].includes(k));
+  if (unknown.length) fail('{file}: unknown key(s) under "orders": {keys}.', { file, keys: unknown.join(', ') });
+  const templates: Record<string, OrderTemplateConfig> = {};
+  if (raw.templates !== undefined) {
+    if (!isRecord(raw.templates)) fail('{file}: "orders.templates" must map each kind to its template.', { file });
+    for (const [kind, value] of Object.entries(raw.templates)) {
+      const at = `orders.templates.${kind}`;
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(kind)) fail('{file}: "{at}": a kind is letters, digits, "-" and "_".', { file, at });
+      if (!isRecord(value)) fail('{file}: "{at}" must be a mapping.', { file, at });
+      const bad = Object.keys(value).filter(k => !['file', 'acceptance', 'evidence', 'paths', 'rules'].includes(k));
+      if (bad.length) fail('{file}: unknown key(s) under "{at}": {keys}.', { file, at, keys: bad.join(', ') });
+      const entry: OrderTemplateConfig = {};
+      if (value.file !== undefined) {
+        if (typeof value.file !== 'string' || !value.file.trim()) fail('{file}: "{at}.file" must be a path to a Markdown file.', { file, at });
+        entry.file = path.resolve(base, value.file.trim());
+      }
+      for (const key of ['acceptance', 'evidence', 'paths', 'rules'] as const) {
+        if (value[key] === undefined) continue;
+        if (!Array.isArray(value[key]) || (value[key] as unknown[]).some(x => typeof x !== 'string' || !x.trim())) {
+          fail('{file}: "{at}.{key}" must be a list of non-empty strings.', { file, at, key });
+        }
+        entry[key] = (value[key] as string[]).map(x => x.trim());
+      }
+      templates[kind] = entry;
+    }
+  }
+  const preflight: OrdersPreflightConfig = { mode: 'hold', run_checks: false, check_timeout_seconds: 300, tool_dirs: {} };
+  if (raw.preflight !== undefined) {
+    if (!isRecord(raw.preflight)) fail('{file}: "orders.preflight" must be a mapping.', { file });
+    const bad = Object.keys(raw.preflight).filter(k => !['mode', 'run_checks', 'check_timeout_seconds', 'tool_dirs'].includes(k));
+    if (bad.length) fail('{file}: unknown key(s) under "orders.preflight": {keys}.', { file, keys: bad.join(', ') });
+    if (raw.preflight.mode !== undefined) {
+      if (raw.preflight.mode !== 'hold' && raw.preflight.mode !== 'warn' && raw.preflight.mode !== 'off') {
+        fail('{file}: "orders.preflight.mode" must be hold, warn or off.', { file });
+      }
+      preflight.mode = raw.preflight.mode;
+    }
+    if (raw.preflight.run_checks !== undefined) {
+      if (typeof raw.preflight.run_checks !== 'boolean') fail('{file}: "orders.preflight.run_checks" must be true or false.', { file });
+      preflight.run_checks = raw.preflight.run_checks;
+    }
+    if (raw.preflight.check_timeout_seconds !== undefined) {
+      const secs = raw.preflight.check_timeout_seconds;
+      if (typeof secs !== 'number' || !Number.isInteger(secs) || secs < 1) fail('{file}: "orders.preflight.check_timeout_seconds" must be a whole number >= 1.', { file });
+      preflight.check_timeout_seconds = secs;
+    }
+    if (raw.preflight.tool_dirs !== undefined) {
+      if (!isRecord(raw.preflight.tool_dirs)) fail('{file}: "orders.preflight.tool_dirs" must map each tool to its folder.', { file });
+      for (const [tool, value] of Object.entries(raw.preflight.tool_dirs)) {
+        const at = `orders.preflight.tool_dirs.${tool}`;
+        if (!tool.trim()) fail('{file}: "orders.preflight.tool_dirs" has an empty tool name.', { file });
+        if (!isRecord(value)) fail('{file}: "{at}" must be a mapping with "dir" and optional "kinds".', { file, at });
+        const badTool = Object.keys(value).filter(k => !['dir', 'kinds'].includes(k));
+        if (badTool.length) fail('{file}: unknown key(s) under "{at}": {keys}.', { file, at, keys: badTool.join(', ') });
+        if (typeof value.dir !== 'string' || !value.dir.trim()) fail('{file}: "{at}.dir" must be a non-empty folder path.', { file, at });
+        if (value.kinds !== undefined) {
+          if (!Array.isArray(value.kinds) || !value.kinds.length || (value.kinds as unknown[]).some(x => typeof x !== 'string' || !x.trim())) {
+            fail('{file}: "{at}.kinds" must be a non-empty list of kinds.', { file, at });
+          }
+          preflight.tool_dirs[tool] = { dir: value.dir.trim(), kinds: (value.kinds as string[]).map(x => x.trim()) };
+        } else {
+          preflight.tool_dirs[tool] = { dir: value.dir.trim() };
+        }
+      }
+    }
+  }
+  return { templates, preflight };
 }

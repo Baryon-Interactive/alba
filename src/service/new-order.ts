@@ -5,6 +5,7 @@ import { fail, t } from '../i18n.ts';
 import { foundationNotice } from '../foundations/foundations.ts';
 import type { Mandate, OrderDoc } from '../orders/model.ts';
 import { nextFreeTag, type Orders } from '../orders/service.ts';
+import { fillOrderBody } from '../orders/templates.ts';
 import { findOrderFile } from '../run/prompt.ts';
 import { classifyByRules, orderText } from '../routing/classify.ts';
 import { writeBack } from '../table/write.ts';
@@ -68,6 +69,9 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
   if (taken) fail('Order "{tag}" already exists ({stage}; a merged or cancelled order keeps its tag). The next free tag like it is {next}.', { tag: taken, stage: orders.stage(orders.get(taken)).stage, next: nextFreeTag(input.tag, orders.all().map(d => d.order.tag)) });
   if (input.base_ref !== undefined && !/^[A-Za-z0-9_][A-Za-z0-9._/-]*$/.test(input.base_ref)) fail('"{ref}" is not a branch name (letters, digits, ".", "_", "-" and "/", not starting with "-").', { ref: input.base_ref });
   let file: string | undefined;
+  let bodyToWrite: string | undefined;
+  let filledSections: string[] = [];
+  const templateKind = input.kind?.trim() || 'default';
   // A queued order is started by the next pass, and a run needs the order's text: refuse now rather than fail at the start.
   if (input.queue && input.body === undefined) {
     let present = false;
@@ -83,11 +87,14 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
     if (existing) fail('A work-order file for {tag} exists already: {file}. Nothing was created.', { tag: input.tag, file: existing });
     file = path.join(project.work_orders, `${input.tag}-${input.slug ?? slugOf(input.title)}.md`).replace(/\\/g, '/');
     if (existsSync(file)) fail('{file} exists already. Nothing was created.', { file });
+    const filled = fillOrderBody(project, templateKind, input.tag, input.body);
+    bodyToWrite = filled.body;
+    filledSections = filled.filled;
   }
-  if (file) {
+  if (file && bodyToWrite !== undefined) {
     mkdirSync(project.work_orders, { recursive: true });
     const fd = openSync(file, 'wx');     // fails if the file appeared since the check above
-    try { writeSync(fd, input.body!.endsWith(String.fromCharCode(10)) ? input.body! : input.body + String.fromCharCode(10)); } finally { closeSync(fd); }
+    try { writeSync(fd, bodyToWrite.endsWith(String.fromCharCode(10)) ? bodyToWrite : bodyToWrite + String.fromCharCode(10)); } finally { closeSync(fd); }
   }
   let doc: OrderDoc;
   try {
@@ -96,6 +103,7 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
     const draft: OrderDoc = { version: 1, order: { tag: input.tag, title: input.title.trim(), kind: input.kind?.trim() || 'task', needs: [], ...(input.tags?.length ? { tags: input.tags.map(x => x.trim().toLowerCase()) } : {}), created: at, updated: at }, runs: [], reports: [], actions: [] };
     const routing = project.kinds?.length ? classifyByRules(project, draft, orderText(project, input.tag), at) : undefined;
     doc = orders.add({ check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, model: input.model, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree });
+    if (filledSections.length) orders.record(doc.order.tag, 'order-template-filled', { kind: templateKind, sections: filledSections });
   } catch (e) {
     if (file) rmSync(file, { force: true });     // the order was refused (no title, a need on itself): leave no file behind
     throw e;

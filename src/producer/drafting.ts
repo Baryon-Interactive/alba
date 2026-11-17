@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
+import { draftingTemplateFor, fillOrderBody } from '../orders/templates.ts';
 import type { WorkerState } from '../tick/plan.ts';
 import { classifyByRules, orderText } from '../routing/classify.ts';
 import type { WorkersFile } from '../workers/config.ts';
@@ -42,7 +43,7 @@ export function readyToDraft(project: ProjectConfig, orders: Orders, workers?: r
 /** Complete, durable drafting input, shared by card delivery and producer_read. */
 export function draftingContext(project: ProjectConfig, orders: Orders, tag: string) {
   const doc = orders.get(tag);
-  const template = project.drafting?.template ? readFileSync(project.drafting.template, 'utf8') : '## Background\n\n## Files to read\n\n## Task\n\n## Acceptance\n\n## Evidence\n\n## Hard rules\n';
+  const template = project.drafting?.template ? readFileSync(project.drafting.template, 'utf8') : draftingTemplateFor(project, doc.order.kind || 'default', doc.order.tag);
   const examples = orders.all().filter(d => d.order.kind === doc.order.kind && orders.stage(d).stage === 'merged')
     .sort((a, b) => (b.actions.filter(a => a.kind === 'approve').at(-1)?.at ?? '').localeCompare(a.actions.filter(a => a.kind === 'approve').at(-1)?.at ?? ''))
     .slice(0, project.drafting?.examples ?? 3).map(d => ({ tag: d.order.tag, body: orderText(project, d.order.tag) }));
@@ -78,25 +79,29 @@ export function draftPreview(project: ProjectConfig, orders: Orders, draft: Draf
 export function acceptDraft(project: ProjectConfig, orders: Orders, draft: DraftOrder, fingerprint: string): string {
   return orders.store.transaction(() => {
     const doc = orders.get(draft.tag);
+    const templateKind = doc.order.kind || 'default';
+    const filled = fillOrderBody(project, templateKind, doc.order.tag, draft.body);
+    const body = filled.body;
     if (!doc.order.planned && orders.stage(doc).stage === 'queued') {
       const file = findOrderFile(project.work_orders, draft.tag);
-      if (readFileSync(file, 'utf8').trimEnd() === draft.body.trimEnd()) return file;
+      if (readFileSync(file, 'utf8').trimEnd() === body.trimEnd()) return file;
     }
     if (orders.stage(doc).stage !== 'planned' || planFingerprint(doc) !== fingerprint) fail('The planned order changed; draft it again.');
-    if (!draft.body.trim() || !hasAcceptanceSection(draft.body)) fail('A draft needs a body with an Acceptance section.');
+    if (!body.trim() || !hasAcceptanceSection(body)) fail('A draft needs a body with an Acceptance section.');
     if (draft.title !== doc.order.title || draft.kind !== doc.order.kind || JSON.stringify(draft.needs) !== JSON.stringify(doc.order.needs)) fail('A draft must preserve the planned title, kind and needs.');
     const merged = orders.mergedSet(orders.all());
     if (draft.needs.some(n => !merged.has(n))) fail('All needs must be merged before accepting a draft.');
     let existing: string | undefined;
     try { existing = findOrderFile(project.work_orders, draft.tag); } catch { /* no body yet */ }
     const file = path.join(project.work_orders, `${draft.tag}-${slugOf(doc.order.title)}.md`);
-    if (existing && (path.resolve(existing) !== path.resolve(file) || readFileSync(existing, 'utf8').trimEnd() !== draft.body.trimEnd())) fail('A different work-order file already exists.');
+    if (existing && (path.resolve(existing) !== path.resolve(file) || readFileSync(existing, 'utf8').trimEnd() !== body.trimEnd())) fail('A different work-order file already exists.');
     mkdirSync(project.work_orders, { recursive: true });
-    if (!existsSync(file)) writeFileSync(file, draft.body.trimEnd() + '\n', { flag: 'wx', encoding: 'utf8' });
+    if (!existsSync(file)) writeFileSync(file, body.trimEnd() + '\n', { flag: 'wx', encoding: 'utf8' });
     // The draft's worker is only a hint: it fills an empty worker, and never replaces or clears a person's worker or a producer pin
     // (`update` clears `next_worker` whenever `worker` is in the patch).
     const hint = draft.worker?.trim() && !doc.order.worker && !doc.order.next_worker ? { worker: draft.worker.trim() } : {};
-    orders.update(draft.tag, { planned: false, ...hint, routing: classifyByRules(project, doc, draft.body, orders.now()) });
+    orders.update(draft.tag, { planned: false, ...hint, routing: classifyByRules(project, doc, body, orders.now()) });
+    if (filled.filled.length) orders.record(doc.order.tag, 'order-template-filled', { kind: templateKind, sections: filled.filled });
     orders.act(draft.tag, 'queue');
     orders.record(draft.tag, 'draft-accepted', { file, fingerprint });
     return file;
