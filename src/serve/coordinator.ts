@@ -28,6 +28,7 @@ import { runNightlyGates } from '../gates/runner.ts';
 import { tick } from '../tick/gather.ts';
 import { peerRunning, useFleetLock } from './fleet.ts';
 import { bindProjectMachineStore, closeMachineStores, machineStorePath, unbindProjectMachineStore } from '../resources/machine-store.ts';
+import type { ChannelSender } from '../notify/notifier.ts';
 
 export interface ServeOptions extends Omit<ServerOptions, 'loop' | 'workers'> {
   workers: WorkersFile;
@@ -49,6 +50,11 @@ export interface ServeOptions extends Omit<ServerOptions, 'loop' | 'workers'> {
   peerProjects?: ProjectConfig[];
   /** The serve's fleet lock (src/serve/fleet.ts), when each project runs in a thread of its own. */
   fleetLock?: SharedArrayBuffer;
+  /** Optional main-thread hooks for live config reloads and notification delivery injection in tests. */
+  onWorkersReload?: (workers: WorkersFile) => void;
+  onProjectsReload?: (projects: ProjectConfig[]) => void;
+  notifySender?: ChannelSender;
+  notifyMachineDir?: string;
 }
 
 /** Entries of the event log after which something may be dispatchable (or no longer blocked): a tick follows soon. */
@@ -343,6 +349,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
       try {
         workers = loadWorkers(workersWatch.file);
         board.ctx.workers = workers;
+        options.onWorkersReload?.(workers);
         configProblems.delete('*');
         for (const p of options.projects) notice(p.id, 'config-reloaded', t('{file} changed: reloaded ({n} workers).', { file: which, n: workers.workers.length }));
         scheduleTick();
@@ -362,6 +369,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
         if (path.resolve(next.state_dir) !== path.resolve(w.stateDir)) throw new Error(t('state_dir changed; restart alba serve for that'));
         bindProjectMachineStore(next, { file: machineStoreFile, everyMinutes: options.everyMinutes, print: options.print });
         options.projects[w.index] = next;
+        options.onProjectsReload?.(options.projects);
         configProblems.delete(key);
         notice(w.id, 'config-reloaded', t('{file} changed: reloaded.', { file: path.basename(w.watched.file) }));
         scheduleTick();
