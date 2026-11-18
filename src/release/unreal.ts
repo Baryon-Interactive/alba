@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fail, releaseText as text } from '../i18n.ts';
+import { releaseText as text } from '../i18n.ts';
 import type { BuildCommand, BuildLocation, BuildTools } from './build.ts';
 import type { ReleaseConfig, ReleaseTarget } from './config.ts';
 
 export function unrealBuild(location: BuildLocation, config: ReleaseConfig['unreal'], target: ReleaseTarget,
   tools: BuildTools): BuildCommand {
-  if (target === 'web-wasm32') fail(text.unsupportedTarget, { engine: 'unreal', target });
-  if (!tools.projectFile) fail(text.uproject, { dir: location.cwd });
+  if (target === 'web-wasm32') return text.unsupportedTarget({ engine: 'unreal', target });
+  if (!tools.projectFile) return text.uproject({ dir: location.cwd });
   const platform = target === 'windows-x64' ? 'Win64' : target === 'linux-x64' ? 'Linux' : 'Mac';
   const args = ['BuildCookRun', `-project=${tools.projectFile}`, `-platform=${platform}`, `-clientconfig=${config.configuration}`,
     '-build', '-cook', '-stage', '-pak', '-iostore', '-package', '-archive', `-archivedirectory=${location.outputDir}`,
@@ -33,10 +33,10 @@ export function unrealCrypto(root: string, config: ReleaseConfig['unreal']): str
       if (crypto && entry) settings.set(entry[1].toLowerCase(), entry[2].trim().replace(/^"(.*)"$/, '$1'));
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') fail(text.cryptoRead, { file: ini });
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return text.cryptoRead({ file: ini });
   }
   const on = (name: string) => /^true$/i.test(settings.get(name) ?? '');
-  if (config.encrypt_pak && (!encryptionFlags.some(on) || !settings.get('encryptionkey'))) fail(text.cryptoEncryption, { file: ini });
-  if (config.sign_pak && (!on('benablepaksigning') || !signingFields.every(name => settings.get(name)))) fail(text.cryptoSigning, { file: ini });
+  if (config.encrypt_pak && (!encryptionFlags.some(on) || !settings.get('encryptionkey'))) return text.cryptoEncryption({ file: ini });
+  if (config.sign_pak && (!on('benablepaksigning') || !signingFields.every(name => settings.get(name)))) return text.cryptoSigning({ file: ini });
   return ['encryptionkey', ...signingFields].flatMap(name => settings.get(name) || []);
 }

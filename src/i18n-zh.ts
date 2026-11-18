@@ -40,6 +40,7 @@ export const zh: Record<string, string> = {
   'Assets and IL2CPP metadata can be extracted from a WebGL data file. Obfuscation can raise the effort.': 'WebGL 数据文件中的资产和 IL2CPP 元数据可被提取。混淆可以提高提取难度。',
   'Could not read the build folder: {dir}': '无法读取构建目录：{dir}',
   'Could not audit file: {file}': '无法审计文件：{file}',
+  'Could not complete the release audit: {dir}': '无法完成发布审计：{dir}',
   'Release folder already exists: {dir}. Use a new version or move the existing release.': '发布目录已存在：{dir}。请使用新版本或移动现有发布目录。',
   'Could not create the release folder: {dir}': '无法创建发布目录：{dir}',
   'Warning: Release audit skipped for {target}.': '警告：已跳过 {target} 的发布审计。',

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { fail, releaseText as text, t } from '../i18n.ts';
+import { releaseText as text } from '../i18n.ts';
 
 export const RELEASE_ENGINES = ['unity', 'unreal', 'godot'] as const;
 export const RELEASE_TARGETS = ['windows-x64', 'linux-x64', 'macos-arm64', 'macos-x64', 'web-wasm32'] as const;
@@ -40,11 +40,11 @@ export const isReleaseTarget = (value: string): value is ReleaseTarget => RELEAS
 export const isReleaseEngine = (value: string): value is ReleaseEngine => RELEASE_ENGINES.some(engine => engine === value);
 
 function mapping(value: unknown, at: string, keys: readonly string[], invalid: Validation): Mapping {
-  if (!isMapping(value)) return invalid(at, text.mapping);
+  if (!isMapping(value)) return invalid(at, text.mapping());
   for (const key of Object.keys(value)) {
     const field = at ? `${at}.${key}` : key;
-    if (/(?:^|_)(?:key|token|secret)$/i.test(key)) invalid(field, text.literal);
-    if (!keys.includes(key)) invalid(field, text.unknown);
+    if (/(?:^|_)(?:key|token|secret)$/i.test(key)) invalid(field, text.literal());
+    if (!keys.includes(key)) invalid(field, text.unknown());
   }
   return value;
 }
@@ -55,18 +55,18 @@ function item<T extends string>(value: unknown, choices: readonly T[], at: strin
 }
 
 function list(value: unknown, at: string, invalid: Validation): unknown[] {
-  if (!Array.isArray(value)) return invalid(at, text.list);
+  if (!Array.isArray(value)) return invalid(at, text.list());
   return value;
 }
 
 function string(value: unknown, at: string, invalid: Validation): string {
-  if (typeof value !== 'string' || !value.trim() || /[\0\r\n]/.test(value)) return invalid(at, text.string);
+  if (typeof value !== 'string' || !value.trim() || /[\0\r\n]/.test(value)) return invalid(at, text.string());
   return value.trim();
 }
 
 function flag(value: unknown, at: string, invalid: Validation): boolean {
   if (value === undefined) return true;
-  if (typeof value !== 'boolean') return invalid(at, text.boolean);
+  if (typeof value !== 'boolean') return invalid(at, text.boolean());
   return value;
 }
 
@@ -82,25 +82,25 @@ function auditPolicy(value: unknown, invalid: Validation): AuditPolicy {
   const extra_secret_patterns = list(raw.extra_secret_patterns === undefined ? [] : raw.extra_secret_patterns, 'audit.extra_secret_patterns', invalid)
     .map((entry, i) => {
       const at = `audit.extra_secret_patterns[${i}]`;
-      if (typeof entry !== 'string' || !entry.trim()) return invalid(at, text.regex);
-      try { new RegExp(entry, 'u'); } catch { invalid(at, text.regex); }
+      if (typeof entry !== 'string' || !entry.trim()) return invalid(at, text.regex());
+      try { new RegExp(entry, 'u'); } catch { invalid(at, text.regex()); }
       return entry;
     });
   return { fail_on, allow, extra_secret_patterns };
 }
 
 export function validateRelease(value: unknown, file: string): ReleaseConfig {
-  const invalid: Validation = (key, expected) => fail(text.config, { file, key: key ? `release.${key}` : 'release', expected: t(expected) });
+  const invalid: Validation = (key, expected) => text.config({ file, key: key ? `release.${key}` : 'release', expected });
   const raw = mapping(value, '', ['output', 'version', 'targets', 'unity', 'unreal', 'godot', 'audit', 'vesper'], invalid);
   const optional = (value: unknown, at: string) => value === undefined ? undefined : string(value, at, invalid);
   const block = (key: string, keys: string[]) => mapping(raw[key] === undefined ? {} : raw[key], key, keys, invalid);
   const output = optional(raw.output, 'output') ?? 'builds/release';
   if (path.posix.isAbsolute(output) || path.win32.parse(output).root || output.split(/[/\\]/).some(part =>
     part !== '.' && (/[<>:"|?*]|[ .]$/.test(part) || windowsDevice.test(part)))) {
-    invalid('output', text.output);
+    invalid('output', text.output());
   }
   const version = optional(raw.version, 'version');
-  if (version !== undefined && !validVersion(version)) invalid('version', text.version);
+  if (version !== undefined && !validVersion(version)) invalid('version', text.version());
   const targets = list(raw.targets === undefined ? [] : raw.targets, 'targets', invalid)
     .map((target, i) => item(target, RELEASE_TARGETS, `targets[${i}]`, invalid));
   const u = block('unity', ['editor', 'scripting_backend', 'stripping', 'build_method']);
@@ -108,7 +108,7 @@ export function validateRelease(value: unknown, file: string): ReleaseConfig {
   const g = block('godot', ['executable', 'preset', 'encryption_key_env']);
   const encryption_key_env = optional(g.encryption_key_env, 'godot.encryption_key_env');
   if (encryption_key_env && (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(encryption_key_env) || /^[a-f\d]{64}$/i.test(encryption_key_env))) {
-    invalid('godot.encryption_key_env', text.envName);
+    invalid('godot.encryption_key_env', text.envName());
   }
   const preset = isMapping(g.preset)
     ? Object.fromEntries(Object.entries(mapping(g.preset, 'godot.preset', RELEASE_TARGETS, invalid))

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
-import { UserError, fail, releaseText as text, t } from '../i18n.ts';
+import { UserError, releaseText as text } from '../i18n.ts';
 import { auditBuild } from './audit.ts';
 import { publicCommand, type BuildCommand } from './build.ts';
 import type { ReleaseConfig, ReleaseEngine, ReleaseTarget } from './config.ts';
@@ -35,18 +35,18 @@ export async function packageTargets(project: ProjectConfig, config: ReleaseConf
       projectDirectory(project.root, path.dirname(targetDir));
       try { mkdirSync(targetDir); }
       catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') fail(text.existingRelease, { dir: targetDir });
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') text.existingRelease({ dir: targetDir });
         throw error;
       }
       mkdirSync(build.outputDir);
     } catch (error) {
-      output.push(error instanceof UserError ? error.message : t(text.outputFailed, { dir: targetDir }));
+      output.push(error instanceof UserError ? error.message : text.outputFailed({ dir: targetDir }));
       code = 1;
       continue;
     }
 
-    for (const notice of build.notices) console.warn(notice);
-    if (options.skipAudit) console.warn(t(text.skipAudit, { target }));
+    for (const notice of build.notices) console.warn(notice());
+    if (options.skipAudit) console.warn(text.skipAudit({ target }));
     const started = new Date().toISOString();
     let exit_code = 1;
     let build_error: string | undefined;
@@ -54,13 +54,13 @@ export async function packageTargets(project: ProjectConfig, config: ReleaseConf
       const secrets = engine === 'unreal' ? unrealCrypto(project.root, config.unreal) : [];
       exit_code = await runBuild(build, { engineLog: engine === 'unity', secrets, excludedEnv });
     } catch (error) {
-      build_error = error instanceof UserError ? error.message : t(text.buildLogFailed, { file: build.logFile });
+      build_error = error instanceof UserError ? error.message : text.buildLogFailed({ file: build.logFile });
       output.push(build_error);
       if (!existsSync(build.logFile)) writeFileSync(build.logFile, `${build_error}\n`, { flag: 'wx' });
     }
 
     const audit = options.skipAudit ? { skipped: true as const } : await auditBuild(build.outputDir, engine, config.audit, config.unreal.sign_pak)
-      .catch(error => ({ error: error instanceof UserError ? error.message : t(text.auditFolder, { dir: build.outputDir }) }));
+      .catch(error => ({ error: error instanceof UserError ? error.message : text.auditFailed({ dir: build.outputDir }) }));
     if ('error' in audit) output.push(audit.error);
     if ('findings' in audit) output.push(formatAudit(audit));
     const report = {
@@ -71,7 +71,7 @@ export async function packageTargets(project: ProjectConfig, config: ReleaseConf
     const draft = `${file}.tmp`;
     writeFileSync(draft, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
     renameSync(draft, file);
-    output.push(t(text.releaseReport, { target, exit: exit_code, file }));
+    output.push(text.releaseReport({ target, exit: exit_code, file }));
     if (exit_code || 'error' in audit || ('summary' in audit && audit.summary.fail)) {
       code = 1;
       continue;
@@ -83,13 +83,13 @@ export async function packageTargets(project: ProjectConfig, config: ReleaseConf
     if (!options.vesperPack) continue;
     const vesper = onPath('vesper');
     if (!vesper) {
-      output.push(t(text.vesperMissing));
+      output.push(text.vesperMissing());
       code = 1;
       continue;
     }
     const logFile = path.join(targetDir, 'vesper.log');
     const packCode = await runBuild({ command: vesper, args, env: {}, cwd: project.root, logFile }, { excludedEnv }).catch(() => 1);
-    output.push(t(text.vesperResult, { target, exit: packCode, file: logFile }));
+    output.push(text.vesperResult({ target, exit: packCode, file: logFile }));
     if (packCode) code = 1;
   }
   return { code, output: output.join('\n') };
@@ -97,10 +97,10 @@ export async function packageTargets(project: ProjectConfig, config: ReleaseConf
 
 export function formatAudit(result: Awaited<ReturnType<typeof auditBuild>>): string {
   return [
-    t(text.auditSummary, result.summary),
+    text.auditSummary(result.summary),
     ...result.findings.flatMap(finding => [
-      `[${t(finding.severity === 'fail' ? text.auditFail : text.auditWarn)}] ${finding.id}: ${finding.advice}`,
-      ...(finding.reason ? [t(text.auditAllowed, { reason: finding.reason })] : []),
+      `[${finding.severity === 'fail' ? text.auditFail() : text.auditWarn()}] ${finding.id}: ${finding.advice}`,
+      ...(finding.reason ? [text.auditAllowed({ reason: finding.reason })] : []),
       ...finding.files.map(file => `  ${file}${finding.excerpts?.[file] ? ` (${finding.excerpts[file]})` : ''}`),
     ]),
   ].join('\n');

@@ -4,7 +4,7 @@ import { rm } from 'node:fs/promises';
 import { PassThrough, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { StringDecoder } from 'node:string_decoder';
-import { fail, releaseText as text, t } from '../i18n.ts';
+import { releaseText as text } from '../i18n.ts';
 import type { BuildCommand } from './build.ts';
 
 /** Keep enough lookahead to redact a secret split across reads, without buffering an entire line. */
@@ -43,7 +43,7 @@ function childEnvironment(references: Record<string, string>, excluded: string[]
   const secrets: string[] = [];
   for (const [name, source] of Object.entries(references)) {
     const secret = process.env[source];
-    if (!secret || !/^[a-f\d]{64}$/i.test(secret)) fail(text.godotKey, { name: source });
+    if (!secret || !/^[a-f\d]{64}$/i.test(secret)) return text.godotKey({ name: source });
     env[name] = secret;
     secrets.push(secret);
   }
@@ -55,7 +55,7 @@ function launch(command: string, args: string[], cwd: string, env: NodeJS.Proces
   const options = { cwd, env, windowsHide: true, stdio };
   if (process.platform === 'win32' && /\.(?:bat|cmd)$/i.test(command)) {
     const words = [command, ...args];
-    if (words.some(word => /["%\r\n]/.test(word))) fail(text.batchArgument);
+    if (words.some(word => /["%\r\n]/.test(word))) return text.batchArgument();
     const line = words.map(word => `"${word}"`).join(' ');
     return spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/v:off', '/s', '/c', `"${line}"`], { ...options, windowsVerbatimArguments: true });
   }
@@ -75,7 +75,7 @@ export async function runBuild(build: Pick<BuildCommand, 'command' | 'args' | 'e
   void logDone.catch(() => child.kill());
   const exit = new Promise<number>(resolve => {
     child.once('error', () => {
-      combined.write(t(text.launchFailed, { command: build.command }) + '\n');
+      combined.write(text.launchFailed({ command: build.command }) + '\n');
     });
     child.once('close', code => resolve(code ?? 1));
   });

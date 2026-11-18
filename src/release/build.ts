@@ -17,7 +17,7 @@ export interface BuildCommand extends BuildLocation {
   /** Child variable names mapped to source variable names. Values are resolved only at launch. */
   env: Record<string, string>;
   hardening: Record<string, string | boolean>;
-  notices: string[];
+  notices: (() => string)[];
 }
 export interface BuildTools { command: string; projectFile?: string }
 

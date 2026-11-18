@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { fail, releaseText as text, t } from '../i18n.ts';
+import { releaseText as text } from '../i18n.ts';
 import { ioStoreEncrypted, pakEncrypted, pckEncrypted } from './archive.ts';
 import { FINDING_IDS, validateRelease, type AuditPolicy, type FindingId, type ReleaseEngine } from './config.ts';
 import { secretScanner } from './secrets.ts';
@@ -56,7 +56,7 @@ function guessEngine(files: Entry[]): ReleaseEngine | null {
   return null;
 }
 
-const advice: Record<FindingId, string> = {
+const advice: Record<FindingId, () => string> = {
   'mono-assemblies': text.auditMono, 'il2cpp-backup': text.auditBackup, 'debug-symbols': text.auditSymbols,
   'unencrypted-pak': text.auditPak, 'pak-unreadable': text.auditUnreadable, 'unsigned-pak': text.auditSignature,
   'godot-unencrypted-pck': text.auditGodot, secrets: text.auditSecrets, 'web-build': text.auditWeb,
@@ -65,7 +65,7 @@ const advice: Record<FindingId, string> = {
 export async function auditBuild(dir: string, selected?: ReleaseEngine,
   policy: AuditPolicy = validateRelease({}, '').audit, signPak = true): Promise<AuditResult> {
   let listing: Entry[];
-  try { listing = await entries(dir); } catch { return fail(text.auditFolder, { dir }); }
+  try { listing = await entries(dir); } catch { return text.auditFolder({ dir }); }
   let engine = selected ?? guessEngine(listing);
   const files = new Set(listing.filter(entry => !entry.directory).map(({ relative }) => relative.toLowerCase()));
   const dirs = new Set(listing.filter(entry => entry.directory).map(({ relative }) => relative.toLowerCase()));
@@ -79,7 +79,7 @@ export async function auditBuild(dir: string, selected?: ReleaseEngine,
 
   for (const { relative, directory } of listing) {
     const absolute = path.join(dir, relative);
-    if (symbols.test(relative)) add('debug-symbols', relative);
+    if ((!directory || /\.dsym$/i.test(relative)) && symbols.test(relative)) add('debug-symbols', relative);
     if (directory && backup.test(relative)) add('il2cpp-backup', relative);
     if (engine === 'unity') {
       const managed = managedDll.exec(relative);
@@ -116,7 +116,7 @@ export async function auditBuild(dir: string, selected?: ReleaseEngine,
     try {
       const excerpt = await scanSecret(absolute, relative, (await stat(absolute)).size);
       if (excerpt) { add('secrets', relative); excerpts[relative] = excerpt; }
-    } catch { if (!unreadableArchive) return fail(text.auditFile, { file: relative }); }
+    } catch { if (!unreadableArchive) return text.auditFile({ file: relative }); }
   }
 
   const summary = { fail: 0, warn: 0 };
@@ -126,7 +126,7 @@ export async function auditBuild(dir: string, selected?: ReleaseEngine,
     const reason = policy.allow.find(entry => entry.id === id)?.reason;
     const severity = !reason && id !== 'pak-unreadable' && id !== 'web-build' && policy.fail_on.includes(id) ? 'fail' : 'warn';
     summary[severity]++;
-    return [{ id, severity, files: paths, advice: t(advice[id]), ...(reason && { reason }), ...(id === 'secrets' && { excerpts }) }];
+    return [{ id, severity, files: paths, advice: advice[id](), ...(reason && { reason }), ...(id === 'secrets' && { excerpts }) }];
   });
   return { engine, findings, summary };
 }

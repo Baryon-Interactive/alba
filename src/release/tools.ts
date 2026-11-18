@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { fail, releaseText as text } from '../i18n.ts';
+import { releaseText as text } from '../i18n.ts';
 import { posixSystemPath } from '../machines/commands.ts';
 import type { BuildProject, BuildTools } from './build.ts';
 import type { ReleaseConfig, ReleaseEngine } from './config.ts';
@@ -87,7 +87,7 @@ export function resolveBuildTools(project: BuildProject, config: ReleaseConfig, 
   const { root } = project;
   if (engine === 'unity') {
     const command = config.unity.editor ? configuredCommand(root, config.unity.editor) : unityEditor(root);
-    if (!command) fail(text.engineTool, { engine, key: 'release.unity.editor' });
+    if (!command) return text.engineTool({ engine, key: 'release.unity.editor' });
     return { command };
   }
   if (engine === 'godot') {
@@ -95,8 +95,8 @@ export function resolveBuildTools(project: BuildProject, config: ReleaseConfig, 
     return { command };
   }
   const projects = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isFile() && /\.uproject$/i.test(entry.name));
-  if (projects.length !== 1) fail(text.uproject, { dir: root });
+  if (projects.length !== 1) return text.uproject({ dir: root });
   const engineRoot = config.unreal.engine_root ? path.resolve(root, config.unreal.engine_root) : newestUnreal();
-  if (!engineRoot || !existsSync(runUat(engineRoot))) fail(text.engineTool, { engine, key: 'release.unreal.engine_root' });
+  if (!engineRoot || !existsSync(runUat(engineRoot))) return text.engineTool({ engine, key: 'release.unreal.engine_root' });
   return { command: runUat(engineRoot), projectFile: path.join(root, projects[0].name) };
 }

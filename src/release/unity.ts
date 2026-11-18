@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { t, releaseText as text } from '../i18n.ts';
+import { releaseText as text } from '../i18n.ts';
 import type { BuildCommand, BuildLocation } from './build.ts';
 import type { ReleaseConfig, ReleaseTarget } from './config.ts';
 
@@ -24,5 +24,5 @@ export function unityBuild(location: BuildLocation, config: ReleaseConfig['unity
     '-albaTarget', target, '-albaOutput', output, '-albaStripping', config.stripping];
   if (!web) args.push('-albaBackend', backend);
   return { ...location, command, args, env: {}, hardening: { backend, stripping: config.stripping },
-    notices: web ? [t(text.webBackend)] : [] };
+    notices: web ? [text.webBackend] : [] };
 }
