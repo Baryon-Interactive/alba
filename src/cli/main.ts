@@ -16,7 +16,8 @@ import { runUsageScorecard } from './scorecard.ts';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { mergeListFlags } from './args.ts';
+import { mergeListFlags, parseReleaseArgs, releaseFlags } from './args.ts';
+import { releaseHelp, runReleaseCli } from '../release/cli.ts';
 import { loadProject, type ProjectConfig } from '../config.ts';
 import { enabledTools, runPlugins } from './plugins.ts';
 import { runTools } from './tools.ts';
@@ -95,6 +96,7 @@ import { runNotifyCli } from './notify.ts';
 const signInLines = (port: number, key: string): string => t('Sign in: {url}\nKey file (for programs of this account): {file}', { url: `http://127.0.0.1:${port}/login?key=${key}`, file: keyFile(port) });
 
 const options = {
+  ...releaseFlags,
   now: { type: 'boolean' }, gate: { type: 'string' },
   project: { type: 'string', multiple: true }, port: { type: 'string' }, stage: { type: 'string' }, json: { type: 'boolean' }, all: { type: 'boolean' }, out: { type: 'string' },
   worker: { type: 'string' }, target: { type: 'string' }, session: { type: 'string' }, outcome: { type: 'string' }, note: { type: 'string' }, file: { type: 'string' },
@@ -357,7 +359,15 @@ async function run(rawArgv: string[]): Promise<string> {
   const orderAdd = argv.includes('orders') && argv.includes('add');
   const { values, positionals } = parseArgs({ args: argv, options: { ...options, check: { type: orderAdd ? 'string' : 'boolean' } }, allowPositionals: true, strict: true });
   let [group, command, ...rest] = positionals;
-  if (values.help || !group) return HELP;
+  if (values.help || !group) return `${HELP}\n${releaseHelp()}`;
+  if (group === 'release') {
+    const parsed = parseReleaseArgs(argv);
+    const files = parsed.values.project?.length || process.env.ALBA_PROJECT ? projectFiles(parsed.values.project) : [];
+    if (files.length > 1) fail('This command works on one project; got {n}.', { n: files.length });
+    const result = await runReleaseCli(command, rest, parsed.values, files[0]);
+    exitCode = result.code;
+    return result.output;
+  }
   const need = (n: number, usage: string) => { if (rest.length < n) fail('Usage: {usage}', { usage }); };
   if (group === 'state') {
     const files = projectFiles(values.project);

@@ -17,6 +17,7 @@ import { ENGINES, normalizeEngine, validateSourceList, type SkillSourceConfig } 
 import { validateArt, validateCredits, validatePicks, validateUsageLedgers, type ArtConfig, type CreditsConfig, type PicksConfig, type UsageLedgerConfig } from './library/config.ts';
 import { validatePlugins } from './plugins/registry.ts';
 import { validateEditors } from './editors/config.ts';
+import { validateRelease, type ReleaseConfig } from './release/config.ts';
 
 export interface DispatchRules {
   caps: Record<string, number>;
@@ -247,6 +248,7 @@ export interface ProjectConfig {
   orders?: OrdersConfig;
   /** Selects a machine engine module; no engine is selected by default. */
   engine?: string;
+  release?: ReleaseConfig;
   /** Who accepts an order that does not say (`review` of the order wins): `manual`, a person; `auto` (the default), the producer may too. */
   review?: 'manual' | 'auto';
   /** Cross-model first-pass review settings (`review.first_pass*` in alba.yaml). */
@@ -534,6 +536,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
     if (typeof raw.engine !== 'string' || !['unreal', 'unity', 'godot'].includes(raw.engine)) fail('{file}: engine must be unreal, unity or godot.', { file });
     cfg.engine = raw.engine;
   }
+  if (raw.release !== undefined) cfg.release = validateRelease(raw.release, file);
   if (raw.state !== undefined) {
     if (!isRecord(raw.state)) fail('{file}: "state" must be a mapping.', { file });
     const unknownState = Object.keys(raw.state).filter(k => k !== 'backend');
@@ -623,7 +626,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.credits !== undefined) cfg.credits = validateCredits(raw.credits, file, base, cfg.root, id);
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
   if (raw.orders !== undefined) cfg.orders = validateOrdersConfig(raw.orders, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }
