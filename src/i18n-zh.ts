@@ -1065,6 +1065,9 @@ export const zh: Record<string, string> = {
   'Takeover failed after 60s: {why}': '接管等待超过 60 秒失败：{why}',
   'Usage: alba serve reload [--project f.yaml...] [--port N] [--force] [--wait 90]': '用法：alba serve reload [--project f.yaml...] [--port N] [--force] [--wait 90]',
   'Usage: alba serve [--port 4777] [--every 15] [--max-dispatch 1] [--log file] [--watch-code] [--sign-in] --project f.yaml... | alba serve reload [--port N] [--force] [--wait 90] --project f.yaml...': '用法：alba serve [--port 4777] [--every 15] [--max-dispatch 1] [--log file] [--watch-code] [--sign-in] --project f.yaml... | alba serve reload [--port N] [--force] [--wait 90] --project f.yaml...',
+  'Run {key} has no transcript.': '派工 {key} 没有过程记录。',
+  '"after" must be a whole number >= 0.': '"after" 必须是大于等于 0 的整数。',
+  '"limit" must be a positive number.': '"limit" 必须是正数。',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

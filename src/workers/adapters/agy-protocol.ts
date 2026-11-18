@@ -7,11 +7,12 @@
  * (agy 1.4.3 to 1.5.9). The conversation id resumes the run with `--conversation <id>`.
  */
 export interface AgyUsage { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; cache_read_tokens?: number; total_tokens?: number }
-export interface AgyStep { conversationId?: string; index: number; state: string; type: string; tool?: string; target?: string; command?: string; output?: string; textDelta?: string; usage?: AgyUsage }
-export interface AgyResult { conversationId?: string; status: string; response: string; error: string; turns?: number; usage?: AgyUsage }
+export interface AgyStep { conversationId?: string; index: number; state: string; type: string; tool?: string; target?: string; command?: string; parameters?: Record<string, unknown>; output?: string; exitCode?: number; durationSeconds?: number; textDelta?: string; message?: string; usage?: AgyUsage }
+export interface AgyResult { conversationId?: string; status: string; response: string; error: string; turns?: number; durationSeconds?: number; usage?: AgyUsage }
 export type AgyEvent = { kind: 'init'; conversationId?: string; model?: string } | { kind: 'step'; step: AgyStep } | { kind: 'result'; result: AgyResult } | { kind: 'other' };
 
 const str = (v: unknown): string => typeof v === 'string' ? v : '';
+const num = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 const obj = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 const usage = (v: unknown): AgyUsage | undefined => { const u = obj(v); return Object.keys(u).length ? u as AgyUsage : undefined; };
 
@@ -25,11 +26,13 @@ export function agyEvent(raw: unknown): AgyEvent | undefined {
     const tool = str(s.tool_name) || str(info.name) || undefined;
     const target = str(p.CommandLine) || str(p.Path) || str(p.AbsolutePath) || str(p.TargetFile) || str(p.Query) || str(p.Url) || str(p.Action);
     const command = tool === 'run_command' && str(p.CommandLine) ? str(p.CommandLine) : tool ? `${tool} ${target}`.trim() : undefined;
-    return { kind: 'step', step: { conversationId: str(s.conversation_id) || undefined, index: typeof s.step_index === 'number' ? s.step_index : -1, state: str(s.state), type: str(s.step_type), tool, target: target || undefined, command, output: typeof info.output === 'string' ? info.output : undefined, textDelta: typeof s.text_delta === 'string' ? s.text_delta : undefined, usage: usage(s.usage) } };
+    const parameters = Object.keys(p).length ? p : undefined;
+    const message = str(s.message) || str(s.error) || undefined;
+    return { kind: 'step', step: { conversationId: str(s.conversation_id) || undefined, index: typeof s.step_index === 'number' ? s.step_index : -1, state: str(s.state), type: str(s.step_type), tool, target: target || undefined, command, ...(parameters ? { parameters } : {}), output: typeof info.output === 'string' ? info.output : undefined, ...(num(info.exit_code) !== undefined ? { exitCode: num(info.exit_code) } : {}), ...(num(s.duration_seconds) !== undefined ? { durationSeconds: num(s.duration_seconds) } : {}), textDelta: typeof s.text_delta === 'string' ? s.text_delta : undefined, ...(message ? { message } : {}), usage: usage(s.usage) } };
   }
   if (e.event === 'result') {
     const r = obj(e.result);
-    return { kind: 'result', result: { conversationId: str(r.conversation_id) || undefined, status: str(r.status), response: str(r.response) || str(r.result), error: str(r.error), turns: typeof r.num_turns === 'number' ? r.num_turns : undefined, usage: usage(r.usage) } };
+    return { kind: 'result', result: { conversationId: str(r.conversation_id) || undefined, status: str(r.status), response: str(r.response) || str(r.result), error: str(r.error), turns: typeof r.num_turns === 'number' ? r.num_turns : undefined, ...(num(r.duration_seconds) !== undefined ? { durationSeconds: num(r.duration_seconds) } : {}), usage: usage(r.usage) } };
   }
   return { kind: 'other' };
 }
