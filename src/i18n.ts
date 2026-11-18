@@ -37,3 +37,25 @@ export function translate(lang: Lang, text: string, vars: Record<string, string 
 }
 
 export { textConventions, localizedVague } from './i18n-zh.ts';
+
+export const releaseText = {
+  config: '{file}: "{key}" expects {expected}.',
+  mapping: 'a mapping',
+  list: 'a list',
+  string: 'a non-empty single-line string',
+  boolean: 'true or false',
+  unknown: 'a known release key (unknown key)',
+  literal: 'an environment variable reference (literal secrets are forbidden)',
+  regex: 'a valid non-empty regular expression',
+  output: 'a relative output path inside the project',
+  version: 'a portable version label such as 1.2.0',
+  envName: 'an environment variable name (literal secrets are forbidden)',
+  webBackend: 'Unity WebGL always uses IL2CPP.',
+  unsupportedTarget: '{engine} does not support release target {target}.',
+  uproject: 'Expected exactly one .uproject at {dir}.',
+  cryptoRead: 'Could not read {file}. Check Project Settings > Crypto.',
+  cryptoEncryption: '{file}: Enable pak encryption and configure an encryption key in Project Settings > Crypto.',
+  cryptoSigning: '{file}: Enable pak signing and configure the signing keys in Project Settings > Crypto.',
+  godotPreset: 'Set release.godot.preset for {target}.',
+  godotTemplates: 'Encrypted Godot exports need export templates built with the configured key.',
+} as const;
