@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync 
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fail, releaseText as text } from '../i18n.ts';
+import { posixSystemPath } from '../machines/commands.ts';
 import type { BuildProject, BuildTools } from './build.ts';
 import type { ReleaseConfig, ReleaseEngine } from './config.ts';
 
@@ -22,7 +23,7 @@ function configuredCommand(root: string, value: string): string {
 function unityEditor(root: string): string | undefined {
   const home = homedir();
   const roots = windows ? [path.join(process.env.ProgramFiles ?? '', 'Unity', 'Hub', 'Editor')]
-    : mac ? ['/Applications/Unity/Hub/Editor'] : [path.join(home, 'Unity/Hub/Editor'), '/opt/unity/Hub/Editor'];
+    : mac ? ['/Applications/Unity/Hub/Editor'] : [path.join(home, 'Unity/Hub/Editor'), posixSystemPath('opt', 'unity', 'Hub', 'Editor')];
   const binary = windows ? 'Editor/Unity.exe' : mac ? 'Unity.app/Contents/MacOS/Unity' : 'Editor/Unity';
   const builds = roots.flatMap(dir => entries(dir).map(version => ({ version, command: path.join(dir, version, binary) })));
   const version = /(?:^|\n)m_EditorVersion:\s*(\S+)/.exec(
@@ -60,7 +61,8 @@ function unrealVersion(root: string): string {
 
 function newestUnreal(): string | undefined {
   const roots = windows ? [path.join(process.env.ProgramFiles ?? '', 'Epic Games')]
-    : mac ? ['/Users/Shared/Epic Games', '/Applications'] : [homedir(), '/opt', '/opt/UnrealEngine'];
+    : mac ? [posixSystemPath('Users', 'Shared', 'Epic Games'), '/Applications']
+      : [homedir(), posixSystemPath('opt'), posixSystemPath('opt', 'UnrealEngine')];
   const installs = [...registeredUnreal(), ...roots.flatMap(dir => entries(dir)
     .filter(name => /^(?:UE_|UnrealEngine)/.test(name)).map(name => path.join(dir, name)))];
   return installs.filter(root => existsSync(runUat(root))).map(root => ({ root, version: unrealVersion(root) }))

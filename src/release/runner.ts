@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { Transform } from 'node:stream';
-import { finished, pipeline } from 'node:stream/promises';
+import { PassThrough, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { StringDecoder } from 'node:string_decoder';
 import { fail, releaseText as text, t } from '../i18n.ts';
 import type { BuildCommand } from './build.ts';
@@ -69,22 +69,23 @@ export async function runBuild(build: Pick<BuildCommand, 'command' | 'args' | 'e
   const consoleLog = engineLog ? `${build.logFile}.console` : build.logFile;
   const child = launch(build.command, build.args, build.cwd, childEnv.env);
   const log = createWriteStream(consoleLog, { flags: 'wx' });
-  const logDone = finished(log);
-  // All three streams are awaited even if one reports an error.
+  const combined = new PassThrough();
+  // Redact again after merging so adjacent pieces from different streams cannot expose a key.
+  const logDone = pipeline(combined, redact(hidden), log);
   void logDone.catch(() => child.kill());
   const exit = new Promise<number>(resolve => {
     child.once('error', () => {
-      log.write(t(text.launchFailed, { command: build.command }) + '\n');
+      combined.write(t(text.launchFailed, { command: build.command }) + '\n');
     });
     child.once('close', code => resolve(code ?? 1));
   });
   const copies = [
-    pipeline(child.stdout, redact(hidden), log, { end: false }),
-    pipeline(child.stderr, redact(hidden), log, { end: false }),
+    pipeline(child.stdout, redact(hidden), combined, { end: false }),
+    pipeline(child.stderr, redact(hidden), combined, { end: false }),
   ];
   const drained = await Promise.allSettled(copies.map(copy => copy.catch(error => { child.kill(); throw error; })));
   const code = await exit;
-  log.end();
+  combined.end();
   await logDone;
   for (const result of drained) if (result.status === 'rejected') throw result.reason;
   if (engineLog) {

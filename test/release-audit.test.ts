@@ -54,17 +54,20 @@ test('audits Unity builds and records allowed findings', async t => {
 test('scans text and chunked binary strings with masked excerpts', async t => {
   const { dir, put } = folder(t);
   put('.env', 'PRIVATE=never-include-this');
-  put('data/test.pem', '-----BEGIN PRIVATE KEY-----\nnever-include-this');
+  put('data/test.pem', ['-----BEGIN', 'PRIVATE KEY-----\nnever-include-this'].join(' '));
   const fakeId = 'AKIA' + 'Z'.repeat(16);
   put('data/fixture.bin', Buffer.concat([Buffer.alloc(65530), Buffer.from(fakeId), Buffer.alloc(6)]));
   put('settings.toml', 'code = INVENTED-12345678');
+  put('wide.txt', Buffer.from('\uFEFFcode = INVENTED-87654321', 'utf16le'));
+  put('short.txt', 'DEMO');
   put('also.p12');
-  const policy = validateRelease({ audit: { extra_secret_patterns: ['INVENTED-\\d{8}'] } }, 'demo.yaml').audit;
+  const policy = validateRelease({ audit: { extra_secret_patterns: ['INVENTED-\\d{8}', '^DEMO$'] } }, 'demo.yaml').audit;
   const result = await auditBuild(dir, undefined, policy);
   assert.deepEqual(result.summary, { fail: 1, warn: 0 });
   assert.equal(result.findings[0]?.id, 'secrets');
   assert.deepEqual({ ...result.findings[0]?.excerpts }, {
-    '.env': '.env***', 'also.p12': 'also***', 'data/fixture.bin': 'AKIA***', 'data/test.pem': '----***', 'settings.toml': 'INVE***',
+    '.env': '.env***', 'also.p12': 'also***', 'data/fixture.bin': 'AKIA***', 'data/test.pem': '----***',
+    'settings.toml': 'INVE***', 'short.txt': '***', 'wide.txt': 'INVE***',
   });
   const json = JSON.stringify(result);
   for (const value of [fakeId, 'never-include-this', 'INVENTED-12345678']) assert.equal(json.includes(value), false);

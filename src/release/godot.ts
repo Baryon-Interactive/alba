@@ -13,6 +13,6 @@ export function godotBuild(location: BuildLocation, config: ReleaseConfig['godot
   if (!preset) fail(text.godotPreset, { target });
   const key = config.encryption_key_env;
   return { ...location, command, args: ['--headless', '--export-release', preset, path.join(location.outputDir, name + extensions[target])],
-    env: key ? { GODOT_SCRIPT_ENCRYPTION_KEY: key } : {}, hardening: { preset, encryption_key_env: key ?? false },
+    env: key ? { GODOT_SCRIPT_ENCRYPTION_KEY: key } : {}, hardening: { preset, ...(key && { encryption_key_env: key }) },
     notices: key ? [t(text.godotTemplates)] : [] };
 }

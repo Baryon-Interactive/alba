@@ -94,10 +94,11 @@ export async function auditBuild(dir: string, selected?: ReleaseEngine,
       if (!directory && webFile.test(relative)) add('web-build', relative);
     }
     if (directory) continue;
+    let unreadableArchive = false;
     if (engine === 'unreal' && (pak.test(relative) || utoc.test(relative))) {
       const isPak = pak.test(relative);
       const encrypted = await (isPak ? pakEncrypted(absolute) : ioStoreEncrypted(absolute));
-      if (encrypted === undefined) add('pak-unreadable', relative);
+      if (encrypted === undefined) { add('pak-unreadable', relative); unreadableArchive = true; }
       else if (!encrypted) add('unencrypted-pak', relative);
       if (isPak && signPak) {
         const lower = relative.toLowerCase();
@@ -115,7 +116,7 @@ export async function auditBuild(dir: string, selected?: ReleaseEngine,
     try {
       const excerpt = await scanSecret(absolute, relative, (await stat(absolute)).size);
       if (excerpt) { add('secrets', relative); excerpts[relative] = excerpt; }
-    } catch { return fail(text.auditFile, { file: relative }); }
+    } catch { if (!unreadableArchive) return fail(text.auditFile, { file: relative }); }
   }
 
   const summary = { fail: 0, warn: 0 };
