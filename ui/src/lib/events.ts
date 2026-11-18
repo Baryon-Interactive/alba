@@ -56,6 +56,7 @@ export function invalidationsFor(name: StreamEventName, data: unknown, fallbackP
     case 'resync':
       return everything;
     case 'run.log':
+    case 'run.transcript':
     case 'hello':
       return [];
   }
@@ -72,6 +73,6 @@ export const everything: QueryKey[] = [
 
 export const STREAM_EVENT_NAMES: StreamEventName[] = [
   'hello', 'resync', 'order.added', 'order.updated', 'order.action', 'order.report', 'run.start', 'run.updated', 'run.activity', 'run.end',
-  'check.done', 'refs.adopted', 'log.other', 'run.log', 'quota', 'tick.done',
+  'check.done', 'refs.adopted', 'log.other', 'run.log', 'run.transcript', 'quota', 'tick.done',
   'serve.notice', 'decision.added', 'question.asked', 'question.answered', 'credits.changed', 'clean.done', 'workers.edited', 'skills.edited',
 ];

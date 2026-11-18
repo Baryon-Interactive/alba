@@ -27,6 +27,7 @@ export const keys = {
   skills: (project: string) => ['skills', project] as const,
   orderSkills: (project: string, tag: string) => ['order-skills', project, tag] as const,
   runLog: (project: string, key: string) => ['runlog', project, key] as const,
+  runTranscript: (project: string, key: string) => ['runtranscript', project, key] as const,
   picks: (project: string) => ['picks', project] as const,
   art: (project: string) => ['art', project] as const,
   spend: (project: string) => ['spend', project] as const,

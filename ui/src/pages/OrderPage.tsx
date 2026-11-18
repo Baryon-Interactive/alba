@@ -190,19 +190,21 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
   );
 }
 
-function RunRow({ project, tag, r }: { project: string; tag: string; r: Run }) {
+function RunRow({ project, tag, r, watch }: { project: string; tag: string; r: Run; watch?: boolean }) {
   const open = !r.ended;
+  const runHref = `/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(tag)}/runs/${encodeURIComponent(r.id)}`;
   return (
     <>
     <tr className="hover:bg-accent/40">
       <td className="px-4 py-2 font-mono text-[13px] font-semibold">
-        {r.hasLog ? <Link className="hover:underline" to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(tag)}/runs/${encodeURIComponent(r.id)}`}>{r.id}</Link> : r.id}
+        {r.hasLog ? <Link className="hover:underline" to={runHref}>{r.id}</Link> : r.id}
       </td>
       <td className="px-2 py-2">{r.worker}</td>
       <td className="px-2 py-2 text-muted-foreground">{dateTime(r.started)}</td>
       <td className="px-2 py-2 tabular-nums">{duration(r.started, r.ended)}</td>
       <td className="px-2 py-2">
         {open ? <Badge tone="primary"><Play />{t('running')}</Badge> : <Badge tone={r.outcome === 'completed' ? 'success' : r.outcome === 'cancelled' ? 'neutral' : 'danger'}>{r.limit === 'unreachable' ? t('endpoint unreachable') : r.outcome}</Badge>}
+        {watch && r.hasLog && <Link className="ml-2 text-xs font-medium text-primary hover:underline" to={`${runHref}?tab=transcript`}>{t('Watch')}</Link>}
         {r.imported && <Badge tone="outline" className="ml-1">{t('imported')}</Badge>}
       </td>
       <td className="px-2 py-2 text-xs"><UsageText usage={r.usage} /></td>
@@ -307,13 +309,15 @@ export function OrderPage() {
   const hasDiff = !!d.order.branch || !!d.worktree || d.stage === 'awaiting-review';
   const visible = visibleActions(d.stage, d.actions).filter(a => a !== 'answer');
   const closeIdx = visible.indexOf('close');
+  const currentRunning = [...d.runs].reverse().find(r => !r.ended);
+  const watchHref = currentRunning?.hasLog ? `/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(tag)}/runs/${encodeURIComponent(currentRunning.id)}?tab=transcript` : undefined;
 
   return (
     <div>
       <div className="mb-1 text-xs text-muted-foreground"><Link className="hover:underline" to={`/p/${encodeURIComponent(project)}/board`}>{t('Board')}</Link> / {d.order.tag}</div>
       <div className="relative mb-5 flex flex-wrap items-start justify-between gap-3 overflow-hidden rounded-2xl border bg-card px-5 pt-5 pb-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)]" style={{ '--stage': statusColor(d.stage) } as React.CSSProperties}>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold text-muted-foreground">{d.order.tag}</span><StageBadge stage={d.stage} waitingFor={d.waitingFor} />{d.order.review === 'manual' && <Badge tone="warning">{t('Manual review')}</Badge>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold text-muted-foreground">{d.order.tag}</span><StageBadge stage={d.stage} waitingFor={d.waitingFor} />{watchHref && <Link className="text-xs font-medium text-primary hover:underline" to={watchHref}>{t('Watch')}</Link>}{d.order.review === 'manual' && <Badge tone="warning">{t('Manual review')}</Badge>}</div>
           <h1 className="mt-1.5 text-[24px] leading-tight font-semibold tracking-[-0.02em]">{d.order.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{stageLabel(d.stage, d.waitingFor)} — {d.why}</p>
         </div>
@@ -348,7 +352,7 @@ export function OrderPage() {
             <Card className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="px-4 py-1.5 font-medium">Run</th><th className="px-2 py-1.5 font-medium">{t('Worker')}</th><th className="px-2 py-1.5 font-medium">{t('Started')}</th><th className="px-2 py-1.5 font-medium">{t('Duration')}</th><th className="px-2 py-1.5 font-medium">{t('Outcome')}</th><th className="px-2 py-1.5 font-medium">{t('Usage')}</th><th className="px-4 py-1.5 font-medium">{t('Note it started with')}</th></tr></thead>
-                <tbody className="divide-y">{[...d.runs].reverse().map(r => <RunRow key={r.id} project={project} tag={tag} r={r} />)}</tbody>
+                <tbody className="divide-y">{[...d.runs].reverse().map(r => <RunRow key={r.id} project={project} tag={tag} r={r} watch={r.id === currentRunning?.id} />)}</tbody>
               </table>
             </Card>
           )}

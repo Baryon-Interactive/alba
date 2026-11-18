@@ -3,8 +3,10 @@ import { existsSync, readSync, openSync, closeSync, statSync, watch, type FSWatc
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { stateStore, type StateProject } from '../orders/backend.ts';
+import { Orders } from '../orders/service.ts';
 import { stateProject } from '../orders/state-files.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
+import { transcriptRuns } from '../run/transcript.ts';
 import type { OrderEvent, QuotaPoint, StreamEventName, StreamEvents } from './types.ts';
 
 export interface HubProject { id: string; stateDir: string; config?: StateProject }
@@ -16,6 +18,8 @@ interface Client {
   project: string;
   /** Run log subscriptions: key -> byte offset up to which the client has been sent lines. */
   logs: Map<string, { path: string; offset: number }>;
+  /** Run transcript subscriptions: key -> revision up to which the client has been sent entries. */
+  transcripts: Map<string, { path: string; rev: number; generation: number }>;
 }
 
 /** The name an entry of the event log goes out under. */
@@ -48,6 +52,8 @@ export interface HubOptions {
   pingMs?: number;
   /** Where the log of a run is: `key` is `<TAG>:<run id>`. */
   resolveLog(project: string, key: string): string | undefined;
+  /** Where the transcript stream (`events_file ?? log`) of a run is; falls back to the project's orders, then `resolveLog`. */
+  resolveTranscript?(project: string, key: string): string | undefined;
 }
 
 const MAX_LOG_CHUNK = 256 * 1024;
@@ -146,7 +152,7 @@ export class Hub {
       this.onScan?.();
       for (const p of this.projects) { this.scanEvents(p); this.scanQuota(p); }
       if (this.seq !== before) this.onChange?.();
-      for (const c of this.clients) this.scanLogs(c);
+      for (const c of this.clients) { this.scanLogs(c); this.scanTranscripts(c); }
     } finally { this.scanning = false; }
   }
 
@@ -214,17 +220,54 @@ export class Hub {
     }
   }
 
+  private resolveTranscriptFile(project: string, key: string): string | undefined {
+    if (this.options.resolveTranscript) return this.options.resolveTranscript(project, key);
+    const p = this.projects.find(x => x.id === project);
+    const sep = key.lastIndexOf(':');
+    if (p && sep >= 1) {
+      try {
+        const orders = new Orders(stateStore(p.config ?? stateProject(p.stateDir)), () => new Date().toISOString(), 'web');
+        const run = orders.get(key.slice(0, sep)).runs.find(r => r.id === key.slice(sep + 1));
+        if (run?.events_file || run?.log) return run.events_file ?? run.log;
+      } catch { /* fall back to resolveLog */ }
+    }
+    return this.options.resolveLog(project, key);
+  }
+
+  private scanTranscripts(client: Client): void {
+    for (const [key, sub] of client.transcripts) {
+      let changed = transcriptRuns.changedSince(sub.path, sub.rev);
+      if (changed.generation !== sub.generation) changed = transcriptRuns.changedSince(sub.path, 0);
+      sub.rev = changed.rev;
+      sub.generation = changed.generation;
+      if (changed.entries.length) {
+        client.res.write(`event: run.transcript\ndata: ${JSON.stringify({ project: client.project, key, entries: changed.entries })}\n\n`);
+      }
+    }
+  }
+
   /**
    * Opens an event stream for a project. `lastEventId` comes from the client's `Last-Event-ID` header: messages after it are sent again
    * when it is from this process and still in memory; otherwise the client is told to read the lists again (`resync`).
    */
-  connect(req: IncomingMessage, res: ServerResponse, project: string, logs: { key: string; offset?: number }[], lastEventId?: string): void {
+  connect(req: IncomingMessage, res: ServerResponse, project: string, logs: { key: string; offset?: number }[], lastEventId?: string, transcripts: { key: string; offset?: number }[] = []): void {
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no', 'x-content-type-options': 'nosniff' });
     res.write('retry: 3000\n\n');
-    const client: Client = { res, project, logs: new Map() };
+    const client: Client = { res, project, logs: new Map(), transcripts: new Map() };
     for (const l of logs) {
       const file = this.options.resolveLog(project, l.key);
       if (file) client.logs.set(l.key, { path: file, offset: l.offset ?? sizeOf(file) });
+    }
+    const catchUps: { key: string; entries: StreamEvents['run.transcript']['entries'] }[] = [];
+    for (const tr of transcripts) {
+      const file = this.resolveTranscriptFile(project, tr.key);
+      if (!file) continue;
+      const synced = transcriptRuns.sync(file);
+      client.transcripts.set(tr.key, { path: file, rev: synced.rev, generation: synced.generation });
+      if (tr.offset !== undefined && synced.total > tr.offset) {
+        const page = synced.fold.page({ after: tr.offset, limit: 1000 });
+        if (page.entries.length) catchUps.push({ key: tr.key, entries: page.entries });
+      }
     }
     let replay: Message[] | undefined = [];
     let reason = '';
@@ -240,6 +283,7 @@ export class Hub {
     res.write(`event: hello\ndata: ${JSON.stringify({ boot: this.boot, project, at: new Date().toISOString(), replayed: replay?.length ?? 0 })}\n\n`);
     if (replay === undefined) res.write(`event: resync\ndata: ${JSON.stringify({ reason })}\n\n`);
     else for (const message of replay) this.write(client, message);
+    for (const cu of catchUps) res.write(`event: run.transcript\ndata: ${JSON.stringify({ project, key: cu.key, entries: cu.entries })}\n\n`);
     this.clients.add(client);
     req.on('close', () => { this.clients.delete(client); });
   }

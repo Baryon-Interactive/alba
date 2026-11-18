@@ -84,6 +84,7 @@ import { overviewAll, overviewProject } from './overview-all.ts';
 import { sendJson as json } from '../web/response.ts';
 import { readOrders } from './read-orders.ts';
 import type { Hub } from './hub.ts';
+import { transcriptRuns } from '../run/transcript.ts';
 import { ORDER_ACTIONS, STAGES } from './types.ts';
 import type * as A from './types.ts';
 import { admitted } from '../web/auth.ts';
@@ -514,6 +515,28 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const tail = Math.min(2000, Math.max(1, Number(q('tail') ?? 200) || 200));
       return json(res, 200, readLogTail(view.config.id, parts[1], found.run.log, tail) satisfies A.RunLog);
     }
+    if (parts[0] === 'runs' && parts[2] === 'transcript' && parts.length === 3) {
+      const view = light(q('project'));
+      const found = findRun(view, parts[1]);
+      const file = found?.run.events_file ?? found?.run.log;
+      if (!file || !existsSync(file)) throw new ApiFailure(404, 'not_found', t('Run {key} has no transcript.', { key: parts[1] }));
+      const rawAfter = q('after');
+      let after: number | undefined;
+      if (rawAfter !== undefined) {
+        after = Number(rawAfter);
+        if (!Number.isInteger(after) || after < 0) throw new ApiFailure(400, 'bad_request', t('"after" must be a whole number >= 0.'));
+      }
+      const rawLimit = q('limit');
+      let limit = 200;
+      if (rawLimit !== undefined) {
+        const parsed = Number(rawLimit);
+        if (!Number.isFinite(parsed) || parsed < 1) throw new ApiFailure(400, 'bad_request', t('"limit" must be a positive number.'));
+        limit = Math.min(1000, Math.floor(parsed));
+      }
+      const ended = found!.run.ended !== undefined;
+      const page = transcriptRuns.page(file, { after, limit, ended, now: ctx.probes.now() });
+      return json(res, 200, { project: view.config.id, key: parts[1], ...page, ended } satisfies A.RunTranscript);
+    }
     if (parts[0] === 'orders' && parts[2] === 'evidence' && parts.length === 3) {
       const view = light(q('project'));
       return json(res, 200, listEvidence(view.config, view.orders, ctx.probes, parts[1]) satisfies A.EvidenceList);
@@ -680,9 +703,11 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
     }
     if (parts[0] === 'stream' && parts.length === 1) {
       const view = light(q('project'));
-      const logs = (q('logs') ?? '').split(',').map(s => s.trim()).filter(Boolean).map(s => { const [key, offset] = s.split('@'); return { key, ...(offset !== undefined && /^\d+$/.test(offset) ? { offset: Number(offset) } : {}) }; });
+      const parseRunSubs = (raw: string | undefined) => (raw ?? '').split(',').map(s => s.trim()).filter(Boolean).map(s => { const [key, offset] = s.split('@'); return { key, ...(offset !== undefined && /^\d+$/.test(offset) ? { offset: Number(offset) } : {}) }; });
+      const logs = parseRunSubs(q('logs'));
+      const transcripts = parseRunSubs(q('transcripts'));
       const last = req.headers['last-event-id'];
-      ctx.hub.connect(req, res, view.config.id, logs, (Array.isArray(last) ? last[0] : last) ?? q('lastEventId'));
+      ctx.hub.connect(req, res, view.config.id, logs, (Array.isArray(last) ? last[0] : last) ?? q('lastEventId'), transcripts);
       return;
     }
     if (libraryGet({ view: () => light(q('project')), workers: ctx.workers, now: ctx.probes.now(), parts, q, reply: (status, body) => json(res, status, body), serve: (file, type) => serveFile(req, res, file, type) })) return;

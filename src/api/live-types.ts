@@ -1,4 +1,5 @@
 import type { ProgressView } from './types.ts';
+export type { RunTranscript, TranscriptEdit, TranscriptEntry, TranscriptEntryKind, TranscriptEntryState, TranscriptPlanStep } from './types.ts';
 
 export interface LiveActivity { at: string; kind: string; summary: string; exit_code?: number; duration_seconds?: number; output_tail?: string }
 export interface LiveCurrent { id: string; kind: string; command: string; started_at: string; elapsed_seconds: number }

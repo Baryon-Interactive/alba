@@ -1,0 +1,16 @@
+{"type":"thread.started","thread_id":"th-demo-1"}
+{"type":"turn.started","alba_at":"2026-02-10T09:00:00.000Z"}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:01.000Z","item":{"id":"r0","type":"reasoning","text":""}}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:02.000Z","item":{"id":"r1","type":"reasoning","summary":["Inspecting src/main.c before compiling.","Checking return code handling."]}}
+{"type":"item.started","alba_at":"2026-02-10T09:00:03.000Z","item":{"id":"plan1","type":"todo_list","items":[{"text":"Compile src/main.c","completed":false},{"text":"Run smoke check","completed":false}]}}
+{"type":"item.started","alba_at":"2026-02-10T09:00:04.000Z","item":{"id":"cmd1","type":"command_execution","command":"pwsh -File build.ps1"}}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:06.500Z","item":{"id":"cmd1","type":"command_execution","command":"pwsh -File build.ps1","exit_code":0,"status":"completed","aggregated_output":"Compiling src/main.c\nLinked demo.exe (0 warnings)\n"}}
+{"type":"item.started","alba_at":"2026-02-10T09:00:07.000Z","item":{"id":"ws1","type":"web_search","query":"c11 stdatomic memory_order_acq_rel"}}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:08.000Z","item":{"id":"ws1","type":"web_search","query":"c11 stdatomic memory_order_acq_rel","status":"completed","output":"3 results"}}
+{"type":"item.started","alba_at":"2026-02-10T09:00:09.000Z","item":{"id":"mcp1","type":"mcp_tool_call","server":"docs","tool":"lookup","arguments":{"symbol":"atomic_fetch_add"}}}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:10.000Z","item":{"id":"mcp1","type":"mcp_tool_call","server":"docs","tool":"lookup","status":"completed","result":{"text":"atomic_fetch_add(obj, arg)"}}}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:11.000Z","item":{"id":"fc1","type":"file_change","status":"completed","changes":[{"path":"src/main.c","kind":"update","before":"int count = 0;\nreturn count;\n","after":"int count = 1;\nreturn count;\n"}]}}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:12.000Z","item":{"id":"plan1","type":"todo_list","items":[{"text":"Compile src/main.c","completed":true},{"text":"Run smoke check","completed":true}]}}
+{"type":"future.event","alba_at":"2026-02-10T09:00:12.500Z","detail":"ignored"}
+{"type":"item.completed","alba_at":"2026-02-10T09:00:13.000Z","item":{"id":"msg1","type":"agent_message","text":"Updated `src/main.c` and verified `build.ps1`.\nAll checks passed."}}
+{"type":"turn.completed","alba_at":"2026-02-10T09:00:14.000Z","usage":{"input_tokens":1200,"cached_input_tokens":800,"output_tokens":150,"reasoning_output_tokens":45}}

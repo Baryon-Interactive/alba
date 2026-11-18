@@ -833,6 +833,52 @@ export interface RunLog {
   cut: boolean;
 }
 
+export type TranscriptEntryKind = 'message' | 'reasoning' | 'command' | 'tool' | 'edit' | 'search' | 'plan' | 'error' | 'result' | 'log';
+export type TranscriptEntryState = 'running' | 'done' | 'failed';
+
+export interface TranscriptEdit {
+  path: string;
+  kind?: string;
+  before?: string;
+  after?: string;
+  diff?: string;
+}
+
+export interface TranscriptPlanStep {
+  step: string;
+  status: string;
+}
+
+/** One logical step of a run's transcript, folded in file order. */
+export interface TranscriptEntry {
+  seq: number;
+  at: string;
+  kind: TranscriptEntryKind;
+  state: TranscriptEntryState;
+  title: string;
+  text?: string;
+  input?: Record<string, unknown>;
+  output?: string;
+  exit_code?: number;
+  duration_seconds?: number;
+  edit?: TranscriptEdit[];
+  plan?: TranscriptPlanStep[];
+  usage?: RunUsage;
+  truncated?: boolean;
+}
+
+/** `GET /api/runs/:key/transcript` */
+export interface RunTranscript {
+  project: string;
+  key: string;
+  entries: TranscriptEntry[];
+  /** Backwards cursor: pass as `after` to fetch the preceding page; absent when the oldest retained entry is included. */
+  next?: number;
+  total: number;
+  dropped: number;
+  ended: boolean;
+}
+
 // ---------------------------------------------------------------------------------------------------------------- quota
 
 /** `GET /api/quota/history?worker=` */
@@ -985,6 +1031,8 @@ export interface StreamEvents {
   'log.other': OrderEvent & { project: string };
   /** New lines at the end of a run's log, for the runs named in `logs`. Not replayed. */
   'run.log': { project: string; key: string; lines: string[]; offset: number };
+  /** New and updated entries of a run's transcript, for the runs named in `transcripts`. Not replayed. */
+  'run.transcript': { project: string; key: string; entries: TranscriptEntry[] };
   /** The quota readings changed (a tick read a new value). */
   quota: { project: string; points: QuotaPoint[] };
   /** A tick finished: `source` says what started it. */
