@@ -47,6 +47,7 @@ Start with the [five-minute demo](../examples/demo/README.md), then choose a top
 | [018-overview.md](console/018-overview.md) | 018. Cross-project Overview |
 | [020-usage-and-cost.md](console/020-usage-and-cost.md) | 020. Usage and cost |
 | [022-project-overview.md](console/022-project-overview.md) | 022. Project overview |
+| [040-run-transcript.md](console/040-run-transcript.md) | 040. Run transcript |
 
 ## Producer
 
