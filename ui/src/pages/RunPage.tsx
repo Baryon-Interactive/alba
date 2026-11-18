@@ -11,7 +11,7 @@ import { MessageBox } from '@/components/MessageBox';
 import { TranscriptView } from '@/components/TranscriptView';
 import { hasJsonStream, resolveRunTab } from '@/components/TranscriptLogic';
 import { Empty, ErrorBox, StageBadge, UsageText } from '@/components/common';
-import { useOrder, useProjectId, useWorkers } from '@/lib/queries';
+import { useOrder, useProjectId } from '@/lib/queries';
 import { dateTime, duration, tokens } from '@/lib/format';
 import { t } from '@/i18n';
 
@@ -31,7 +31,6 @@ export function RunPage() {
   const { tag = '', runId = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const q = useOrder(project, tag);
-  const workers = useWorkers(project);
   const [loadedEntries, setLoadedEntries] = useState<readonly TranscriptEntry[] | undefined>(undefined);
 
   useEffect(() => {
@@ -47,8 +46,7 @@ export function RunPage() {
   const live = !run.ended;
   const u = run.usage;
   const silentEnd = run.end && SILENT_END_KINDS.has(run.end.kind) ? run.end : undefined;
-  const workerEngine = workers.data?.workers.find(w => w.id === run.worker)?.engine;
-  const jsonStream = hasJsonStream(run, workerEngine, loadedEntries);
+  const jsonStream = hasJsonStream(run, undefined, loadedEntries);
   const tab = resolveRunTab(params.get('tab'), jsonStream);
 
   return (

@@ -159,6 +159,8 @@ describe('follow/pause rule, backwards paging and default tab selection', () => 
     expect(resolveRunTab(null, hasJsonStream(unknownUsage, 'claude-cli'))).toBe('transcript');
     expect(resolveRunTab(null, hasJsonStream(unknownUsage, 'codex-cli'))).toBe('transcript');
     expect(resolveRunTab(null, hasJsonStream(unknownUsage, 'script'))).toBe('log');
+    expect(resolveRunTab(null, hasJsonStream(unknownUsage, undefined, [{ kind: 'log' }]))).toBe('log');
+    expect(resolveRunTab(null, hasJsonStream(unknownUsage, undefined, [{ kind: 'command' }]))).toBe('transcript');
     expect(resolveRunTab('transcript', false)).toBe('transcript');
     expect(resolveRunTab('activity', true)).toBe('activity');
     expect(resolveRunTab('log', true)).toBe('log');

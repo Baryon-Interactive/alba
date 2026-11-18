@@ -217,6 +217,7 @@ export function hasJsonStream(
   if (transcriptEntries && transcriptEntries.length > 0) {
     return transcriptEntries.some(e => e.kind !== 'log');
   }
+  if ((run.live?.recent.length ?? 0) > 0 && run.live!.recent.every(a => a.kind === 'log')) return false;
   if (workerEngine !== undefined) return STRUCTURED_ENGINES.has(workerEngine);
   return run.usage.source !== 'codex-log';
 }
