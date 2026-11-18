@@ -37,8 +37,9 @@ namespace Alba.Release
                     (ManagedStrippingLevel)Enum.Parse(typeof(ManagedStrippingLevel), Argument("-albaStripping"), true));
                 if (target == BuildTarget.StandaloneOSX)
                 {
-                    // Unity's standalone macOS architecture values are Intel = 0 and Apple silicon = 1.
-                    PlayerSettings.SetArchitecture(group, targetName == "macos-arm64" ? 1 : 0);
+                    // Use the same per-platform setting as the Unity 6 Build Profiles window.
+                    EditorUserBuildSettings.SetPlatformSettings(BuildPipeline.GetBuildTargetName(target),
+                        "Architecture", targetName == "macos-arm64" ? "arm64" : "x64");
                 }
 
                 var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
