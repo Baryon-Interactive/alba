@@ -635,8 +635,9 @@ test('API POST /api/serve/reload refuses missing key in no-sign-in mode and acce
 });
 
 // 5. --watch-code on a temp copy of the code: branch switch refused, syntax error refused, valid change reloads
-test('--watch-code on temp code copy: refuses branch switch and syntax error, then reloads after valid change settles 10 s', async () => {
+test('--watch-code on temp code copy: refuses branch switch and syntax error, then reloads after a valid change settles', async () => {
   const h = makeHarness(['demo']);
+  h.env.ALBA_WATCH_CODE_DEBOUNCE_MS = '1500';
   const [p1] = h.projects;
   const code = makeTempCodeCopy(h.root);
   const targetTs = path.join(code.codeRoot, 'src', 'serve', 'fleet.ts');
@@ -658,7 +659,7 @@ test('--watch-code on temp code copy: refuses branch switch and syntax error, th
   };
 
   try {
-    // (a) Branch switch is refused after 10 s quiet window
+    // (a) Branch switch is refused after the quiet window
     execFileSync('git', ['checkout', '-b', 'feature-branch'], { cwd: code.codeRoot, windowsHide: true, stdio: 'ignore' });
     appendFileSync(targetTs, '\nexport const WATCH_STEP_BRANCH = 1;\n', 'utf8');
 
@@ -675,7 +676,7 @@ test('--watch-code on temp code copy: refuses branch switch and syntax error, th
     assert.equal(branchRefused, true, 'expected reload-refused on branch switch');
     assert.equal(isPidAlive(first.pid), true);
 
-    // Switch back to main and introduce a syntax error -> refused after 10 s quiet window
+    // Switch back to main and introduce a syntax error -> refused after the quiet window
     copyFileSync(backupTs, targetTs);
     execFileSync('git', ['checkout', 'main'], { cwd: code.codeRoot, windowsHide: true, stdio: 'ignore' });
     await sleep(300);
@@ -694,7 +695,7 @@ test('--watch-code on temp code copy: refuses branch switch and syntax error, th
     assert.equal(syntaxRefused, true, 'expected reload-refused on syntax error');
     assert.equal(isPidAlive(first.pid), true);
 
-    // Fix syntax error with a valid change on main -> reloads cleanly after 10 s quiet window
+    // Fix syntax error with a valid change on main -> reloads cleanly after the quiet window
     copyFileSync(backupTs, targetTs);
     appendFileSync(targetTs, '\nexport const WATCH_OK = 42;\n', 'utf8');
 

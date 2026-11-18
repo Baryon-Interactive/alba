@@ -64,6 +64,8 @@ export interface GateRunOptions {
   freeRamGb?: () => number | undefined;
   /** Tests: replace the lookup of start times and the process-tree stop. */
   commandOptions?: GateCommandOptions;
+  /** How many nights of runs and their folders are kept (default 14; tests use fewer). */
+  keepNights?: number;
 }
 export interface GateRunOutcome { status: 'skipped' | NightlyRun['status']; reason?: string; run?: NightlyRun }
 
@@ -272,7 +274,7 @@ export async function runNightlyGates(project: ProjectConfig, orders: Orders, op
         latest.lastFull = { commit: run.commit, at: run.ended };
         if (run.status === 'passed') latest.lastPass = { commit: run.commit, at: run.ended };
       }
-      const nights = [...new Set(latest.runs.map(r => r.night))].sort().slice(-14);
+      const nights = [...new Set(latest.runs.map(r => r.night))].sort().slice(-(options.keepNights ?? 14));
       expired = latest.runs.filter(r => !nights.includes(r.night));
       latest.runs = latest.runs.filter(r => nights.includes(r.night));
     }

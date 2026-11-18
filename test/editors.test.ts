@@ -90,12 +90,12 @@ test('editor helper: run starts the editor, waits for MCP, runs the worker, and 
   assert.match(stopped.stderr, /stopped the editor/);
   assert.equal(await answers(spec.url, 2000), false);
   // An editor that never answers: the worker is not started, the editor is stopped, and the reason is in the log line Alba reads.
-  const never: EditorSpec = { ...spec, args: [...spec.args, '-never'], ready_minutes: 0.15 };
+  const never: EditorSpec = { ...spec, args: [...spec.args, '-never'], ready_minutes: 0.05 };
   writeFileSync(specFile, JSON.stringify(never));
   const failed = spawnSync(process.execPath, [helper, 'run', '--', process.execPath, '-e', 'console.log("worker ran")'], { env, encoding: 'utf8', timeout: 90000 });
   assert.equal(failed.status, 86);
   assert.doesNotMatch(failed.stdout, /worker ran/);
-  assert.match(failed.stderr, /\[alba editor\] the run does not start: the editor's MCP server did not answer on http:\/\/127\.0\.0\.1:\d+\/mcp within 0\.15 min/);
+  assert.match(failed.stderr, /\[alba editor\] the run does not start: the editor's MCP server did not answer on http:\/\/127\.0\.0\.1:\d+\/mcp within 0\.05 min/);
   assert.deepEqual(findEditors(never), []);
 });
 

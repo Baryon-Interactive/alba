@@ -23,6 +23,8 @@ pnpm check:release
 pnpm check:changelog
 ```
 
+`pnpm test` runs eight test files at a time, then the timing-sensitive files (real serves, processes and probes) one at a time; both lists are in `scripts/run-tests.mjs`, and a test still running after 10 minutes fails as hung. While working, `pnpm test:fast` leaves out the slow integration files; before a merge run the full `pnpm test`. `pnpm test:serial` runs one file at a time, for telling a timing flake from a real failure.
+
 Skip only the specific assertion that does not apply to the platform, with a reason; never skip an entire file. Diagnose or isolate flaky or very slow tests; do not delete them or add retries. Before deleting a test, name the remaining test that covers its behavior. Run `pnpm test:ablation` before deleting or merging tests and review every surviving mutation. See [fault injection](docs/testing.md).
 
 ## Implementation conventions

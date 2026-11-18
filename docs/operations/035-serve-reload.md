@@ -42,7 +42,7 @@ Every manual reload and every `--watch-code` reload runs two child checks in par
 alba serve --watch-code --log logs/serve.log --project alba.yaml
 ```
 
-`--watch-code` records the git branch checked out at startup (`git symbolic-ref --short HEAD`) and watches `src/` recursively. After `10` seconds with no further file change, it reloads automatically if all three checks pass:
+`--watch-code` records the git branch checked out at startup (`git symbolic-ref --short HEAD`) and watches `src/` recursively. After `10` seconds with no further file change (`ALBA_WATCH_CODE_DEBOUNCE_MS` sets another quiet time in milliseconds), it reloads automatically if all three checks pass:
 
 - `git symbolic-ref --short HEAD` in the code repository still matches the branch checked out when serve started;
 - no merge, rebase, cherry-pick, revert or bisect is in progress (`MERGE_HEAD`, `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_LOG`);

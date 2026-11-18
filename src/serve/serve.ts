@@ -1,5 +1,6 @@
 import { acquireLock, lockFile, writeServeExit, type LockRelease } from './lock.ts';
-import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { writeFileAtomic } from '../orders/store.ts';
 import { createBoard } from '../web/server.ts';
 import { writeKeyFile } from '../web/auth.ts';
 import { systemProbes } from '../tick/gather.ts';
@@ -93,16 +94,13 @@ export function startServe(options: ServeOptions): StartedServe {
     }
     for (const project of options.projects) {
       const file = lockFile(project.state_dir);
-      const temporary = `${file}.${process.pid}.tmp`;
       try {
         const info = JSON.parse(readFileSync(file, 'utf8'));
         if (info.pid !== process.pid) continue;
-        writeFileSync(temporary, JSON.stringify({ ...info, port: address.port }) + '\n');
-        renameSync(temporary, file);
+        // Retries while Windows briefly refuses to replace a lock file another process is reading.
+        writeFileAtomic(file, JSON.stringify({ ...info, port: address.port }) + '\n');
       } catch (error) {
         options.print(`serve lock port update failed (${project.id}): ${(error as Error).message}`);
-      } finally {
-        try { rmSync(temporary, { force: true }); } catch { /* best-effort cleanup */ }
       }
     }
   });

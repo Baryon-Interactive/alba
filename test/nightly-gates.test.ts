@@ -195,12 +195,12 @@ test('a gate named run cannot release the batch lock before the next gate finish
   noScratch(f);
 });
 
-test('fourteen nights are retained and partial reruns do not advance the full checkpoint', async () => {
+test('the last nights are retained and partial reruns do not advance the full checkpoint', async () => {
   const f = fixture('sqlite', [gate('first'), gate('second')]); f.project.gates!.only_if_merged = false;
-  for (let day = 1; day <= 15; day++) assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at(day) })).status, 'passed');
-  const state = gatesState(f.project); assert.equal(state.runs.length, 14); assert.equal(state.runs[0].night, '2026-01-02');
-  assert.equal(readdirSync(path.join(f.project.state_dir, 'nightly-gates')).length, 14);
-  f.merge(); await runNightlyGates(f.project, f.orders, { now: f.at(15), force: true, gate: 'first' });
+  for (let day = 1; day <= 4; day++) assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at(day), keepNights: 3 })).status, 'passed');
+  const state = gatesState(f.project); assert.equal(state.runs.length, 3); assert.equal(state.runs[0].night, '2026-01-02');
+  assert.equal(readdirSync(path.join(f.project.state_dir, 'nightly-gates')).length, 3);
+  f.merge(); await runNightlyGates(f.project, f.orders, { now: f.at(4), force: true, gate: 'first', keepNights: 3 });
   assert.deepEqual(gatesState(f.project).lastFull, state.lastFull); assert.equal(gatesStatus(f.project)?.gates.length, 2); noScratch(f);
 });
 

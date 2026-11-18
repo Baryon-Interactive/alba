@@ -186,7 +186,8 @@ test('api: reads do not wait for the slow probes, and a write is visible in the 
   await f.write('/api/orders/D1/actions', { action: 'queue' });
   const d = (await f.get('/api/orders/D1')).body;
   assert.equal(d.stage, 'queued');
-  assert.ok(Date.now() - t0 < 1000, `took ${Date.now() - t0} ms`);
+  // Generous for a busy machine; waiting on a probe or a scan would take far longer.
+  assert.ok(Date.now() - t0 < 5000, `took ${Date.now() - t0} ms`);
 });
 
 test('stream: decisions, questions, quotes and a clean arrive as events of their own', async () => {

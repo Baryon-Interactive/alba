@@ -156,13 +156,13 @@ for (const mode of ['app-server', 'exec-resume'] as const) test(`Codex ${mode} a
   const f = await fixture({ populate: false }), p = f.board.ctx.projects[0], cli = path.join(p.root, 'slow.mjs');
   fakeEngine(cli, mode);
   // Delay the event response while keeping the startup handshake fast.
-  let source = readFileSync(cli, 'utf8').replace("const emit=value=>process.stdout.write(JSON.stringify(value)+'\\n');", "const emit=value=>{const send=()=>process.stdout.write(JSON.stringify(value)+'\\n'); if(value.method || value.type) setTimeout(send,80); else send();};");
+  let source = readFileSync(cli, 'utf8').replace("const emit=value=>process.stdout.write(JSON.stringify(value)+'\\n');", "const emit=value=>{const send=()=>process.stdout.write(JSON.stringify(value)+'\\n'); if(value.method || value.type) setTimeout(send,1500); else send();};");
   source = source.replace("log({args,pid:process.pid});", "log({args,pid:process.pid}); let input=''; if(!app) process.stdin.on('data',chunk=>input+=chunk);");
   source = source.replace("const turn=args.includes('resume')?2:1;", "log({inputLength:input.length}); const turn=args.includes('resume')?2:1;");
   writeFileSync(cli, source);
   const engine = new CodexEngine(), events: any[] = [];
   try {
-    await engine.start({ cli, cwd: p.root, mcpConfig: mcpConfig(p), systemPrompt: 'fixed'.repeat(20000), timeoutMs: 20 });
+    await engine.start({ cli, cwd: p.root, mcpConfig: mcpConfig(p), systemPrompt: 'fixed'.repeat(20000), timeoutMs: 1000 });
     const reading = (async () => { for await (const e of engine.readEvents()) events.push(e); })();
     await engine.sendBatch(['x'.repeat(100000)]); await until(() => events.some(e => e.type === 'result'));
     assert.ok(!events.some(e => e.type === 'process_exit')); assert.equal(engine.mode, mode);

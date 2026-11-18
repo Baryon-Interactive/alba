@@ -25,7 +25,7 @@ and open only the files your task needs.
 | `src/plugins/`, `src/editors/` | Tool plugins (MCP) and per-run editors. |
 | `src/i18n.ts`, `src/i18n-zh.ts` | Message catalogs; Chinese text lives only in translation catalogs. |
 | `ui/src/` | Console front end (React): `pages/`, `components/`, `i18n/`, `lib/`. |
-| `test/*.test.ts` | Root tests (Node test runner, run one file at a time with `node --test test/<name>.test.ts`). |
+| `test/*.test.ts` | Root tests (Node test runner; one file with `node --test test/<name>.test.ts`, quick set with `pnpm test:fast`, everything with `pnpm test`). |
 | `docs/` | Contracts by topic; index in [docs/README.md](docs/README.md). Workflow: `docs/workflow/`, workers: `docs/workers/`. |
 | `scripts/` | Build, docs/release/changelog checks, license report, ablation. |
 | `examples/` | Demo project and opt-in engine examples. |

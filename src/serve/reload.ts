@@ -499,7 +499,8 @@ export function attachServeReload(host: ReloadHost, runtime: ReloadRuntimeOption
   const cwd = runtime.cwd ?? process.cwd();
   const layout = resolveCodeLayout(runtime.entry, cwd);
   const drainSeconds = runtime.drainSeconds ?? DEFAULT_DRAIN_SECONDS;
-  const watchDebounceMs = runtime.watchDebounceMs ?? WATCH_CODE_DEBOUNCE_MS;
+  const envDebounce = Number(process.env.ALBA_WATCH_CODE_DEBOUNCE_MS);
+  const watchDebounceMs = runtime.watchDebounceMs ?? (Number.isInteger(envDebounce) && envDebounce > 0 ? envDebounce : WATCH_CODE_DEBOUNCE_MS);
 
   let reloading = false;
   let closed = false;

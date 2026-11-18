@@ -673,14 +673,18 @@ test('9. alba resources --json, alba lock list, alba leases release --project, a
       ].join('\n'));
     }
 
-    // Also hold a named lock with one queued waiter while running CLI checks
-    const lockHolder = spawn(process.execPath, [helper, 'capture', '--', process.execPath, '-e', 'setTimeout(()=>{}, 4000)'], {
+    // Also hold a named lock with one queued waiter while running CLI checks. The held command lasts until its helper is
+    // killed in the finally block (a fixed few seconds ran out on a busy machine before the checks read the lock).
+    const holdUntilParentDies = 'const p=process.ppid; setInterval(()=>{try{process.kill(p,0)}catch{process.exit(0)}},200)';
+    const lockHolder = spawn(process.execPath, [helper, 'capture', '--', process.execPath, '-e', holdUntilParentDies], {
       env: { ...process.env, ALBA_LOCK_DIR: lockDir, ALBA_RUN: 'A1/r1' }, windowsHide: true,
     });
     await new Promise(r => setTimeout(r, 150));
     const lockWaiter = spawn(process.execPath, [helper, 'capture', '--', process.execPath, '-e', 'process.exit(0)'], {
       env: { ...process.env, ALBA_LOCK_DIR: lockDir, ALBA_RUN: 'B1/r2' }, windowsHide: true,
     });
+    // Listen now: on a busy machine both helpers can exit before the checks below finish.
+    const helpersClosed = Promise.all([lockHolder, lockWaiter].map(c => new Promise(r => c.once('close', r))));
     const waitLock = Date.now() + 5000;
     while (Date.now() < waitLock && (readLocks()[0]?.queue?.length ?? 0) < 1) await new Promise(r => setTimeout(r, 50));
 
@@ -756,9 +760,6 @@ test('9. alba resources --json, alba lock list, alba leases release --project, a
     } finally {
       lockHolder.kill('SIGKILL');
       lockWaiter.kill('SIGKILL');
-      await Promise.all([
-        new Promise(r => lockHolder.on('close', r)),
-        new Promise(r => lockWaiter.on('close', r)),
-      ]);
+      await helpersClosed;
     }
   }));
