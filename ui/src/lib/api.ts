@@ -1,7 +1,7 @@
 import type {
   ActionRequest, ActionResult, ApiError, OrderSkills, Route, SkillsView, CheckRequest, CheckResult, CleanPlan, DecisionEntry, DecisionList, EvidenceList, LessonList,
   MergeReadiness, NewDecisionRequest, NewOrderRequest, NewOrderResult, OrderDetail, OrderDiff, OrderEvent, OrderList, Overview, ProjectInfo, QuotaHistory, Quote,
-  QuoteApproveRequest, QuoteList, QuoteRejectRequest, Question, QuestionAnswerRequest, RunList, RunLog, SayRequest, SayResult, Session, TickRequest, TickView,
+  QuoteApproveRequest, QuoteList, QuoteRejectRequest, Question, QuestionAnswerRequest, RunList, RunLog, RunTranscript, SayRequest, SayResult, Session, TickRequest, TickView,
   ResourceList, LeaseReleaseRequest, LeaseReleaseResult, WorkerList, WorkerEditRequest, WorkerEditResult, NewWorkerRequest, WorkerYaml, SkillUseRequest, ConfigEditResult,
   DocList, DocFile, DocSearch, OverviewAll, ProjectOverview, VerifyResult, ProducerView, ProducerActionRequest, ProducerChatView,
   ConfigView, RoutingMigration, OrderSummary,
@@ -110,6 +110,7 @@ export const api = {
   diff: (project: string, tag: string) => request<OrderDiff>(`/api/orders/${enc(tag)}/diff${qs({ project })}`),
   readiness: (project: string, tag: string) => request<MergeReadiness>(`/api/orders/${enc(tag)}/readiness${qs({ project })}`),
   runLog: (project: string, key: string, tail = 1000) => request<RunLog>(`/api/runs/${enc(key)}/log${qs({ project, tail })}`),
+  runTranscript: (project: string, key: string, q: { after?: number; limit?: number } = {}) => request<RunTranscript>(`/api/runs/${enc(key)}/transcript${qs({ project, ...q })}`),
   workers: (project: string) => request<WorkerList>(`/api/workers${qs({ project })}`),
   workerYaml: (project: string, id: string) => request<WorkerYaml>(`/api/workers/${enc(id)}/yaml${qs({ project })}`),
   editWorker: (id: string, body: WorkerEditRequest) => put<WorkerEditResult>(`/api/workers/${enc(id)}`, body),
