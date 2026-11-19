@@ -5,6 +5,7 @@ The run page shows a live phase, current command and elapsed time, plan, token c
 | Engine | Source and availability |
 |---|---|
 | `codex-cli` | `codex exec --json`: stdout events in `runs/<TAG>-rN.events.jsonl`; stderr in the existing `.log`. Commands, file changes, plans, messages, turn token usage and errors are folded. |
+| `codex-app` | `codex app-server` via `codex-app-run.mjs`: translates app-server notifications to the `codex exec --json` event shape, plus mid-turn message steering ([041](041-live-message-delivery.md)). |
 | `opencode` | `opencode run --format json`: tool uses, text and step token usage when emitted. |
 | `claude-cli` | `--output-format stream-json --verbose`: assistant text, tool calls/results, session ids, input/output/cache usage and final reports. Repeated failing tools feed the loop detector. |
 | `grok-cli` | `--output-format streaming-json`: tool calls, text, end usage and errors when emitted. |
@@ -26,7 +27,7 @@ reply <outbox id>
 Message text
 ```
 
-The `reply` line is optional. After following an entry, the worker appends its id on a line of `.alba/inbox-ack`. The thread calls it read once acknowledged or an event shows the inbox was opened; a worker can explicitly answer a message with an outbox entry whose `reply` names its inbox id. Old `seen <time>` entries remain readable.
+The `reply` line is optional. On local `claude-cli`, `agy-cli` and `codex-app` runs (unless `live_messages: false`), Alba delivers waiting inbox entries mid-run via engine hooks or `turn/steer` and records each delivery in `.alba/inbox-delivered` ([041](041-live-message-delivery.md)). After following an entry, the worker appends its id on a line of `.alba/inbox-ack`. The thread shows `sent` → `delivered` (with `via`: `hook`, `steer`, or `turn`) → `read` (acknowledged, inbox opened, or model activity after `delivered_at`) → `answered` (an outbox entry whose `reply` names its inbox id). Old `seen <time>` entries remain readable.
 
 A worker can append a complete JSON line to `.alba/outbox.jsonl`:
 

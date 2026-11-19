@@ -691,6 +691,14 @@ export class TranscriptFold {
       return;
     }
 
+    if (kind === 'user_message') {
+      const text = str(item.text).trim();
+      if (text && /\[alba message id=\S+/.test(text)) {
+        this.upsertText(key, 'message', completed ? 'done' : 'running', text, at);
+      }
+      return;
+    }
+
     if (kind === 'reasoning') {
       const text = reasoningText(item);
       if (!text && !(key && this.byKey.has(key))) return;
@@ -843,7 +851,15 @@ export class TranscriptFold {
   }
 
   private foldClaudeUser(e: Record<string, any>, at: string): void {
+    const rawContent = obj(e.message).content;
+    if (typeof rawContent === 'string' && /\[alba message id=\S+/.test(rawContent)) {
+      this.pushTextEntry('message', 'done', rawContent.trim(), at);
+    }
     for (const c of claudeContent(e)) {
+      if (c.type === 'text' && typeof c.text === 'string' && /\[alba message id=\S+/.test(c.text)) {
+        this.pushTextEntry('message', 'done', c.text.trim(), at);
+        continue;
+      }
       if (c.type !== 'tool_result') continue;
       const id = str(c.tool_use_id);
       const key = id ? `claude-tool:${id}` : undefined;

@@ -29,7 +29,11 @@ import { runCheck, summary } from '../check/check.ts';
 import { loadProject, type ProjectConfig } from '../config.ts';
 import { UserError, defaultLang, t, withLang, type Lang } from '../i18n.ts';
 import { answerOrder } from '../run/answer.ts';
+import { readInbox } from '../run/inbox.ts';
+import { liveActivityTimes } from '../run/messages.ts';
 import { sayToOrder } from '../run/say.ts';
+import { ownerOf } from '../usage/spend.ts';
+import { sayDeliveryMode } from '../workers/config.ts';
 import { startRun, type RunContext } from '../run/launch.ts';
 import { approve } from '../run/review.ts';
 import { planWorktree } from '../run/worktree.ts';
@@ -463,8 +467,18 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       return json(res, 200, { project: view.config.id, ...(stage ? { stage: stage as A.Stage } : {}), count: items.length, items } satisfies A.OrderList);
     }
     if (parts[0] === 'orders' && parts.length === 2) {
-      const d = detail(light(q('project')), parts[1], env());
+      const view = light(q('project'));
+      const d = detail(view, parts[1], env());
       const openRun = d.runs.find(r => !r.ended);
+      if (openRun) {
+        const doc = view.orders.get(d.order.tag);
+        const rawOpen = doc.runs.find(r => r.ended === undefined);
+        const worker = ctx.workers ? ownerOf(ctx.workers.workers, openRun.worker) : undefined;
+        d.sayDelivery = sayDeliveryMode(worker, rawOpen?.engine, !!rawOpen?.host);
+        if (d.worktree) {
+          d.messages = readInbox(d.worktree, { openedAt: openRun.live?.inbox_opened_at, activityAt: liveActivityTimes(openRun.live) });
+        }
+      }
       const closeProblem = openRun && d.stage !== 'running' && d.stage !== 'monitoring'
         ? t('Run {run} of {tag} is still open; stop the run first before closing.', { run: openRun.id, tag: d.order.tag })
         : actionProblem(d.stage, 'merged-elsewhere');
@@ -1154,7 +1168,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const sayCtx = body.restart === true ? runCtx() : { project: view.config, orders: view.orders, workers: ctx.workers ?? { file: '', workers: [], quota_sources: {} }, probes: ctx.probes };
       const r = sayToOrder(sayCtx, tag, text, { restart: body.restart === true, reply: str(body, 'reply') });
       const run = r.started?.run ? { id: r.started.run, key: `${tag}:${r.started.run}`, worker: r.started.worker, ...(r.started.pid ? { pid: r.started.pid } : {}), resumed: !!r.started.resumed } : undefined;
-      return done<A.SayResult>(200, { ok: true, tag, stage: r.stage as A.Stage, message: r.message, restarted: r.restarted, ...(run ? { run } : {}) });
+      return done<A.SayResult>(200, { ok: true, tag, stage: r.stage as A.Stage, message: r.message, restarted: r.restarted, ...(r.delivery ? { delivery: r.delivery } : {}), ...(run ? { run } : {}) });
     }
 
     if (parts[0] === 'decisions' && parts.length === 1) {

@@ -606,7 +606,9 @@ export interface OrderDetail {
   /** Notes (rework, answer, monitor, message) that no later run has really followed. Oldest first. */
   pendingNotes: { kind: 'rework' | 'answer' | 'monitor' | 'message'; text: string; at: string; question?: string }[];
   /** Messages left in the worktree inbox for the open run, oldest first. `seen` is set once the worker has read one. */
-  messages: { at: string; author: string; text: string; seen?: string }[];
+  messages: { id?: string; at: string; author: string; text: string; seen?: string; delivery?: 'sent' | 'delivered' | 'read' | 'answered'; delivered_at?: string; via?: 'hook' | 'steer' | 'turn' }[];
+  /** How a message sent with `say` travels to the open run (`live`, `steer` or `file`); absent when no run is open. */
+  sayDelivery?: 'live' | 'steer' | 'file';
   /** The commit reminder for the open run, when one has been sent. */
   commitNudge?: { at: string; count: number; files: number; minutes: number };
   /** The newest events of this order, oldest first (at most 200); `eventsTotal` counts all. */
@@ -964,6 +966,8 @@ export interface SayResult {
   stage: Stage;
   message: string;
   restarted: boolean;
+  /** How the message travels to the open run (`live`, `steer` or `file`); absent when queued or restarted. */
+  delivery?: 'live' | 'steer' | 'file';
   run?: { id: string; key: string; worker: string; pid?: number; resumed: boolean };
 }
 

@@ -49,6 +49,7 @@ export class LiveFold {
         for (const f of Array.isArray(item.changes) ? item.changes : []) if (string(f.path)) this.files.add(f.path);
         this.state.files_changed = [...this.files];
         this.state.phase = type === 'item.completed' ? 'thinking' : 'editing_files';
+        this.markActivity(at);
         if (type === 'item.completed') this.add({ at, kind, summary: oneLine((item.changes ?? []).map((f: any) => `${f.kind ?? ''} ${f.path ?? ''}`).join(', ')) });
       } else if (kind === 'reasoning') this.state.phase = 'thinking';
       else if (['command_execution', 'mcp_tool_call', 'web_search'].includes(kind)) {
@@ -132,8 +133,13 @@ export class LiveFold {
     }
   }
 
+  private markActivity(at: string): void {
+    const ms = Date.parse(at);
+    if (!Number.isFinite(ms)) return;
+    if (!this.state.last_activity_at || ms >= Date.parse(this.state.last_activity_at)) this.state.last_activity_at = at;
+  }
   private add(a: LiveActivity): void { this.state.recent.push(a); this.state.recent = this.state.recent.slice(-30); }
-  private message(at: string, text: string): void { if (!text) return; this.state.messages.push({ at, text }); this.state.messages = this.state.messages.slice(-10); this.add({ at, kind: 'message', summary: oneLine(text) }); }
+  private message(at: string, text: string): void { if (!text) return; this.markActivity(at); this.state.messages.push({ at, text }); this.state.messages = this.state.messages.slice(-10); this.add({ at, kind: 'message', summary: oneLine(text) }); }
   private plan(items: unknown, at: string): void {
     if (!Array.isArray(items)) return;
     const plan = items.map(i => ({ step: string(i.text ?? i.step), status: i.completed ? 'done' : string(i.status) || 'todo' })).filter(i => i.step);
@@ -142,6 +148,7 @@ export class LiveFold {
   }
   private start(id: string, kind: string, command: string, at: string): void {
     if (this.active.has(id)) return;
+    this.markActivity(at);
     this.active.set(id, { id, kind, command, started_at: at, elapsed_seconds: 0 });
     this.state.phase = 'running_command';
     if (kind === 'command_execution' || /command|bash|shell/i.test(command)) this.state.commands++;
@@ -152,6 +159,7 @@ export class LiveFold {
     const current = this.active.get(id);
     const cmd = current?.command || command;
     const seconds = current ? Math.max(0, (Date.parse(at) - Date.parse(current.started_at)) / 1000) : 0;
+    this.markActivity(at);
     if (!current && (kind === 'command_execution' || /command|bash|shell/i.test(cmd))) this.state.commands++;
     const bad = failed || (typeof code === 'number' && code !== 0);
     if (bad && (kind === 'command_execution' || /command|bash|shell/i.test(cmd))) this.state.failed_commands++;

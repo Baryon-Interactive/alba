@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { hookCommand } from '../../run/inbox.ts';
+import { liveMessagesEnabled } from '../config.ts';
 import { UsageFold, totalUsage } from './usage-fold.ts';
 import { claudeEnvironment } from './claude-protocol.ts';
 import { generic } from './generic.ts';
@@ -26,6 +31,21 @@ export const claude: WorkerAdapter = {
     const model = c.worker.model ?? c.worker.launch?.model;
     if (model) set('--model', model);
     if (c.resume) set('--resume', c.resume);
+    if (!c.remote && c.inboxHook && liveMessagesEnabled(c.worker)) {
+      const hookPath = path.resolve(c.inboxHook);
+      const settingsFile = c.promptFile.endsWith('.prompt.md')
+        ? c.promptFile.slice(0, -'.prompt.md'.length) + '.claude-settings.json'
+        : path.join(c.stateDir, 'runs', `claude-hooks-${randomUUID()}.json`);
+      mkdirSync(path.dirname(settingsFile), { recursive: true });
+      const settings = {
+        hooks: {
+          PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand(hookPath, 'claude', 'post-tool-use'), timeout: 10 }] }],
+          Stop: [{ hooks: [{ type: 'command', command: hookCommand(hookPath, 'claude', 'stop'), timeout: 10 }] }],
+        },
+      };
+      writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+      set('--settings', settingsFile.replace(/\\/g, '/'));
+    }
     return { args, ...(c.remote ? { env: c.env, envUnset: c.envUnset } : claudeEnvironment(c.stateDir, c.worker.id, c.env, c.envUnset, c.skills)) };
   },
 };

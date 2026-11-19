@@ -204,7 +204,7 @@ test('fake launches carry rules, MCP argv and redacted run-start metadata; no-ro
       assert.ok(readFileSync(pf, 'utf8').startsWith(expectedPrompt));
       assert.match(readFileSync(pf, 'utf8').slice(expectedPrompt.length), /^\n## Where you work\n\nYour working folder is .*\n$/);
     }
-    const expected = engine === 'codex-cli' ? ['exec', '--json', pf] : engine === 'opencode' ? ['run', '--format', 'json', pf] : engine === 'grok-cli' ? ['--output-format', 'streaming-json', pf] : ['-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions', pf];
+    const expected = engine === 'codex-cli' ? ['exec', '--json', pf] : engine === 'opencode' ? ['run', '--format', 'json', pf] : engine === 'grok-cli' ? ['--output-format', 'streaming-json', pf] : ['-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions', '--settings', pf.replace(/\.prompt\.md$/, '.claude-settings.json'), pf];
     assert.deepEqual(argv, expected);
     assert.equal(noRole.role, 'default');
     assert.equal(existsSync(path.join(noRole.cwd!, '.opencode/opencode.json')), false);
