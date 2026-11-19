@@ -27,7 +27,7 @@ export function mountRole(cwd: string, engine: string, role: ResolvedRole, envir
   const result: RoleMount = { args: [], env: {}, servers: [], warnings: [] };
   const entries = Object.entries(role.definition?.mcp ?? {}).filter(([, s]) => !s.engines?.length || s.engines.includes(engine));
   if (!entries.length) return result;
-  if (!['claude-cli', 'codex-cli', 'opencode'].includes(engine)) {
+  if (!['claude-cli', 'codex-cli', 'codex-app', 'opencode'].includes(engine)) {
     result.warnings.push(`role ${role.id}: MCP servers not mounted for engine ${engine}`);
     return result;
   }
@@ -36,7 +36,7 @@ export function mountRole(cwd: string, engine: string, role: ResolvedRole, envir
     result.env[key] = environment[key]!;
   }
   result.servers = entries.map(([name]) => name);
-  if (engine === 'codex-cli') {
+  if (engine === 'codex-cli' || engine === 'codex-app') {
     for (const [name, server] of entries) for (const [key, value] of Object.entries(server.url ? { url: server.url, ...(server.tools ? { enabled_tools: server.tools } : {}) } : { command: server.command, args: server.args, env_vars: server.env_from ?? [], ...(server.tools ? { enabled_tools: server.tools } : {}) })) result.args.push('-c', `mcp_servers.${name}.${key}=${JSON.stringify(value)}`);
     return result;
   }

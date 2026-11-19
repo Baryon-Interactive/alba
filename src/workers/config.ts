@@ -7,6 +7,7 @@ import { fail } from '../i18n.ts';
 import { loadSkillsConfig, type SkillsRegistryConfig } from '../skills/registry.ts';
 import { validateUsageLedgers, type UsageLedgerConfig } from '../library/config.ts';
 import { validateNotify, type NotifyConfig } from '../notify/config.ts';
+import { parseCodexAppFlags } from './adapters/codex-app.ts';
 
 /** Where a worker's quota is read from. No secrets here: a command may read them from wherever it likes. */
 export interface CommandQuota {
@@ -286,6 +287,13 @@ function validateWorker(raw: unknown, where: string, warnings: string[] = []): W
     const shell = /^(powershell|pwsh|cmd|bash|sh|zsh)(\.exe)?$/i.test((l.program as string).split(/[\\/]/).pop() ?? '');
     if (worker.engine === 'codex-cli' && shell && !args.includes('{engine_flags}') && !args.includes('exec') && !(session && session.new.includes('exec') && session.resume.includes('exec'))) {
       fail('{where}: engine codex-cli adds "--json" right after "exec" in the arguments, and "program" is a shell with no "exec" in "args" (a wrapper script?): the shell would get "--json" as its own argument. Start codex itself with "exec" in "args", or put the entry "{engine_flags}" in "args" where the flags of codex go and have the wrapper pass them on to "codex exec".', { where: here });
+    }
+    if (worker.engine === 'codex-app') {
+      parseCodexAppFlags(args, `${here}.args`);
+      if (session) {
+        parseCodexAppFlags(session.new, `${here}.session.new`);
+        parseCodexAppFlags(session.resume, `${here}.session.resume`);
+      }
     }
     const env = l.env === undefined ? {} : l.env;
     if (!isRecord(env) || Object.values(env).some(v => typeof v !== 'string')) fail('{where}: "env" must map names to strings.', { where: here });

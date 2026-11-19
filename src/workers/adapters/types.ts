@@ -1,7 +1,7 @@
 import type { WorkerConfig } from '../config.ts';
 import type { SelectedSkill } from '../../skills/registry.ts';
 import type { RunUsage } from '../../api/types.ts';
-export interface LaunchContext { remote?: boolean; worker: WorkerConfig; stateDir: string; skills: SelectedSkill[]; resume?: string; env: Record<string, string>; envUnset: string[]; promptFile: string; lastFile: string; cwd?: string; inboxHook?: string; program?: string }
+export interface LaunchContext { remote?: boolean; worker: WorkerConfig; stateDir: string; skills: SelectedSkill[]; resume?: string; env: Record<string, string>; envUnset: string[]; promptFile: string; lastFile: string; cwd?: string; inboxHook?: string; program?: string; extraArgs?: string[] }
 /**
  * Why a run could not work at all, as the engine says it (signed out, region, unknown model, quota used up). `retry`: it may go away
  * by itself, so the run is resumed like after a transient error until the resumes run out; `limit`: a used-up quota (handed over on

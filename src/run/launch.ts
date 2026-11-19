@@ -294,14 +294,15 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = launchArgs(worker.launch, values, resumeSession !== undefined);
   const launchEnv = expandEnv(worker.launch.env, { ...skillEnvValues(skillPlan.selection), tunnel_port: values.tunnel_port });
-  const environment = adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file, cwd: plan.path, ...(inboxHook ? { inboxHook } : {}), program: worker.launch.program });
-  args.unshift(...roleMount.args);
+  const environment = adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file, cwd: plan.path, ...(inboxHook ? { inboxHook } : {}), program: worker.launch.program, extraArgs: roleMount.args });
+  if (!environment.program) args.unshift(...roleMount.args);
   Object.assign(environment.env, roleMount.env);
   environment.env[RUN_ENV] = `${doc.order.tag}/${runId}`;
   if (editor) { environment.env.NO_PROXY = withLoopback(environment.env.NO_PROXY ?? process.env.NO_PROXY); environment.env.no_proxy = withLoopback(environment.env.no_proxy ?? process.env.no_proxy); }
   const launchProgram = environment.program ?? worker.launch.program;
+  const launchArgv = environment.program ? environment.args : args;
   // With an editor the worker is started by the editor helper, which starts the editor first and stops it when the worker ends.
-  const command = editor ? { program: remote ? 'node' : process.execPath, args: [slash(path.join(plan.path, '.alba', 'bin', 'editor.mjs')), 'run', '--', launchProgram, ...args] } : { program: launchProgram, args };
+  const command = editor ? { program: remote ? 'node' : process.execPath, args: [slash(path.join(plan.path, '.alba', 'bin', 'editor.mjs')), 'run', '--', launchProgram, ...launchArgv] } : { program: launchProgram, args: launchArgv };
   if (guard?.warning) roleMount.warnings.push(guard.warning);
   environment.envUnset = environment.envUnset.filter(n => !Object.hasOwn(roleMount.env, n));
   const eventsFile = adapter.structured ? slash(path.join(runsDir, `${doc.order.tag}-${runId}.events.jsonl`)) : undefined;
