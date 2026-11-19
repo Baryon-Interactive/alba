@@ -826,7 +826,6 @@ export const zh: Record<string, string> = {
   'A message needs its text (--text).': '消息需要文字（--text）。',
   '{tag} has no open run to leave a message for.': '{tag} 没有进行中的派工，没法留言。',
   '{tag} has no worktree, so there is nowhere to leave the message.': '{tag} 没有工作树，所以没有地方留言。',
-  'Message left for {tag}. The open run reads it from the worktree inbox.': '已给 {tag} 留言。进行中的派工会从工作树的收件箱读到它。',
   'Message left for {tag} (live: delivered on the next tool or model call).': '已给 {tag} 留言（实时：在下一次工具或模型调用时送达）。',
   'Message left for {tag} (steer: sent directly into the running Codex turn).': '已给 {tag} 留言（引导：直接送入正在运行的 Codex 回合）。',
   'Message left for {tag} (file: the open run reads it from the worktree inbox).': '已给 {tag} 留言（文件：进行中的派工会从工作树的收件箱读到它）。',
