@@ -151,9 +151,9 @@ A rework note, an answer, a monitor result or a message (`alba say --restart`) c
 
 ## 4c. Messages and the commit reminder
 
-`alba say <TAG> --text <message>` (and the Message box on the order page) appends the message, with the time and who sent it, to `.alba/inbox.md` in the run's worktree. That path is added to the worktree's `info/exclude`, not to the repository `.gitignore`. The order page shows whether the worker has marked a message seen.
+`alba say <TAG> --text <message>` (and the Message box on the order page) appends the message, with the time and who sent it, to `.alba/inbox.md` in the run's worktree. That path is added to the worktree's `info/exclude`, not to the repository `.gitignore`. On local `claude-cli`, `agy-cli` and `codex-app` runs (unless `live_messages: false`), the message is also delivered mid-run via lifecycle hooks (`live`) or Codex app-server steering (`steer`), while other engines and remote runs stay `file`-only ([041](041-live-message-delivery.md)). Both `alba say` and the order page say which delivery path applies and track each message through `sent`, `delivered`, `read` and `answered`.
 
-The worker rules say to read that file after each commit and at least every 15 minutes, follow new messages, and append `seen <time>` under each one.
+The worker rules keep reading `.alba/inbox.md` as the fallback (after each commit, after each long command, and at least every 15 minutes) and acknowledge both file and mid-run `[alba message id=...]` messages via `.alba/inbox-ack`.
 
 `--restart` is for when the worker does not read the inbox in time. It stops only a process the tool started: the recorded pid must still be alive and its OS creation time must match the one recorded at launch. Anything else is refused and left running. Then the run is recorded as stopped by a person and a new run carries the message as a note (section 4b). When the engine can resume its session, that session continues with the message; otherwise it is a fresh run.
 

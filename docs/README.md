@@ -36,6 +36,7 @@ Start with the [five-minute demo](../examples/demo/README.md), then choose a top
 | [019-live-runs-and-messages.md](workers/019-live-runs-and-messages.md) | 019. Live runs and messages |
 | [031-tool-plugins.md](workers/031-tool-plugins.md) | 031. Tool plugins |
 | [032-run-editors.md](workers/032-run-editors.md) | 032. An editor for each run |
+| [041-live-message-delivery.md](workers/041-live-message-delivery.md) | 041. Live message delivery (`alba say`) |
 
 ## Console
 
