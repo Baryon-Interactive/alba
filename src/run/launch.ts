@@ -17,13 +17,13 @@ import { fail, t } from '../i18n.ts';
 import type { Run } from '../orders/model.ts';
 import { heldStartPlan, type Orders } from '../orders/service.ts';
 import type { Probes } from '../tick/gather.ts';
-import type { WorkersFile } from '../workers/config.ts';
+import { liveMessagesEnabled, type WorkersFile } from '../workers/config.ts';
 import { selectLessons, workerLessonRun, type LessonSelection } from '../lessons/select.ts';
 import { routingOf } from '../routing/classify.ts';
 import { acquireLeases, activeLeases, capFull, capHolds, kindOfOrder, occupants, releaseLease, startBlocked, usesOf, type CapHold } from '../resources/leases.ts';
 import { stateTransaction } from '../orders/state-files.ts';
 import { excludeLocally, mountSkills } from '../skills/mount.ts';
-import { ensureInbox, installLockHelper } from './inbox.ts';
+import { cleanAgyInboxHooks, ensureInbox, installAgyInboxHooks, installInboxHook, installLockHelper } from './inbox.ts';
 import { planSkills, skillEnvValues } from '../skills/plan.ts';
 import { checkToolEnvironment, orderTools, toolsPrompt, withToolServers } from '../plugins/tools.ts';
 import { handoffLine, handoffPrompt, writeHandoff } from './handoff.ts';
@@ -262,6 +262,20 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   try { mountedSkills = mountSkills(plan.path, skillPlan.mounts, skillPlan.selection.selected).mounted; } catch { /* the prompt still lists the skills with their source files below */ }
   try { ensureInbox(plan.path); } catch { /* a missing inbox only means the worker finds no messages */ }
   try { installLockHelper(plan.path); } catch { /* the rules say what to do without it */ }
+  let inboxHook: string | undefined;
+  if (!remote && liveMessagesEnabled(worker) && (worker.engine === 'claude-cli' || worker.engine === 'agy-cli')) {
+    try { inboxHook = installInboxHook(plan.path); } catch { /* falls back to file inbox */ }
+    if (worker.engine === 'agy-cli' && inboxHook) {
+      try {
+        const res = installAgyInboxHooks(plan.path, inboxHook);
+        if (res.warning) roleMount.warnings.push(res.warning);
+      } catch (e) {
+        roleMount.warnings.push(`agy live message hooks were not installed: ${(e as Error).message.split('\n')[0]}`);
+      }
+    }
+  } else if (!remote) {
+    try { cleanAgyInboxHooks(plan.path); } catch { /* leave untouched */ }
+  }
   const lessonRun = workerLessonRun(project, worker, workers.file, remote?.machine.os);
   let chosenLessons: LessonSelection | undefined;
   const getLessons = () => (chosenLessons ??= selectLessons(project, doc, lessonRun));
@@ -280,13 +294,14 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = launchArgs(worker.launch, values, resumeSession !== undefined);
   const launchEnv = expandEnv(worker.launch.env, { ...skillEnvValues(skillPlan.selection), tunnel_port: values.tunnel_port });
-  const environment = adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file });
+  const environment = adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file, cwd: plan.path, ...(inboxHook ? { inboxHook } : {}), program: worker.launch.program });
   args.unshift(...roleMount.args);
   Object.assign(environment.env, roleMount.env);
   environment.env[RUN_ENV] = `${doc.order.tag}/${runId}`;
   if (editor) { environment.env.NO_PROXY = withLoopback(environment.env.NO_PROXY ?? process.env.NO_PROXY); environment.env.no_proxy = withLoopback(environment.env.no_proxy ?? process.env.no_proxy); }
+  const launchProgram = environment.program ?? worker.launch.program;
   // With an editor the worker is started by the editor helper, which starts the editor first and stops it when the worker ends.
-  const command = editor ? { program: remote ? 'node' : process.execPath, args: [slash(path.join(plan.path, '.alba', 'bin', 'editor.mjs')), 'run', '--', worker.launch.program, ...args] } : { program: worker.launch.program, args };
+  const command = editor ? { program: remote ? 'node' : process.execPath, args: [slash(path.join(plan.path, '.alba', 'bin', 'editor.mjs')), 'run', '--', launchProgram, ...args] } : { program: launchProgram, args };
   if (guard?.warning) roleMount.warnings.push(guard.warning);
   environment.envUnset = environment.envUnset.filter(n => !Object.hasOwn(roleMount.env, n));
   const eventsFile = adapter.structured ? slash(path.join(runsDir, `${doc.order.tag}-${runId}.events.jsonl`)) : undefined;

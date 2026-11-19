@@ -50,10 +50,30 @@ export const unanswered = (doc: OrderDoc): OutboxEntry[] => {
 /** The worker's open questions: these, not blockers or notes, put a running order in front of a person (`awaiting-user`). */
 export const openQuestions = (doc: OrderDoc): OutboxEntry[] => unanswered(doc).filter(e => e.kind === 'question');
 
+/** Collects model activity timestamps (messages, tool calls, commands, file changes) from a `LiveState`. */
+export function liveActivityTimes(live?: LiveState): string[] {
+  if (!live) return [];
+  const times: string[] = [];
+  if (live.last_activity_at) times.push(live.last_activity_at);
+  for (const a of live.recent) if (a.kind !== 'error' && a.kind !== 'log') times.push(a.at);
+  for (const m of live.messages) times.push(m.at);
+  return times;
+}
+
 export function threadOf(doc: OrderDoc, live?: LiveState): ThreadEntry[] {
-  const messages = doc.order.worktree ? readInbox(doc.order.worktree, live?.inbox_opened_at) : [];
+  const messages = doc.order.worktree ? readInbox(doc.order.worktree, { openedAt: live?.inbox_opened_at, activityAt: liveActivityTimes(live) }) : [];
   const out = doc.outbox ?? [];
-  const thread: ThreadEntry[] = messages.map(m => ({ id: m.id, at: m.at, kind: 'inbox', text: m.text, ...(m.reply ? { reply: m.reply } : {}), delivery: out.some(e => e.reply === m.id) || (m.seen && live?.messages.some(e => e.at >= m.seen! && e.at > m.at)) ? 'answered' : m.delivery }));
+  const thread: ThreadEntry[] = messages.map(m => ({
+    id: m.id,
+    at: m.at,
+    kind: 'inbox',
+    text: m.text,
+    ...(m.reply ? { reply: m.reply } : {}),
+    ...(m.delivered_at ? { delivered_at: m.delivered_at } : {}),
+    ...(m.via ? { via: m.via } : {}),
+    ...(m.seen ? { seen: m.seen } : {}),
+    delivery: out.some(e => e.reply === m.id) || (m.seen && live?.messages.some(e => e.at >= m.seen! && e.at > m.at)) ? 'answered' : m.delivery,
+  }));
   for (const e of out) thread.push({ ...e, delivery: e.answered ? 'answered' : undefined });
   for (const r of doc.reports) thread.push({ id: `report-${r.seq}`, at: r.at, kind: 'report', text: [r.summary, r.question].filter(Boolean).join('\n') });
   for (const a of doc.actions.filter(a => ['answer', 'rework', 'message'].includes(a.kind))) thread.push({ id: `action-${a.seq}`, at: a.at, kind: a.kind, text: a.note ?? '' });

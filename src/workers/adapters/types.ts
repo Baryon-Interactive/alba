@@ -1,7 +1,7 @@
 import type { WorkerConfig } from '../config.ts';
 import type { SelectedSkill } from '../../skills/registry.ts';
 import type { RunUsage } from '../../api/types.ts';
-export interface LaunchContext { remote?: boolean; worker: WorkerConfig; stateDir: string; skills: SelectedSkill[]; resume?: string; env: Record<string, string>; envUnset: string[]; promptFile: string; lastFile: string }
+export interface LaunchContext { remote?: boolean; worker: WorkerConfig; stateDir: string; skills: SelectedSkill[]; resume?: string; env: Record<string, string>; envUnset: string[]; promptFile: string; lastFile: string; cwd?: string; inboxHook?: string; program?: string }
 /**
  * Why a run could not work at all, as the engine says it (signed out, region, unknown model, quota used up). `retry`: it may go away
  * by itself, so the run is resumed like after a transient error until the resumes run out; `limit`: a used-up quota (handed over on
@@ -13,7 +13,7 @@ export interface WorkerAdapter {
   structured: boolean;
   nativeResume: boolean;
   finalMessagePrompt?(worker: WorkerConfig, lastFile: string): string;
-  prepare(args: string[], context: LaunchContext): { args: string[]; env: Record<string, string>; envUnset: string[] };
+  prepare(args: string[], context: LaunchContext): { program?: string; args: string[]; env: Record<string, string>; envUnset: string[] };
   verifierArgs?(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[]): string[];
   verifierEnvironment?(stateDir: string, workerId: string, env: Record<string, string>, envUnset: string[]): { env: Record<string, string>; envUnset: string[] };
   verifierServers?(program: string, cwd: string, run: (command: string[]) => string): string[];

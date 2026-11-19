@@ -54,6 +54,27 @@ export interface LaunchTemplate {
 export const ENV_PLACEHOLDERS = ['skill_names', 'skill_allow', 'tunnel_port'];
 export const PLACEHOLDERS = ['cwd', 'prompt_file', 'last_file', 'model', 'log', 'git_dir', 'worktree_git_dir', 'session_id', 'tunnel_port'] as const;
 
+export const LIVE_MESSAGE_ENGINES = new Set(['claude-cli', 'agy-cli', 'codex-app']);
+
+/** Whether this worker uses live mid-run message delivery (local runs only, unless switched off with `live_messages: false`). */
+export function liveMessagesEnabled(worker: Pick<WorkerConfig, 'engine' | 'live_messages' | 'host'> | undefined): boolean {
+  if (!worker || worker.host) return false;
+  if (!LIVE_MESSAGE_ENGINES.has(worker.engine)) return false;
+  return worker.live_messages !== false;
+}
+
+/** How `alba say` messages travel to an open run on this worker: `steer`, `live`, or `file`. */
+export function sayDeliveryMode(worker: Pick<WorkerConfig, 'engine' | 'live_messages' | 'host'> | undefined, fallbackEngine?: string, isRemote?: boolean): 'live' | 'steer' | 'file' {
+  if (isRemote || worker?.host) return 'file';
+  if (worker) {
+    if (!liveMessagesEnabled(worker)) return 'file';
+    return worker.engine === 'codex-app' ? 'steer' : 'live';
+  }
+  if (fallbackEngine === 'codex-app') return 'steer';
+  if (fallbackEngine === 'claude-cli' || fallbackEngine === 'agy-cli') return 'live';
+  return 'file';
+}
+
 import type { Pricing } from '../usage/types.ts';
 export interface WorkerConfig {
   host?: string;
@@ -88,6 +109,7 @@ export interface WorkerConfig {
   trip_minutes?: number;             // how long such a pause lasts before one more run may try (default 60)
   max_resumes?: number;              // consecutive capacity resumes before failing (default 3)
   resume_backoff_minutes?: number[]; // waits before each resume; the last value repeats (default [1, 5, 15])
+  live_messages?: boolean;           // mid-run message delivery (default true for claude-cli, agy-cli, codex-app; ignored for others)
 }
 
 export interface WorkersFile {
@@ -133,7 +155,7 @@ export function validateWorkers(raw: unknown, file: string): WorkersFile {
   const ids = new Set<string>();
   const warnings: string[] = [];
   const workers = raw.workers.map((w, i) => {
-    const worker = validateWorker(w, `${file}: workers[${i}]`);
+    const worker = validateWorker(w, `${file}: workers[${i}]`, warnings);
     if (ids.has(worker.id)) fail('{file}: worker id "{id}" appears twice.', { file, id: worker.id });
     ids.add(worker.id);
     if (worker.quota && !sources[worker.quota]) fail('{where}: quota "{name}" is not defined in quota_sources.', { where: `${file}: worker "${worker.id}"`, name: worker.quota });
@@ -159,9 +181,9 @@ export function routingOf(raw: Record<string, unknown>, file: string): { roles?:
   return raw.roles !== undefined ? { roles: validateRoles(raw.roles, file) } : {};
 }
 
-function validateWorker(raw: unknown, where: string): WorkerConfig {
+function validateWorker(raw: unknown, where: string, warnings: string[] = []): WorkerConfig {
   if (!isRecord(raw)) fail('{where} must be a mapping.', { where });
-  const known = ['capabilities', 'notes', 'model', 'id', 'engine', 'route', 'paid', 'concurrency', 'daily_runs', 'aliases', 'quota', 'enabled', 'disabled_when', 'card_only', 'launch', 'price', 'daily_cap_usd', 'cost', 'skills_mount', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes', 'pricing', 'max_tokens_per_run', 'max_minutes_per_run', 'max_usd_per_run', 'trip_after_failures', 'trip_minutes', 'host', 'tunnel'];
+  const known = ['capabilities', 'notes', 'model', 'id', 'engine', 'route', 'paid', 'concurrency', 'daily_runs', 'aliases', 'quota', 'enabled', 'disabled_when', 'card_only', 'launch', 'price', 'daily_cap_usd', 'cost', 'skills_mount', 'model_family', 'on_limit', 'rotate_paid', 'max_resumes', 'resume_backoff_minutes', 'pricing', 'max_tokens_per_run', 'max_minutes_per_run', 'max_usd_per_run', 'trip_after_failures', 'trip_minutes', 'host', 'tunnel', 'live_messages'];
   const unknown = Object.keys(raw).filter(k => !known.includes(k));
   if (unknown.length) fail('{where}: unknown key(s): {keys}.', { where, keys: unknown.join(', ') });
   const text = (key: string, required: boolean): string | undefined => {
@@ -209,6 +231,12 @@ function validateWorker(raw: unknown, where: string): WorkerConfig {
   if (raw.on_limit !== undefined) worker.on_limit = raw.on_limit as 'wait' | 'rotate';
   if (raw.rotate_paid !== undefined && typeof raw.rotate_paid !== 'boolean') fail('{where}: "rotate_paid" must be true or false.', { where });
   if (raw.rotate_paid === true) worker.rotate_paid = true;
+  if (raw.live_messages !== undefined && typeof raw.live_messages !== 'boolean') fail('{where}: "live_messages" must be true or false.', { where });
+  if (LIVE_MESSAGE_ENGINES.has(engine)) {
+    worker.live_messages = raw.live_messages === undefined ? true : raw.live_messages;
+  } else if (raw.live_messages !== undefined) {
+    warnings.push(`${where}: "live_messages" is ignored for engine "${engine}" (only claude-cli, agy-cli and codex-app support live message delivery).`);
+  }
   if (raw.max_resumes !== undefined) {
     if (typeof raw.max_resumes !== 'number' || !Number.isInteger(raw.max_resumes) || raw.max_resumes < 0 || raw.max_resumes > 50) fail('{where}: "max_resumes" must be a whole number from 0 to 50.', { where });
     worker.max_resumes = raw.max_resumes;

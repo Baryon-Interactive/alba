@@ -1018,7 +1018,10 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
   if (group === 'say') {
     need0(command, 'alba say <TAG> --text <message> [--restart]');
     if (!values.text?.trim()) fail('A message needs its text (--text).');
-    return sayToOrder({ project: cfg, orders, workers: values.restart ? workersOf(values.workers, cfg) : { file: '', workers: [], quota_sources: {} }, probes: systemProbes }, command!, values.text, { restart: values.restart, reply: values.reply }).message;
+    let workers = { file: '', workers: [] as ReturnType<typeof workersOf>['workers'], quota_sources: {} };
+    if (values.restart) workers = workersOf(values.workers, cfg);
+    else { try { workers = workersOf(values.workers, cfg); } catch { /* projects without a workers file fall back to run.engine */ } }
+    return sayToOrder({ project: cfg, orders, workers, probes: systemProbes }, command!, values.text, { restart: values.restart, reply: values.reply }).message;
   }
 
   if (group === 'answer') {

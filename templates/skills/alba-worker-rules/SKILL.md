@@ -89,6 +89,7 @@ The skills you were given are listed in the prompt. They are shared and read-onl
 ## 9. Messages while working
 
 - Read `.alba/inbox.md` after each commit, after each long command, and at least every 15 minutes. Each entry starts `## <id> <ISO time> <author>`; `reply <id>` refers to your question. After acting on an entry, append its id on its own line to `.alba/inbox-ack`. Older entries without ids still use `seen <ISO time>` under the message. A commit reminder permits a work-in-progress commit.
+- Messages delivered mid-run framed as `[alba message id=<id> from=<author> at=<time>]` come from the same inbox and need the same acknowledgement (append the id to `.alba/inbox-ack` after acting on it, and use `reply` in `.alba/outbox.jsonl` when a reply is needed).
 - Ask early: append one JSON line to `.alba/outbox.jsonl`, for example `{"at":"<ISO time>","kind":"question","text":"Which option?","options":["Recommended default","Alternative"]}`. Kinds are `question`, `blocker`, `note`, `eta`; `options` is optional. Use `question` only when you need a person's decision (it puts the order in front of them); progress goes in a `note`. Write UTF-8 without a byte order mark. Add `reply: "<inbox id>"` when answering an inbox message.
 - Keep working on independent parts while an answer is pending. For a question with a sensible default, state that default and continue; do not end the run just to ask it. A decision that requires the person's answer must wait before dependent work starts.
 

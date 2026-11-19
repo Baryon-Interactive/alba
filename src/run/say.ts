@@ -3,7 +3,8 @@ import { actionProblem } from '../orders/stage.ts';
 import type { Run } from '../orders/model.ts';
 import { ownerOf } from '../usage/spend.ts';
 import type { Probes } from '../tick/gather.ts';
-import { appendInbox } from './inbox.ts';
+import { sayDeliveryMode } from '../workers/config.ts';
+import { appendInbox, type SayDeliveryMode } from './inbox.ts';
 import { startRun, type RunContext, type StartResult } from './launch.ts';
 import { runProcessMatches } from './kill-tree.ts';
 
@@ -11,6 +12,7 @@ export interface SayResult {
   stage: string;
   restarted: boolean;
   message: string;
+  delivery?: SayDeliveryMode;
   started?: Extract<StartResult, { mode: 'start' }>;
 }
 
@@ -45,8 +47,15 @@ export function sayToOrder(ctx: RunContext, tag: string, text: string | undefine
     const at = orders.now();
     const id = appendInbox(worktree, { at, author: orders.actor, text: body, reply: options.reply });
     if (options.reply) orders.answerOutbox(tag, options.reply, { id, at, text: body });
-    orders.record(doc.order.tag, 'message', { id, at, run: open.id, text: body, ...(options.reply ? { reply: options.reply } : {}) });
-    return { stage: orders.stage(orders.get(tag)).stage, restarted: false, message: t('Message left for {tag}. The open run reads it from the worktree inbox.', { tag: doc.order.tag }) };
+    const worker = ownerOf(workers.workers, open.worker);
+    const delivery = sayDeliveryMode(worker, open.engine, !!open.host);
+    orders.record(doc.order.tag, 'message', { id, at, run: open.id, text: body, delivery, ...(options.reply ? { reply: options.reply } : {}) });
+    const message = delivery === 'steer'
+      ? t('Message left for {tag} (steer: sent directly into the running Codex turn).', { tag: doc.order.tag })
+      : delivery === 'live'
+        ? t('Message left for {tag} (live: delivered on the next tool or model call).', { tag: doc.order.tag })
+        : t('Message left for {tag} (file: the open run reads it from the worktree inbox).', { tag: doc.order.tag });
+    return { stage: orders.stage(orders.get(tag)).stage, restarted: false, delivery, message };
   }
   const problem = actionProblem(orders.stage(doc).stage, 'message');
   if (problem) fail('{tag}: {problem}', { tag: doc.order.tag, problem });
