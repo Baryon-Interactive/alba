@@ -1199,6 +1199,8 @@ export const zh: Record<string, string> = {
   '{file}: "consult.max_per_run" must be a whole number >= 1.': '{file}：“consult.max_per_run”必须是大于等于 1 的整数。',
   '{file}: "consult.timeout_minutes" must be a positive number <= 30.': '{file}：“consult.timeout_minutes”必须是小于等于 30 的正数。',
   '{file}: "consult.kinds" must be a non-empty list of kinds.': '{file}：“consult.kinds”必须是非空类型列表。',
+  'No such run: {key}.': '没有这次派工：{key}。',
+  'Consults': '跨模型咨询',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

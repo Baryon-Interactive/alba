@@ -94,10 +94,11 @@ import { bodyHashOf, claimIdempotency, completeIdempotency, IDEMPOTENCY_KEY_RE, 
 import { readOrders } from './read-orders.ts';
 import type { Hub } from './hub.ts';
 import { transcriptRuns } from '../run/transcript.ts';
+import { readRunConsults } from '../consult/config.ts';
 import { ORDER_ACTIONS, STAGES } from './types.ts';
 import type * as A from './types.ts';
 import { admitted } from '../web/auth.ts';
-import { toQuestion, detail, numberedEvents, overview, projectInfo, quotaPoint, runList, summaries, summaryOf, workerViews, type View, type ViewEnv } from './views.ts';
+import { toQuestion, toRun, detail, numberedEvents, overview, projectInfo, quotaPoint, runList, summaries, summaryOf, workerViews, type View, type ViewEnv } from './views.ts';
 
 /** Machine installs refuse with a reason a person can act on: a conflict, not a server error. */
 async function refusals<T>(work: () => Promise<T>): Promise<T> {
@@ -609,6 +610,16 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (since !== undefined && Number.isNaN(Date.parse(since))) throw new ApiFailure(400, 'bad_request', '"since" must be an ISO time.');
       const limit = Math.min(500, Math.max(1, Number(q('limit') ?? 100) || 100));
       return json(res, 200, runList(light(q('project')), env(), { since: since ? new Date(since).toISOString() : undefined, worker: q('worker'), limit, cursor: q('cursor') }) satisfies A.RunList);
+    }
+    if (parts[0] === 'runs' && parts.length === 2) {
+      const view = light(q('project'));
+      const found = findRun(view, parts[1]);
+      if (!found) throw new ApiFailure(404, 'not_found', t('No such run: {key}.', { key: parts[1] }));
+      const doc = view.orders.get(found.tag);
+      const activity = view.rows?.find(row => row.tag === doc.order.tag)?.activity;
+      const consults = readRunConsults(view.config.state_dir, doc.order.tag, found.run.id);
+      const baseRun = toRun(found.run, doc.order.tag, env(), activity, view.config.dispatch, view.config.state_dir);
+      return json(res, 200, { ...baseRun, project: view.config.id, tag: doc.order.tag, title: doc.order.title, stage: view.orders.stage(doc).stage, consults } satisfies A.RunDetail);
     }
     if (parts[0] === 'runs' && parts[2] === 'log' && parts.length === 3) {
       const view = light(q('project'));

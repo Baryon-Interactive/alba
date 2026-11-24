@@ -209,11 +209,33 @@ export interface OrderSpend {
   estimated: boolean;
   runs_with_usage: number;
   runs_unknown: number;
+  consults?: number;
+  consult_tokens?: number;
+  consult_cost_usd?: number;
   cap_usd?: number;
   /** Approved quotes and what was spent against them, by unit (`credits`, `usd`, ...). Units are never added together. */
   credits?: Record<string, { approved: number; spent: number; pending: number }>;
   /** The cost has reached the cap: the tick does not start more runs of this order. */
   over_cap: boolean;
+}
+
+export type ConsultOutcome = 'ok' | 'refused' | 'timeout' | 'failed';
+
+export interface RunConsult {
+  at: string;
+  question: string;
+  files?: string[];
+  consultant: string;
+  engine?: string;
+  model: string;
+  model_family?: string;
+  seconds: number;
+  outcome: ConsultOutcome;
+  answer_length: number;
+  answer?: string;
+  reason?: string;
+  worktree_changed?: boolean;
+  usage?: RunUsage;
 }
 
 export interface Report {
@@ -290,6 +312,8 @@ export interface Run {
   limit?: 'capacity' | 'quota' | 'unreachable';
   /** Structured receipt and classification of how the run ended, plus any saved WIP ref. */
   end?: RunEnd;
+  /** Mid-run read-only consults recorded for this run. */
+  consults?: RunConsult[];
 }
 
 /** What a `run.start` event and a run carry about the choice of worker. */
@@ -845,6 +869,15 @@ export interface MergeReadiness {
   overlaps: ReadinessOverlap[];
   /** When this answer was made. */
   computedAt: string;
+}
+
+/** `GET /api/runs/:key` */
+export interface RunDetail extends Run {
+  project: string;
+  tag: string;
+  title: string;
+  stage: Stage;
+  consults: RunConsult[];
 }
 
 /** `GET /api/runs/:key/log` */

@@ -11,6 +11,7 @@ import { readStateFile } from '../orders/state-files.ts';
 import { stateStore } from '../orders/backend.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { liveRuns } from '../run/live.ts';
+import { consultsFileOf, readRunConsults } from '../consult/config.ts';
 import { ownerOf } from './spend.ts';
 import { parseUsage } from './usage.ts';
 import { tokenUsage } from './fold.ts';
@@ -166,6 +167,44 @@ export function collectUsage(project: ProjectConfig, docs: readonly OrderDoc[], 
     const fold = liveRuns.accounting(run);
     const runSignals = fold ? fold.signals(doc.order.tag, run.id, kind, project.usage_warnings) : previous?.[0].signals ?? [];
     signals.push(...runSignals);
+    const consultFile = consultsFileOf(project.state_dir, doc.order.tag, run.id);
+    const consultStampKey = `${key}:consults`;
+    const consultStamp = JSON.stringify([probes.fileTime(consultFile), existsSync(consultFile) ? readFileSync(consultFile, 'utf8').length : 0, base.merged, base.merged_at, workers?.pricing]);
+    if (stamps.get(consultStampKey) !== consultStamp) {
+      const consults = readRunConsults(project.state_dir, doc.order.tag, run.id).filter(c => c.outcome !== 'refused');
+      for (const [idx, c] of consults.entries()) {
+        const cRunId = `${run.id}:consult:${idx + 1}`;
+        const cWorker = ownerOf(workers?.workers ?? [], c.consultant);
+        const cModel = c.model || cWorker?.model || cWorker?.launch?.model || 'unknown';
+        const cPricing = pricingOf(workers, cWorker, cModel);
+        const cUsage = c.usage ?? { source: 'unknown' as const };
+        const rawRow: UsageRow = {
+          project: project.id,
+          order: doc.order.tag,
+          run: cRunId,
+          worker: cWorker?.id ?? (c.consultant || 'unknown'),
+          engine: c.engine ?? cWorker?.engine ?? 'unknown',
+          model: cModel,
+          kind: 'consult',
+          consult: true,
+          rework: false,
+          resume: false,
+          open: false,
+          subscription: cWorker?.cost === 'included',
+          merged_at: base.merged_at,
+          merged: base.merged,
+          ...cUsage,
+          turn: 0,
+          at: c.at > now ? now : c.at,
+        };
+        const finalRow = cWorker?.cost === 'paid' ? estimate(rawRow, cPricing) : rawRow;
+        const prevConsult = byRun.get(`${doc.order.tag}/${cRunId}`);
+        if (JSON.stringify([finalRow]) !== JSON.stringify(prevConsult)) {
+          replacements.push({ order: doc.order.tag, run: cRunId, rows: [finalRow] });
+        }
+      }
+      stamps.set(consultStampKey, consultStamp);
+    }
     if (stamps.get(key) === stamp) continue;
     let rows: UsageRow[] = durable ? previous!.map(r => ({ ...r, ...base })) : (fold?.turns ?? []).map(turn => ({ ...base, ...turn.usage, turn: turn.turn, at: turn.at > now ? now : turn.at, raw: turn.raw }));
     if (!rows.length) {
