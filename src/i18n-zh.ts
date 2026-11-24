@@ -1137,6 +1137,9 @@ export const zh: Record<string, string> = {
   '"after" must be a whole number >= 0.': '"after" 必须是大于等于 0 的整数。',
   '"limit" must be a positive number.': '"limit" 必须是正数。',
   'Messages:': '消息：',
+  'no Claude rate-limit event in the last {hours} hours': '最近 {hours} 小时内没有 Claude 限额事件',
+  '{where}: "max_age_hours" must be a positive number.': '{where}："max_age_hours" 必须是正数。',
+  '{where}: "type" must be "command-json", "static", "codex-sessions" or "claude-stream".': '{where}："type" 必须是 "command-json"、"static"、"codex-sessions" 或 "claude-stream"。',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

@@ -32,6 +32,7 @@ function WindowBars({ quota }: { quota?: QuotaPoint }) {
           <Progress value={w.usedPercent} tone={windowTone(w.usedPercent)} />
         </div>
       ))}
+      {quota.windows.length === 0 && quota.note && <div className="text-xs text-muted-foreground">{quota.note}</div>}
       {quota.balance && <div className="text-sm"><span className="text-muted-foreground">{t('Balance')}:</span> <span className="font-medium tabular-nums">{quota.balance.raw}</span></div>}
     </div>
   );

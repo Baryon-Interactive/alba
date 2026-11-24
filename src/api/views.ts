@@ -194,7 +194,7 @@ export function projectInfo(view: View, env: ViewEnv): A.ProjectInfo {
 }
 
 const point = (q: QuotaReading): A.QuotaPoint => ({
-  source: q.source, at: q.at, ok: q.ok, ...(q.error ? { error: q.error } : {}), windows: q.windows.map(w => ({ name: w.name, usedPercent: w.usedPercent, ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}) })),
+  source: q.source, at: q.at, ok: q.ok, ...(q.error ? { error: q.error } : {}), ...(q.note ? { note: q.note } : {}), windows: q.windows.map(w => ({ name: w.name, usedPercent: w.usedPercent, ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}) })),
   ...(q.balance ? { balance: { raw: q.balance.raw, ...(q.balance.amount !== undefined ? { amount: q.balance.amount } : {}) } } : {}),
 });
 export const quotaPoint = point;

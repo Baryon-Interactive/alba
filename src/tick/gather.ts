@@ -16,6 +16,7 @@ import type { Orders } from '../orders/service.ts';
 import type { QuotaConfig, WorkersFile } from '../workers/config.ts';
 import { availability, failed, parseCommandQuota, staticQuota, type QuotaReading } from '../workers/quota.ts';
 import { readCodexSessions } from '../workers/codex-quota.ts';
+import { claudeRunLogFiles, readClaudeStream } from '../workers/claude-quota.ts';
 import { openCommand } from '../workers/adapters/index.ts';
 import { stopProcessOnly, stopProcessTree, stopProcessTreeVerified } from '../run/kill-tree.ts';
 import { cachedEndpointProbe, endpointOf, PROBE_TIMEOUT_MS, probeEndpoint } from '../run/endpoint.ts';
@@ -265,13 +266,16 @@ export function readTickQuotaHistory(target: StateProject | string, current: rea
   return (readStateFile(target, 'quota-history.jsonl') ?? '').split('\n').filter(Boolean).map(line => JSON.parse(line) as QuotaReading);
 }
 
-function readSources(file: WorkersFile, names: Set<string>, probes: Probes, at: string): QuotaReading[] {
+function readSources(file: WorkersFile, names: Set<string>, probes: Probes, at: string, docs: readonly OrderDoc[]): QuotaReading[] {
   const output = new Map<string, string | Error>();
   return [...names].map(name => {
     const source: QuotaConfig = file.quota_sources[name];
     if (source.type === 'static') return staticQuota(name, source, at);
     if (source.type === 'codex-sessions') {
       try { return readCodexSessions(name, source, at); } catch (e) { return failed(name, at, t('the quota reader failed: {error}', { error: (e as Error).message.split('\n')[0] })); }
+    }
+    if (source.type === 'claude-stream') {
+      try { return readClaudeStream(name, source, at, claudeRunLogFiles(file, name, docs)); } catch (e) { return failed(name, at, t('the quota reader failed: {error}', { error: (e as Error).message.split('\n')[0] })); }
     }
     const key = source.command.join('\u0000');
     if (!output.has(key)) {
@@ -318,14 +322,14 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
   if (options.record) for (const doc of orders.all()) if (doc.runs.some(r => !r.ended)) pickupOutbox(orders, doc.order.tag);
   const now = probes.now();
   const at = now.toISOString();
+  const docs = orders.all();
   const used = new Set(workersFile.workers.map(w => w.quota).filter((q): q is string => !!q));
-  const quotas = readSources(workersFile, used, probes, at);
+  const quotas = readSources(workersFile, used, probes, at, docs);
   const history = readTickQuotaHistory(project, quotas, at);
   if (options.record && quotas.length) {
     appendStateFile(project, 'quota-history.jsonl', quotas.map(q => JSON.stringify(q)).join('\n') + '\n');
   }
 
-  const docs = orders.all();
   const merged = orders.mergedSet(docs);
   const stageOf = (d: OrderDoc) => orders.stage(d, merged).stage;
 

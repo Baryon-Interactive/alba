@@ -30,7 +30,12 @@ export interface CodexSessionsQuota {
   type: 'codex-sessions';
   codex_home?: string;               // absolute; default CODEX_HOME, else ~/.codex
 }
-export type QuotaConfig = CommandQuota | StaticQuota | CodexSessionsQuota;
+/** A Claude subscription's windows, read from `rate_limit_event` lines in claude-cli stream-json run logs; nothing is called. */
+export interface ClaudeStreamQuota {
+  type: 'claude-stream';
+  max_age_hours?: number;            // positive number, default 168
+}
+export type QuotaConfig = CommandQuota | StaticQuota | CodexSessionsQuota | ClaudeStreamQuota;
 
 export type DisabledRule =
   | { window_full: string; at: number }     // a window whose name matches (`*` allowed) is used up to `at` percent
@@ -392,7 +397,15 @@ function validateQuota(raw: unknown, where: string): QuotaConfig {
     if (raw.codex_home !== undefined && (typeof raw.codex_home !== 'string' || !path.isAbsolute(raw.codex_home))) fail('{where}: "codex_home" must be an absolute folder (the CODEX_HOME the worker uses).', { where });
     return { type: 'codex-sessions', ...(typeof raw.codex_home === 'string' ? { codex_home: raw.codex_home } : {}) };
   }
-  return fail('{where}: "type" must be "command-json", "static" or "codex-sessions".', { where });
+  if (raw.type === 'claude-stream') {
+    const unknown = Object.keys(raw).filter(k => !['type', 'max_age_hours'].includes(k));
+    if (unknown.length) fail('{where}: unknown key(s): {keys}.', { where, keys: unknown.join(', ') });
+    if (raw.max_age_hours !== undefined && (typeof raw.max_age_hours !== 'number' || !Number.isFinite(raw.max_age_hours) || raw.max_age_hours <= 0)) {
+      fail('{where}: "max_age_hours" must be a positive number.', { where });
+    }
+    return { type: 'claude-stream', ...(typeof raw.max_age_hours === 'number' ? { max_age_hours: raw.max_age_hours } : {}) };
+  }
+  return fail('{where}: "type" must be "command-json", "static", "codex-sessions" or "claude-stream".', { where });
 }
 
 function validatePricing(raw: unknown, where: string): Pricing {

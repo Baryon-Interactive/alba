@@ -8,6 +8,7 @@ export interface QuotaReading {
   at: string;
   ok: boolean;
   error?: string;
+  note?: string;
   windows: QuotaWindow[];
   balance?: { raw: string; amount?: number };
   entries: number;          // how many items of the command output were merged into this reading

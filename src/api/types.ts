@@ -638,6 +638,7 @@ export interface QuotaPoint {
   at: string;
   ok: boolean;
   error?: string;
+  note?: string;
   windows: QuotaWindow[];
   balance?: { raw: string; amount?: number };
 }
