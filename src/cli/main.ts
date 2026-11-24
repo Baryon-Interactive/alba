@@ -1,3 +1,4 @@
+import { phasesOverride } from '../orders/phase-config.ts';
 import { loadMachines } from '../machines/config.ts';
 import { foundationGaps, foundationStates, formatFoundations, orderTraits } from '../foundations/foundations.ts';
 import { machineInstallPlan, machinesView, probeMachines, startInstall, type MachineView } from '../machines/probe.ts';
@@ -104,7 +105,7 @@ const options = {
   now: { type: 'boolean' }, gate: { type: 'string' },
   project: { type: 'string', multiple: true }, port: { type: 'string' }, stage: { type: 'string' }, json: { type: 'boolean' }, all: { type: 'boolean' }, out: { type: 'string' },
   worker: { type: 'string' }, target: { type: 'string' }, session: { type: 'string' }, outcome: { type: 'string' }, note: { type: 'string' }, file: { type: 'string' },
-  title: { type: 'string' }, kind: { type: 'string' }, role: { type: 'string' }, review: { type: 'string' }, needs: { type: 'string' }, heavy: { type: 'string' }, 'run-model': { type: 'string' }, branch: { type: 'string' }, 'base-ref': { type: 'string' }, worktree: { type: 'string' }, sparse: { type: 'string' }, uses: { type: 'string' }, tools: { type: 'string' },
+  phases: { type: 'string' }, title: { type: 'string' }, kind: { type: 'string' }, role: { type: 'string' }, review: { type: 'string' }, needs: { type: 'string' }, heavy: { type: 'string' }, 'run-model': { type: 'string' }, branch: { type: 'string' }, 'base-ref': { type: 'string' }, worktree: { type: 'string' }, sparse: { type: 'string' }, uses: { type: 'string' }, tools: { type: 'string' },
   quote: { type: 'string' }, decisions: { type: 'string' }, 'spend-cap': { type: 'string' }, protect: { type: 'string' }, help: { type: 'boolean', short: 'h' },
   workers: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'over-cap': { type: 'boolean' }, write: { type: 'boolean' }, 'no-record': { type: 'boolean' }, 'max-dispatch': { type: 'string' },
   'allow-origin': { type: 'string', multiple: true }, 'sign-in': { type: 'boolean' }, applicable: { type: 'boolean' }, text: { type: 'string' }, restart: { type: 'boolean' }, reply: { type: 'string' }, choice: { type: 'string' }, tags: { type: 'string' }, who: { type: 'string' },
@@ -821,7 +822,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const body = values['body-file'] ? readFileSync(resolveFile(values['body-file'], cfg), 'utf8') : undefined;
         if (values.role) resolveRole(effectiveRoles(cfg, values.workers || process.env.ALBA_WORKERS || cfg.workers ? workersOf(values.workers, cfg) : undefined), { role: values.role, kind: values.kind ?? '' });
         const sparse = values.sparse === undefined ? undefined : values.sparse.trim() === '' ? [] : values.sparse.split(',').map(s => s.trim()).filter(Boolean);
-        const made = createOrder(cfg, orders, { check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, model: values['run-model'], heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], ...(sparse !== undefined ? { sparse } : {}), tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
+        const made = createOrder(cfg, orders, { phases: phasesOverride(values.phases), check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, model: values['run-model'], heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], ...(sparse !== undefined ? { sparse } : {}), tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
         return [tagLine(made.doc), made.file ? t('wrote {file}', { file: made.file }) : '', made.tableRow ? t('added a row to the dispatch table') : '', made.tableWarning ?? '', made.foundationWarning ?? ''].filter(Boolean).join('\n');
       }
       case 'act': {
@@ -839,8 +840,9 @@ ${editorLines(editors, projects.length > 1)}` : body;
       }
       case 'set': {
         need(1, 'alba orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--tools id,id] [--worker id] [--run-model m]');
-        if (values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.sparse === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker or --run-model.');
+        if (values.phases === undefined && values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.sparse === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker or --run-model.');
         const before = orders.get(rest[0]).order;
+        if (values.phases !== undefined) orders.update(rest[0], { phases: phasesOverride(values.phases) });
         if (values.worker !== undefined) {
           const known = workersOf(values.workers, cfg).workers;
           if (!known.some(w => w.id === values.worker)) fail('Unknown worker "{id}". Known: {known}.', { id: values.worker, known: known.map(w => w.id).join(', ') });
@@ -867,6 +869,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const o = doc.order;
         const fields = (['branch', 'worktree', 'base_ref'] as const).filter(k => o[k] !== before[k]);
         const usesLine = [
+          ...(values.phases !== undefined ? ['  phases: none'] : []),
           ...(values.uses !== undefined && JSON.stringify(o.uses ?? []) !== JSON.stringify(before.uses ?? []) ? [`  uses: ${(before.uses ?? []).join(',') || '-'} -> ${(o.uses ?? []).join(',') || '-'}`] : []),
           ...(values.tools !== undefined && JSON.stringify(o.tools ?? []) !== JSON.stringify(before.tools ?? []) ? [`  tools: ${(before.tools ?? []).join(',') || '-'} -> ${(o.tools ?? []).join(',') || '-'}`] : []),
           ...(values['run-model'] !== undefined ? [`  model: ${before.model || '-'} -> ${o.model || '- (the worker\'s)'}`] : []),

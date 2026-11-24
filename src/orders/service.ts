@@ -1,3 +1,4 @@
+import { phasesOverride } from './phase-config.ts';
 import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
 import { ACTION_KINDS, RUN_OUTCOMES, nextSeq, normalizeSparseDirs } from './model.ts';
 import { StaleWrite, type OrderStore } from './store.ts';
@@ -126,7 +127,7 @@ export class Orders {
     }
   }
 
-  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
+  add(input: { phases?: 'none'; check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -139,6 +140,7 @@ export class Orders {
       if (needs.some(n => n.toLowerCase() === input.tag.toLowerCase())) fail('An order cannot need itself.');
       const at = this.now();
       const order: Order = { tag: input.tag, title: input.title.trim(), kind: input.kind, needs, created: at, updated: at };
+      if (input.phases !== undefined) order.phases = phasesOverride(input.phases);
       if (input.check !== undefined) {
         if (!['independent', 'none'].includes(input.check)) fail('Check must be independent or none.');
         order.check = input.check;
@@ -178,9 +180,10 @@ export class Orders {
   }
 
   /** Changes definition fields (not facts). Used when a table is imported again. */
-  update(tag: string, patch: Partial<Pick<Order, 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'sparse' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
+  update(tag: string, patch: Partial<Pick<Order, 'phases' | 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'sparse' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
     return this.retry(() => {
       const doc = this.get(tag);
+      phasesOverride(patch.phases);
       if (patch.check !== undefined && !['independent', 'none'].includes(patch.check)) fail('Check must be independent or none.');
       if (patch.review !== undefined && !['manual', 'auto'].includes(patch.review)) fail('Review must be manual or auto.');
       if (patch.role !== undefined && patch.role !== '' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(patch.role)) fail('Invalid role identifier.');

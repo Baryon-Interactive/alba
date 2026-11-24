@@ -1,3 +1,4 @@
+import { phasesOverride } from '../orders/phase-config.ts';
 import { attentionState } from './attention.ts';
 import { attentionMarks, saveAttentionMarks } from '../orders/attention-store.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
@@ -1131,7 +1132,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const role = str(body, 'role');
       if (role) resolveRole(effectiveRoles(view.config, ctx.workers), { role, kind: str(body, 'kind') ?? '' });
       const sparse = body.sparse === undefined ? undefined : strList(body, 'sparse');
-      const made = createOrder(view.config, view.orders, { tag, title, kind: str(body, 'kind'), role, needs: strList(body, 'needs'), worker: str(body, 'worker'), model: str(body, 'model'), heavy: str(body, 'heavy'), base_ref: str(body, 'base_ref'), ...(sparse !== undefined ? { sparse } : {}), tags: strList(body, 'tags'), skills: strList(body, 'skills'), mandate: mandate as never, body: str(body, 'body'), slug: str(body, 'slug'), queue: body.queue === true }, ctx.probes.now());
+      const made = createOrder(view.config, view.orders, { tag, title, phases: phasesOverride(body.phases), kind: str(body, 'kind'), role, needs: strList(body, 'needs'), worker: str(body, 'worker'), model: str(body, 'model'), heavy: str(body, 'heavy'), base_ref: str(body, 'base_ref'), ...(sparse !== undefined ? { sparse } : {}), tags: strList(body, 'tags'), skills: strList(body, 'skills'), mandate: mandate as never, body: str(body, 'body'), slug: str(body, 'slug'), queue: body.queue === true }, ctx.probes.now());
       const stage = view.orders.stage(made.doc);
       return done<A.NewOrderResult>(201, { order: summaryOf(view.config, made.doc, stage, env()), ...(made.file ? { file: made.file } : {}), tableRow: made.tableRow, ...(made.tableWarning ? { tableWarning: made.tableWarning } : {}), ...(made.foundationWarning ? { foundationWarning: made.foundationWarning } : {}) });
     }

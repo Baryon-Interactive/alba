@@ -54,6 +54,7 @@ export interface StoredRouting {
 }
 
 export interface Order {
+  phases?: 'none';
   /** Producer-selected worker; cleared when a person changes worker. */
   next_worker?: string;
   check?: 'independent' | 'none';

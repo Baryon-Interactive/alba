@@ -407,6 +407,7 @@ export interface OrderSummary extends AttentionState {
 }
 
 export interface OrderDefinition {
+  phases?: 'none';
   nextWorker?: string;
   review?: 'manual' | 'auto';
   planned?: boolean;

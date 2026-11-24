@@ -31,6 +31,8 @@ A report is *current* only if no `queue`, `rework` or `answer` action and no run
 
 `alba orders ready` lists orders in `queued` whose `needs` are all merged.
 
+A project can configure `phases` by order kind. Each list contains one or more `read-only` phases followed by one final `write` phase. Give each phase a unique `id` and optionally a `role` and positive `timeout_minutes`. Set `--phases none` on `orders add` or `orders set` to use a single ordinary run for that order.
+
 ## 3. Files
 
 Orders and events live in the project's `state_dir`. SQLite is the default backend; see [state storage](../libraries/017-state-store.md). The explicit file backend uses:
