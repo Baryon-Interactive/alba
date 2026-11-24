@@ -1,5 +1,4 @@
 import { parsePhases, validatePhaseWorkers, type Phases } from './orders/phase-config.ts';
-import { loadWorkers as loadPhaseWorkers } from './workers/config.ts';
 import { validateDrafting, type DraftingConfig } from './producer/drafting-config.ts';
 import { gatesConfig } from './gates/config.ts';
 import { validateFoundations } from './foundations/config.ts';
@@ -10,7 +9,7 @@ import { safePackageRoot } from './clean/safety.ts';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Roles } from './roles/config.ts';
-import { routingOf } from './workers/config.ts';
+import { routingOf, loadWorkers } from './workers/config.ts';
 import path from 'node:path';
 import { parse } from 'yaml';
 import { STAGES, normalizeSparseDirs, type Stage } from './orders/model.ts';
@@ -635,7 +634,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.phases !== undefined) {
     cfg.phases = parsePhases(raw.phases);
     const workersFile = process.env.ALBA_WORKERS || cfg.workers;
-    if (workersFile) validatePhaseWorkers(cfg, loadPhaseWorkers(workersFile));
+    if (workersFile) validatePhaseWorkers(cfg, loadWorkers(workersFile));
   }
   if (raw.resources !== undefined) cfg.resources = validateResources(raw.resources, file);
   if (raw.plugins !== undefined) {

@@ -1,7 +1,6 @@
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { lstatSync, readlinkSync } from 'node:fs';
-import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { worktreeFingerprint } from '../workers/adapters/read-only.mjs';
+export { worktreeFingerprint };
 import type { orderPhases } from '../orders/phases.ts';
 import { t } from '../i18n.ts';
 import { fenceUntrusted } from './fence.ts';
@@ -18,25 +17,13 @@ export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
   return '\n' + sections.join('\n\n') + '\n';
 }
 
-export function readOnlyChange(run: { cwd?: string; worktree_fingerprint?: string }): string | undefined {
+export function readOnlyChange(run: { cwd?: string; worktree_fingerprint?: string; remote_phase_check?: string }): string | undefined {
+  if (run.remote_phase_check) {
+    try {
+      if (readFileSync(run.remote_phase_check, 'utf8') !== 'unchanged') return t('The worktree changed during a read-only phase.');
+    } catch { return t('Could not verify the remote read-only worktree.'); }
+  }
   if (!run.worktree_fingerprint) return;
   try { if (run.cwd && run.worktree_fingerprint === worktreeFingerprint(run.cwd)) return; } catch { /* a missing checkout cannot pass */ }
   return t('The worktree changed during a read-only phase.');
-}
-
-/** Include HEAD, the index, tracked changes and untracked file contents, including a dirty starting checkout. */
-export function worktreeFingerprint(cwd: string): string {
-  const git = (...args: string[]) => execFileSync('git', ['--no-optional-locks', ...args], { cwd, timeout: 30000, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
-  const hash = createHash('sha256');
-  hash.update(git('rev-parse', 'HEAD'));
-  hash.update(git('ls-files', '-s', '-z'));
-  hash.update(git('diff', '--no-ext-diff', '--no-textconv', '--binary'));
-  for (const name of git('ls-files', '--others', '--exclude-standard', '-z').toString().split('\0').filter(Boolean)) {
-    const file = path.join(cwd, name);
-    const stat = lstatSync(file);
-    hash.update(JSON.stringify([name, stat.mode]));
-    if (stat.isSymbolicLink()) hash.update(readlinkSync(file));
-    else if (stat.isFile()) hash.update(git('hash-object', '--no-filters', '--', name));
-  }
-  return hash.digest('hex');
 }

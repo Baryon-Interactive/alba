@@ -93,6 +93,7 @@ export interface Run {
   next_phase?: string;
   phase_timeout_minutes?: number;
   worktree_fingerprint?: string;
+  remote_phase_check?: string;
   plan_file?: string;
   host?: string;
   remote_worktree?: string;

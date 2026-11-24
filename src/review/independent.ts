@@ -102,11 +102,12 @@ export function readOnlyCommand(
   cwd: string,
   promptInstruction: string,
   lastFile: string,
+  remote = false,
 ) {
   const named = Object.fromEntries(Object.entries(worker.launch!.env).map(([key, value]) => [key, value.replace(/\{skill_names\}|\{skill_allow\}/g, '')]));
   const adapter = workerAdapter(worker.engine);
-  const environment = adapter.verifierEnvironment?.(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) ?? { env: named, envUnset: worker.launch!.env_unset };
-  const mcpServers = adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
+  const environment = !remote && adapter.verifierEnvironment ? adapter.verifierEnvironment(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) : { env: named, envUnset: worker.launch!.env_unset };
+  const mcpServers = remote ? [] : adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
   const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers);
   return { program: worker.launch!.program, args, ...environment };
 }

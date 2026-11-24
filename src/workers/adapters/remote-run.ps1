@@ -127,6 +127,8 @@ $code = $LASTEXITCODE
 $ErrorActionPreference = 'Stop'
 Say "the worker ended with exit code $code"
 
+if ($spec.read_only) { exit $code }
+
 # What the worker left without committing: changed and new files, new files under .alba/ (ignored there), and deletions.
 $changed = @(& git -C $wt ls-files -m -o --exclude-standard) + @(& git -C $wt ls-files -o -i --exclude-standard -- .alba)
 $files = $changed | Where-Object { $_ -and -not $_.StartsWith('.alba/order/') -and $_ -ne '.alba/inbox.md' -and (Test-Path -LiteralPath (Join-Path $wt $_) -PathType Leaf) } | Sort-Object -Unique

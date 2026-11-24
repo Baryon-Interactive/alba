@@ -39,6 +39,7 @@ export function remoteTarget(project: ProjectConfig, worker: WorkerConfig, local
 }
 
 export interface RemoteSpecInput {
+  remotePhaseCheck?: string;
   target: RemoteTarget; worker: WorkerConfig; id: string; branch: string; localWorktree: string;
   promptFile: string; lastFile: string; orderFiles: string[]; overlayRoots: string[];
   program: string; args: string[]; env: Record<string, string>; envUnset: string[]; specFile: string;
@@ -49,16 +50,18 @@ export function writeRemoteSpec(input: RemoteSpecInput): { program: string; args
   const { target, worker } = input;
   const identity = (key: string) => { try { return execFileSync('git', ['-C', input.localWorktree, 'config', key], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } };
   const order = `${target.worktree}/.alba/order`;
+  const last = input.remotePhaseCheck ? `${target.workspace}/runs/${input.id}/result/last.txt` : `${order}/last.txt`;
   const spec = {
     id: input.id, ssh: target.ssh, os: target.machine.os, workspace: target.workspace, repo: target.repo, worktree: target.worktree, branch: input.branch,
     local_worktree: slash(input.localWorktree), local_stage: slash(input.specFile.replace(/\.json$/, '.stage')),
     order_files: input.orderFiles.map(slash), prompt_file: slash(input.promptFile), last_file: slash(input.lastFile),
     // The prompt names local paths: the order files and the worktree become their copies on the host.
-    rewrite: [[slash(input.promptFile), `${order}/prompt.md`], [slash(input.lastFile), `${order}/last.txt`], ...input.orderFiles.map(f => [slash(f), `${order}/${path.basename(f)}`]), [slash(input.localWorktree), target.worktree]],
+    rewrite: [[slash(input.promptFile), `${order}/prompt.md`], [slash(input.lastFile), last], ...input.orderFiles.map(f => [slash(f), `${order}/${path.basename(f)}`]), [slash(input.localWorktree), target.worktree]],
     overlay_roots: input.overlayRoots,
     program: input.program, args: input.args, env: workerEnvironment({}, input.env, input.envUnset, 'win32'), env_unset: input.envUnset,
     identity: { name: identity('user.name'), email: identity('user.email') },
     ...(worker.tunnel ? { tunnel: worker.tunnel, tunnel_base: tunnelBase(worker.tunnel) } : {}),
+    ...(input.remotePhaseCheck ? { read_only: worker.engine, read_only_home: `${target.workspace}/workers/${worker.id}/claude`, phase_check: input.remotePhaseCheck } : {}),
     sync_minutes: 3,
   };
   const rewrite = (s: string) => spec.rewrite.reduce((text, [from, to]) => text.split(from).join(to).split(from.replace(/\//g, '\\')).join(to), s);

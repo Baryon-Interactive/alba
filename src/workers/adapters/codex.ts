@@ -1,15 +1,12 @@
+import { codexVerifierServers, disableServers } from './read-only.mjs';
 import { generic } from './generic.ts';
 import type { WorkerAdapter } from './types.ts';
 export const codex: WorkerAdapter = {
   verifierArgs(worker, cwd, prompt, lastFile, mcpServers) {
     const model = worker.model ?? worker.launch?.model;
-    return ['exec', '-C', cwd, '--sandbox', 'read-only', '-c', 'approval_policy="never"', '-c', 'features.apps=false', '-c', 'features.plugins=false', ...mcpServers.flatMap(name => ['-c', `mcp_servers.${JSON.stringify(name)}.enabled=false`]), '--json', '--output-last-message', lastFile, ...(model ? ['--model', model] : []), prompt];
+    return ['exec', '-C', cwd, '--sandbox', 'read-only', '-c', 'approval_policy="never"', '-c', 'features.apps=false', '-c', 'features.plugins=false', ...disableServers(mcpServers), '--json', '--output-last-message', lastFile, ...(model ? ['--model', model] : []), prompt];
   },
-  verifierServers(program, cwd, run) {
-    const servers: unknown = JSON.parse(run([program, '-C', cwd, 'mcp', 'list', '--json']));
-    if (!Array.isArray(servers) || servers.some(s => !s || typeof s.name !== 'string' || !s.name)) throw new Error('Cannot determine configured MCP servers; refusing an unrestricted verifier.');
-    return servers.map(s => s.name);
-  },
+  verifierServers: codexVerifierServers,
   ...generic, id: 'codex-cli', structured: true,
   prepare(args, c) {
     // Where the template says (a wrapper passes them on to codex), else right after "exec"; the config refuses a template with neither.
