@@ -665,7 +665,8 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
     }
     if (parts[0] === 'clean' && parts.length === 1) {
       const view = light(q('project'));
-      return json(res, 200, planClean(view.config, view.orders, { ...systemClean(ctx.probes), sizeBudgetMs: 1500 }) satisfies A.CleanPlan);
+      const includeIgnored = q('include_ignored') === '1' || q('include_ignored') === 'true' || q('includeIgnored') === 'true';
+      return json(res, 200, planClean(view.config, view.orders, { ...systemClean(ctx.probes), sizeBudgetMs: 1500, ...(includeIgnored ? { includeIgnored: true } : {}) }) satisfies A.CleanPlan);
     }
     if (parts[0] === 'decisions' && parts.length === 1) {
       const view = light(q('project'));

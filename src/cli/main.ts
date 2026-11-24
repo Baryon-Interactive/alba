@@ -113,7 +113,7 @@ const options = {
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
   page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' }, channel: { type: 'string' },
   'merged-elsewhere': { type: 'string' }, 'done-by-lead': { type: 'boolean' }, commit: { type: 'string' },
-  force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' },
+  force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' }, 'include-ignored': { type: 'boolean' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -212,7 +212,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   classify [TAG...] [--model] [--json]      store each order's kind and tags from the project's "kinds" rules; --model asks the classifier worker for those the rules cannot place
   skills [--order TAG] [--applicable] [--json]
                                              the skill registry (sources, tags, what attaches each): the skills this project can use (its own, and the global ones its engine and include/exclude let through), then those it cannot with the reason (--applicable: only the first); with --order, the skills that order gets and where they are put
-  clean [--apply] [--json]                   what could be removed: merged, idle, clean worktrees (with their merged branch), cache folders of unmerged ones, old builds; only a plan unless --apply
+  clean [--apply] [--include-ignored] [--json]   what could be removed: merged, idle, clean worktrees (with their merged branch), cache folders of unmerged ones, old builds; skips worktrees with non-regenerable ignored files unless --include-ignored; only a plan unless --apply
   pick <TAG> <Q1> --choice N [--note text] [--who name]   answer a question that was asked with options
   picks [list] [--json] | picks choose <id> --choice key[,key] [--note t] [--who n]
                                              the project's pick sets (files in "picks: dir", and reports with scope "project"): pending, chosen, decided; a choice is kept in the state folder and a decision text is offered

@@ -19,7 +19,7 @@ export const keys = {
   runs: (project: string, filter = '') => ['runs', project, filter] as const,
   decisions: (project: string) => ['decisions', project] as const,
   evidence: (project: string, tag: string) => ['evidence', project, tag] as const,
-  clean: (project: string) => ['clean', project] as const,
+  clean: (project: string, includeIgnored = false) => (includeIgnored ? (['clean', project, 'include-ignored'] as const) : (['clean', project] as const)),
   cleanEvents: (project: string) => ['clean-events', project] as const,
   credits: (project: string) => ['credits', project] as const,
   lessons: (project: string, tag = '') => ['lessons', project, tag] as const,

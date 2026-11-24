@@ -159,6 +159,16 @@ export interface DocsConfig {
   research?: string;
 }
 
+/** Default worktree-relative globs treated as regenerable ignored paths by `alba clean`. */
+export const DEFAULT_CLEAN_REGENERABLE = [
+  'node_modules/',
+  '**/Intermediate/',
+  '**/Binaries/',
+  '**/DerivedDataCache/',
+  '**/__pycache__/',
+  '**/*.log',
+] as const;
+
 /** What `alba clean` may remove. Without this section it only looks at merged, idle, clean worktrees. */
 export interface CleanConfig {
   drives?: { path: string; min_free_gb: number }[];
@@ -171,6 +181,7 @@ export interface CleanConfig {
   snapshot_seconds?: number;       // full artifact snapshot time limit (default 5)
   idle_hours: number;               // a merged worktree is removed when its last change is older than this
   caches: string[];                 // folders (relative to a worktree) that are deleted from worktrees whose work is not merged yet
+  regenerable?: string[];           // worktree-relative globs for ignored paths safe to delete when removing a worktree
   builds: { dir: string; keep: number }[];   // folders of builds (relative to the project); only the newest `keep` subfolders stay
   busy_processes: string[];         // program names; while one of them runs nothing is deleted
 }
@@ -852,7 +863,7 @@ function validateDocs(raw: unknown, file: string): DocsConfig {
 
 function validateClean(raw: unknown, file: string, root: string): CleanConfig {
   if (!isRecord(raw)) fail('{file}: "clean" must be a mapping.', { file });
-  const unknown = Object.keys(raw).filter(k => !['idle_hours', 'caches', 'builds', 'busy_processes', 'drives', 'packages', 'logs_days', 'min_gain_gb', 'auto_classes', 'auto_destructive', 'snapshot_entries', 'snapshot_seconds'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['idle_hours', 'caches', 'regenerable', 'builds', 'busy_processes', 'drives', 'packages', 'logs_days', 'min_gain_gb', 'auto_classes', 'auto_destructive', 'snapshot_entries', 'snapshot_seconds'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "clean": {keys}.', { file, keys: unknown.join(', ') });
   const out: CleanConfig = { idle_hours: 24, caches: [], builds: [], busy_processes: [] };
   if (raw.snapshot_entries !== undefined) {
@@ -876,6 +887,11 @@ function validateClean(raw: unknown, file: string, root: string): CleanConfig {
   out.caches = folders('caches') ?? [];
   out.busy_processes = folders('busy_processes') ?? [];
   for (const c of out.caches) if (path.isAbsolute(c) || c.split(/[\\/]/).includes('..')) fail('{file}: "clean.caches" entries are folders inside a worktree, "{c}" is not.', { file, c });
+  if (raw.regenerable !== undefined) {
+    if (!Array.isArray(raw.regenerable) || raw.regenerable.some(x => typeof x !== 'string' || !x.trim())) fail('{file}: "clean.regenerable" must be a list of glob patterns.', { file });
+    out.regenerable = (raw.regenerable as string[]).map(x => x.trim());
+    for (const p of out.regenerable) if (path.isAbsolute(p) || p.split(/[\\/]/).includes('..')) fail('{file}: "clean.regenerable" entries must be relative to a worktree, "{p}" is not.', { file, p });
+  }
   for (const key of ['builds', 'packages'] as const) if (raw[key] !== undefined) {
     if (!Array.isArray(raw[key])) fail('{file}: clean folder retention must be a list.', { file });
     out[key] = (raw[key] as unknown[]).map((b, i) => {
