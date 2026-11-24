@@ -13,6 +13,7 @@ import { getDesignDoc, intakeReview, listDesignDocs, saveDesignDoc } from '../de
 import { reviewIntakeSystems } from '../design/intake-review.ts';
 import { runMeasurements } from '../design/measure.ts';
 import { cancelNightlyRuns } from '../gates/runner.ts';
+import { scheduleSpend } from '../schedules/health.ts';
 import { pauseSchedule, resumeSchedule, runScheduleNow, scheduleViews } from '../schedules/engine.ts';
 import { applyChangeSet } from '../design/library.ts';
 import { readChangeSet } from '../design/library.ts';
@@ -542,7 +543,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
     if (parts[0] === 'schedules' && parts.length === 1) {
       const view = light(q('project'));
       const now = ctx.probes.now();
-      return json(res, 200, { project: view.config.id, at: now.toISOString(), schedules: scheduleViews(view.config, view.orders, now) } satisfies A.ScheduleList);
+      return json(res, 200, { project: view.config.id, at: now.toISOString(), schedules: scheduleViews(view.config, view.orders, now, (docs, at) => scheduleSpend(docs, at, ctx.workers?.workers, ctx.probes)) } satisfies A.ScheduleList);
     }
     if (parts[0] === 'orders' && parts.length === 1) {
       const view = light(q('project'));
@@ -1301,11 +1302,12 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       const now = ctx.probes.now();
       if (parts[2] === 'run') {
         const outcome = runScheduleNow(view.config, view.orders, id, now);
-        const schedule = scheduleViews(view.config, view.orders, now).find(s => s.id === id)!;
+        const schedule = scheduleViews(view.config, view.orders, now, (docs, at) => scheduleSpend(docs, at, ctx.workers?.workers, ctx.probes)).find(s => s.id === id)!;
         return done<A.ScheduleRunResult>(200, {
           ok: true,
           id,
           status: outcome.status,
+          ...(outcome.precheck ? { precheck: outcome.precheck } : {}),
           plannedAt: outcome.plannedAt,
           ...(outcome.orderTag ? { orderTag: outcome.orderTag } : {}),
           ...(outcome.reason ? { reason: outcome.reason } : {}),
@@ -1314,11 +1316,11 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       }
       if (parts[2] === 'pause') {
         pauseSchedule(view.config, view.orders, id, { reason: str(body, 'reason'), now });
-        const schedule = scheduleViews(view.config, view.orders, now).find(s => s.id === id)!;
+        const schedule = scheduleViews(view.config, view.orders, now, (docs, at) => scheduleSpend(docs, at, ctx.workers?.workers, ctx.probes)).find(s => s.id === id)!;
         return done<A.ScheduleStateResult>(200, { ok: true, id, schedule });
       }
       resumeSchedule(view.config, view.orders, id, now);
-      const schedule = scheduleViews(view.config, view.orders, now).find(s => s.id === id)!;
+      const schedule = scheduleViews(view.config, view.orders, now, (docs, at) => scheduleSpend(docs, at, ctx.workers?.workers, ctx.probes)).find(s => s.id === id)!;
       return done<A.ScheduleStateResult>(200, { ok: true, id, schedule });
     }
 

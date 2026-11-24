@@ -189,6 +189,76 @@ test('config validation rejects invalid schedule definitions', () => {
   }
 });
 
+for (const backend of ['files', 'sqlite'] as const) {
+  test(`precheck receipts, folded history and spend on ${backend}`, () => {
+    const env = makeTempProject({ backend, schedulesYaml: [
+      '  - id: inspect', '    tag: T-{date}-{time}', '    order: templates/nightly.md',
+      '    every_minutes: 15', '    precheck: [demo, check]', '    max_open: 2',
+    ].join('\n') });
+    try {
+      const start = Date.UTC(2026, 4, 1);
+      const now = (slot: number) => new Date(start + slot * 900_000);
+      const orders = new Orders(stateStore(env.project), () => now(0).toISOString(), 'test');
+      let calls = 0;
+      const output = Array.from({ length: 25 }, (_, i) => String(i)).join('\n');
+      const precheckRunner = (cmd: string | string[], cfg: ProjectConfig, timeout: number) => {
+        assert.deepEqual(cmd, ['demo', 'check']);
+        assert.equal(cfg.root, env.project.root);
+        assert.equal(timeout, 60_000);
+        if (++calls === 6) throw new Error('timed out');
+        return { code: calls < 6 ? 1 : 0, output };
+      };
+      for (let i = 0; i < 5; i++) {
+        const pass = runSchedules(env.project, orders, { now: now(i), precheckRunner });
+        assert.equal(pass.skipped[0].status, 'skipped-precheck');
+        assert.equal(orders.all().length, 0);
+      }
+      let view = scheduleViews(env.project, orders, now(4))[0];
+      assert.equal(view.history.length, 1);
+      assert.equal(view.history[0].count, 5);
+      assert.equal(view.history[0].output, output.split('\n').slice(-20).join('\n'));
+      assert.equal(view.healthReason, `precheck failing since ${now(0).toISOString()}`);
+      assert.equal(view.lastFire?.plannedAt, now(4).toISOString());
+      assert.equal(view.nextAt, now(5).toISOString());
+      assert.equal(runSchedules(env.project, orders, { now: now(5), precheckRunner }).skipped[0].status, 'precheck-failed');
+      assert.equal(orders.all().length, 0);
+      const manual = runScheduleNow(env.project, orders, 'inspect', now(6));
+      assert.equal(manual.precheck, 'bypassed');
+      assert.equal(runSchedules(env.project, orders, { now: now(7), precheckRunner }).created.length, 1);
+      assert.equal(calls, 7);
+      view = scheduleViews(env.project, orders, now(7), () => { throw new Error('unreadable'); })[0];
+      assert.equal(view.spend7dUsd, 'unknown');
+      assert.equal(view.openCount, 2);
+      assert.equal(view.healthReason, 'max_open reached');
+      assert.equal(view.history[1].precheck, 'bypassed');
+      assert.equal(view.autoPaused, false);
+      orders.runStart(manual.orderTag!, { worker: 'demo', extra: { usage: { source: 'claude-json', cost_usd: 1.25 } } });
+      assert.equal(scheduleViews(env.project, orders, now(8))[0].spend7dUsd, 1.25);
+      assert.equal(scheduleViews(env.project, orders, now(8 * 96))[0].spend7dUsd, 0);
+    } finally { env.cleanup(); }
+  });
+
+  for (const catchUp of ['latest', 'none']) test(`one missed receipt per three-day gap (${backend}, ${catchUp})`, () => {
+    const env = makeTempProject({ backend, schedulesYaml: [
+      '  - id: daily', '    tag: T-{date}', '    order: templates/nightly.md',
+      '    daily_at: "12:00"', `    catch_up: ${catchUp}`,
+    ].join('\n') });
+    try {
+      const now = new Date(2026, 4, 1, 12);
+      const orders = new Orders(stateStore(env.project), () => now.toISOString(), 'test');
+      runSchedules(env.project, orders, { now });
+      now.setDate(4);
+      now.setHours(14);
+      for (let i = 0; i < 2; i++) runSchedules(env.project, orders, { now });
+      const gaps = listScheduleFires(orders.store, 'daily').filter(row => row.status === 'missed');
+      assert.equal(gaps.length, 1);
+      assert.equal(gaps[0].count, catchUp === 'latest' ? 2 : 3);
+      assert.equal(gaps[0].first_planned_at, new Date(2026, 4, 2, 12).toISOString());
+      assert.equal(gaps[0].planned_at, new Date(2026, 4, catchUp === 'latest' ? 3 : 4, 12).toISOString());
+    } finally { env.cleanup(); }
+  });
+}
+
 test('3-day gap: catch_up latest creates exactly one order and none creates none', () => {
   const env = makeTempProject({
     schedulesYaml: [

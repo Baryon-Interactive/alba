@@ -1767,7 +1767,11 @@ export interface ServeReloadResult {
 export interface ScheduleFireView {
   plannedAt: string;
   firedAt: string;
-  status: 'created' | 'skipped';
+  status: 'created' | 'skipped' | 'skipped-precheck' | 'precheck-failed' | 'missed';
+  count?: number;
+  firstPlannedAt?: string;
+  output?: string;
+  precheck?: 'bypassed';
   orderTag?: string;
   reason?: string;
   manual?: boolean;
@@ -1789,6 +1793,9 @@ export interface ScheduleView {
   state: 'active' | 'paused' | 'disabled';
   nextAt?: string;
   lastFire?: ScheduleFireView;
+  history: ScheduleFireView[];
+  spend7dUsd: number | 'unknown';
+  healthReason?: string;
   firesToday: number;
   kind?: string;
   worker?: string;
@@ -1807,7 +1814,8 @@ export interface ScheduleList {
 export interface ScheduleRunResult {
   ok: true;
   id: string;
-  status: 'created' | 'skipped' | 'duplicate' | 'paused';
+  status: ScheduleFireView['status'] | 'duplicate' | 'paused';
+  precheck?: 'bypassed';
   plannedAt: string;
   orderTag?: string;
   reason?: string;

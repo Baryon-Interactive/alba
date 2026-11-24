@@ -702,7 +702,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
     if (command !== 'run' || rest.length) fail('Usage: alba gates run [--now] [--gate name] | status | cancel');
     return runNightlyGates(cfg, orders, { force: values.now, gate: values.gate }).then(result => { if (['failed', 'error'].includes(result.status)) exitCode = 1; return JSON.stringify(result, null, 2); });
   }
-  if (group === 'schedules') return runSchedulesCli(cfg, orders, command, rest, { json: values.json, note: values.note });
+  if (group === 'schedules') return runSchedulesCli(cfg, orders, command, rest, { json: values.json, note: values.note, workers: values.workers });
   if (group === 'design' && command === 'measure') {
     const workersPath = values.workers ?? process.env.ALBA_WORKERS ?? cfg.workers;
     const workers = workersPath ? loadWorkers(workersPath) : undefined;

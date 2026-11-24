@@ -1,6 +1,11 @@
 // Chinese texts of the console. The words follow docs/glossary.md (工单, 派工, 报告, 授权, 打回返工, 一次巡检, 验收, 参照值 ...).
 // `node scripts/i18n-keys.mjs` checks that every t('...') text in src/ has a line here.
 export const zh: Record<string, string> = {
+  'Spend (7 days)': '近七天花费',
+  'skipped-precheck': '预检查跳过',
+  'precheck-failed': '预检查执行失败',
+  'precheck bypassed': '已跳过预检查',
+  'created': '已创建',
   'First-pass review': '初审',
   'send-back': '建议退回',
   'unsure': '无法确定',

@@ -1,9 +1,26 @@
 import type { ProjectConfig } from '../config.ts';
 import { stateStore } from '../orders/backend.ts';
-import { SqliteStore, type ScheduleFireRow, type ScheduleStateRow } from '../orders/sqlite-store.ts';
+import { SqliteStore, type ScheduleFireRow as BaseFire, type ScheduleStateRow } from '../orders/sqlite-store.ts';
 import type { OrderStore } from '../orders/store.ts';
 
-export type { ScheduleFireRow, ScheduleStateRow };
+export type { ScheduleStateRow };
+interface FireDetails {
+  status: BaseFire['status'] | 'missed' | 'skipped-precheck' | 'precheck-failed';
+  first_planned_at?: string;
+  count?: number;
+  output?: string;
+  precheck?: 'bypassed';
+}
+export type ScheduleFireRow = Omit<BaseFire, 'status'> & FireDetails;
+
+/** Keep the original SQLite receipt key and its uniqueness guarantee across old and new databases. */
+function withDetails(store: SqliteStore, rows: BaseFire[], scheduleId?: string): ScheduleFireRow[] {
+  if (!rows.length || !store.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'schedule_fire_details'").get()) return rows;
+  const query = 'SELECT schedule_id, planned_at, details FROM schedule_fire_details';
+  const extra = scheduleId === undefined ? store.db.prepare(query).all() : store.db.prepare(query + ' WHERE schedule_id = ?').all(scheduleId);
+  const details = new Map(extra.map(r => [`${r.schedule_id}/${r.planned_at}`, JSON.parse(String(r.details)) as FireDetails]));
+  return rows.map(row => ({ ...row, ...details.get(`${row.schedule_id}/${row.planned_at}`) }));
+}
 
 interface FileScheduleStore {
   version: 1;
@@ -28,19 +45,33 @@ function writeFileData(store: OrderStore, data: FileScheduleStore): void {
 }
 
 export function getScheduleFire(store: OrderStore, scheduleId: string, plannedAt: string): ScheduleFireRow | undefined {
-  if (store instanceof SqliteStore) return store.getScheduleFire(scheduleId, plannedAt);
+  if (store instanceof SqliteStore) {
+    const row = store.getScheduleFire(scheduleId, plannedAt);
+    return row && withDetails(store, [row], scheduleId)[0];
+  }
   return readFileData(store).fires.find(f => f.schedule_id === scheduleId && f.planned_at === plannedAt);
 }
 
 export function listScheduleFires(store: OrderStore, scheduleId?: string): ScheduleFireRow[] {
-  if (store instanceof SqliteStore) return store.listScheduleFires(scheduleId);
+  if (store instanceof SqliteStore) return withDetails(store, store.listScheduleFires(scheduleId), scheduleId);
   const fires = readFileData(store).fires;
   const filtered = scheduleId !== undefined ? fires.filter(f => f.schedule_id === scheduleId) : fires;
   return filtered.sort((a, b) => a.planned_at.localeCompare(b.planned_at) || a.fired_at.localeCompare(b.fired_at));
 }
 
 export function insertScheduleFire(store: OrderStore, fire: ScheduleFireRow): boolean {
-  if (store instanceof SqliteStore) return store.insertScheduleFire(fire);
+  if (store instanceof SqliteStore) {
+    const status = fire.status === 'created' ? 'created' : 'skipped';
+    return store.transaction(() => {
+      if (!store.insertScheduleFire({ ...fire, status })) return false;
+      if (fire.status !== status || fire.precheck) {
+        store.db.exec('CREATE TABLE IF NOT EXISTS schedule_fire_details (schedule_id TEXT, planned_at TEXT, details TEXT NOT NULL, PRIMARY KEY(schedule_id, planned_at))');
+        const { status, first_planned_at, count, output, precheck } = fire;
+        store.db.prepare('INSERT INTO schedule_fire_details VALUES (?, ?, ?)').run(fire.schedule_id, fire.planned_at, JSON.stringify({ status, first_planned_at, count, output, precheck }));
+      }
+      return true;
+    });
+  }
   const data = readFileData(store);
   if (data.fires.some(f => f.schedule_id === fire.schedule_id && f.planned_at === fire.planned_at)) return false;
   data.fires.push(fire);

@@ -1,3 +1,5 @@
+import { fireView, recentHistory, scheduleSpend } from './health.ts';
+import { runPrecheck, type PrecheckRunner } from './precheck.ts';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import type * as A from '../api/types.ts';
@@ -41,7 +43,8 @@ const FAILED_STAGES = new Set<Stage>(['failed', 'dropped']);
 export interface ScheduleFireOutcome {
   scheduleId: string;
   plannedAt: string;
-  status: 'created' | 'skipped' | 'duplicate' | 'paused';
+  status: A.ScheduleFireView['status'] | 'duplicate' | 'paused';
+  precheck?: 'bypassed';
   orderTag?: string;
   file?: string;
   reason?: string;
@@ -58,6 +61,7 @@ export interface SchedulePassResult {
 export interface RunSchedulesOptions {
   now?: Date;
   passIntervalMs?: number;
+  precheckRunner?: PrecheckRunner;
 }
 
 function expandPlaceholders(text: string, scheduleId: string, plannedAt: Date): string {
@@ -153,12 +157,24 @@ function fireOne(
   plannedAt: Date,
   now: Date,
   manual: boolean,
+  precheckRunner: PrecheckRunner = runPrecheck,
 ): { outcome: ScheduleFireOutcome; needsCaseSync: boolean; needsTableWriteBack: boolean } {
   const plannedAtIso = plannedAt.toISOString();
   const nowIso = now.toISOString();
   let needsCaseSync = false;
   let needsTableWriteBack = false;
 
+  const bypass = manual && schedule.precheck ? { precheck: 'bypassed' as const } : {};
+  let rejected: Pick<ScheduleFireRow, 'status' | 'reason' | 'output'> | undefined;
+  // Never hold a project write lock while an external command runs. Recheck the receipt and gates in the transaction.
+  if (!manual && schedule.precheck && !getScheduleFire(orders.store, schedule.id, plannedAtIso)) {
+    try {
+      const { code, output } = precheckRunner(schedule.precheck, project, 60_000);
+      if (code !== 0) rejected = { status: 'skipped-precheck', reason: t('precheck exited {code}', { code }), output: output.replace(/\r?\n$/, '').split(/\r?\n/).slice(-20).join('\n') };
+    } catch (error) {
+      rejected = { status: 'precheck-failed', reason: (error as Error).message };
+    }
+  }
   const outcome = orders.store.transaction((): ScheduleFireOutcome => {
     const existing = getScheduleFire(orders.store, schedule.id, plannedAtIso);
     if (existing) {
@@ -166,6 +182,7 @@ function fireOne(
         scheduleId: schedule.id,
         plannedAt: plannedAtIso,
         status: 'duplicate',
+        ...(existing.precheck ? { precheck: existing.precheck } : {}),
         orderTag: existing.order_tag,
         reason: existing.reason,
       };
@@ -194,7 +211,7 @@ function fireOne(
         fired_at: nowIso,
         status: 'skipped',
         reason,
-        manual,
+        manual, ...bypass,
       });
       orders.store.appendEvent({
         at: nowIso,
@@ -215,7 +232,7 @@ function fireOne(
         fired_at: nowIso,
         status: 'skipped',
         reason,
-        manual,
+        manual, ...bypass,
       });
       orders.store.appendEvent({
         at: nowIso,
@@ -227,6 +244,10 @@ function fireOne(
       return { scheduleId: schedule.id, plannedAt: plannedAtIso, status: 'skipped', reason };
     }
 
+    if (rejected) {
+      insertScheduleFire(orders.store, { schedule_id: schedule.id, planned_at: plannedAtIso, fired_at: nowIso, manual, ...rejected });
+      return { scheduleId: schedule.id, plannedAt: plannedAtIso, ...rejected };
+    }
     const tag = expandTag(schedule.tag, plannedAt);
     const taken = orders.resolveTag(tag);
     if (taken) {
@@ -238,7 +259,7 @@ function fireOne(
         status: 'skipped',
         order_tag: taken,
         reason,
-        manual,
+        manual, ...bypass,
       });
       orders.store.appendEvent({
         at: nowIso,
@@ -261,7 +282,7 @@ function fireOne(
         status: 'skipped',
         order_tag: tag,
         reason,
-        manual,
+        manual, ...bypass,
       });
       orders.store.appendEvent({
         at: nowIso,
@@ -296,7 +317,7 @@ function fireOne(
         status: 'skipped',
         order_tag: tag,
         reason,
-        manual,
+        manual, ...bypass,
       });
       orders.store.appendEvent({
         at: nowIso,
@@ -315,7 +336,7 @@ function fireOne(
       fired_at: nowIso,
       status: 'created',
       order_tag: tag,
-      manual,
+      manual, ...bypass,
     });
     if (!inserted) {
       const prior = getScheduleFire(orders.store, schedule.id, plannedAtIso);
@@ -379,7 +400,31 @@ function fireOne(
   if (needsTableWriteBack && project.dispatch_table?.write_back) {
     try { writeBack(orders, project.dispatch_table, project.dispatch_table.file, project.state_dir, now); } catch { /* ignore table write-back warnings */ }
   }
-  return { outcome, needsCaseSync, needsTableWriteBack };
+  return { outcome: outcome.status === 'duplicate' ? outcome : { ...outcome, ...bypass }, needsCaseSync, needsTableWriteBack };
+}
+
+/** Enumerate only since the last observed automatic slot. Each gap has one durable receipt keyed on its last slot. */
+function recordMissed(orders: Orders, schedule: ScheduleConfig, latest: Date, now: string, missLatest: boolean): void {
+  orders.store.transaction(() => {
+    const rows = listScheduleFires(orders.store, schedule.id);
+    const anchor = rows.findLast(row => !row.manual) ?? rows[0];
+    const end = latest.getTime() - (missLatest ? 0 : 1);
+    if (anchor && Date.parse(anchor.planned_at) >= end) return;
+    const known = new Set(rows.map(row => row.planned_at));
+    let first = '', last = '', count = 0;
+    const flush = () => {
+      if (count) insertScheduleFire(orders.store, { schedule_id: schedule.id, planned_at: last, fired_at: now, status: 'missed', first_planned_at: first, count, manual: false });
+      count = 0;
+    };
+    for (let due = anchor ? nextPlannedAfter(schedule, new Date(anchor.planned_at)) : latest; due && due.getTime() <= end; due = nextPlannedAfter(schedule, due)) {
+      const iso = due.toISOString();
+      if (known.has(iso)) { flush(); continue; }
+      if (!count) first = iso;
+      last = iso;
+      count++;
+    }
+    flush();
+  });
 }
 
 /** Runs one schedule evaluation pass for a project (called from serve loop and real ticks). */
@@ -415,10 +460,9 @@ export function runSchedules(project: ProjectConfig, orders: Orders, options: Ru
     const latestDue = latestPlannedAtOrBefore(schedule, now);
     if (!latestDue) continue;
 
-    if (schedule.catch_up === 'none') {
-      const ageMs = now.getTime() - latestDue.getTime();
-      if (ageMs > passIntervalMs) continue;
-    }
+    const missLatest = schedule.catch_up === 'none' && now.getTime() - latestDue.getTime() > passIntervalMs;
+    recordMissed(orders, schedule, latestDue, nowIso, missLatest);
+    if (missLatest) continue;
 
     const latestDueIso = latestDue.toISOString();
     const priorFires = listScheduleFires(orders.store, schedule.id);
@@ -426,12 +470,12 @@ export function runSchedules(project: ProjectConfig, orders: Orders, options: Ru
       continue;
     }
 
-    const { outcome, needsCaseSync } = fireOne(project, orders, schedule, latestDue, now, false);
+    const { outcome, needsCaseSync } = fireOne(project, orders, schedule, latestDue, now, false, options.precheckRunner);
     if (needsCaseSync) syncCases = true;
     if (outcome.status === 'created') {
       result.created.push(outcome);
       result.done.push(t('schedule {id} created order {tag} (planned {at})', { id: schedule.id, tag: outcome.orderTag ?? '', at: outcome.plannedAt }));
-    } else if (outcome.status === 'skipped') {
+    } else if (['skipped', 'skipped-precheck', 'precheck-failed'].includes(outcome.status)) {
       result.skipped.push(outcome);
       result.done.push(t('schedule {id} skipped ({reason})', { id: schedule.id, reason: outcome.reason ?? '' }));
     } else if (outcome.status === 'paused' && outcome.autoPaused) {
@@ -515,7 +559,7 @@ export function resumeSchedule(project: ProjectConfig, orders: Orders, id: strin
 }
 
 /** Builds the read model for CLI, API, and console. */
-export function scheduleViews(project: ProjectConfig, orders: Orders, now: Date = new Date(orders.now())): A.ScheduleView[] {
+export function scheduleViews(project: ProjectConfig, orders: Orders, now: Date = new Date(orders.now()), readSpend = scheduleSpend): A.ScheduleView[] {
   const configured = project.schedules ?? [];
   if (!configured.length) return [];
   const states = new Map(allScheduleStates(orders.store).map(s => [s.schedule_id, s]));
@@ -536,6 +580,22 @@ export function scheduleViews(project: ProjectConfig, orders: Orders, now: Date 
     const autoPaused = paused && st?.auto_paused === true;
     const state: A.ScheduleView['state'] = !schedule.enabled ? 'disabled' : paused ? 'paused' : 'active';
     const next = state === 'active' ? nextPlannedAfter(schedule, now) : undefined;
+    const openCount = countOpen(orders, schedule.id, fires);
+    const history = recentHistory(fires);
+    let spend7dUsd: A.ScheduleView['spend7dUsd'];
+    try { spend7dUsd = readSpend(scheduleOrders(orders, schedule.id, fires), now); }
+    catch { spend7dUsd = 'unknown'; }
+    let failingSince: string | undefined;
+    for (let i = fires.length - 1; i >= 0; i--) {
+      const fire = fires[i];
+      if (fire.manual || fire.status === 'missed') continue;
+      if (fire.status !== 'skipped-precheck' && fire.status !== 'precheck-failed') break;
+      failingSince = fire.planned_at;
+    }
+    const healthReason = state === 'disabled' ? t('disabled') : autoPaused ? t('paused after 3 failures')
+      : paused ? st?.paused_reason : openCount >= schedule.max_open ? t('max_open reached')
+      : countFiresToday(fires, now) >= MAX_FIRES_PER_DAY ? t('daily fire limit ({max}) reached', { max: MAX_FIRES_PER_DAY })
+      : schedule.precheck && failingSince ? t('precheck failing since {time}', { time: failingSince }) : undefined;
     const relOrder = path.relative(projectDir, schedule.order).replace(/\\/g, '/');
 
     return {
@@ -545,7 +605,8 @@ export function scheduleViews(project: ProjectConfig, orders: Orders, now: Date 
       cadence: cadenceLabel(schedule),
       catchUp: schedule.catch_up,
       maxOpen: schedule.max_open,
-      openCount: countOpen(orders, schedule.id, fires),
+      openCount, history, spend7dUsd,
+      ...(healthReason ? { healthReason } : {}),
       enabled: schedule.enabled,
       paused,
       autoPaused,
@@ -553,16 +614,7 @@ export function scheduleViews(project: ProjectConfig, orders: Orders, now: Date 
       ...(paused && st?.paused_reason ? { pausedReason: st.paused_reason } : {}),
       state,
       ...(next ? { nextAt: next.toISOString() } : {}),
-      ...(last ? {
-        lastFire: {
-          plannedAt: last.planned_at,
-          firedAt: last.fired_at,
-          status: last.status,
-          ...(last.order_tag ? { orderTag: last.order_tag } : {}),
-          ...(last.reason ? { reason: last.reason } : {}),
-          ...(last.manual ? { manual: true } : {}),
-        },
-      } : {}),
+      ...(last ? { lastFire: fireView(last) } : {}),
       firesToday: countFiresToday(fires, now),
       ...(schedule.kind ? { kind: schedule.kind } : {}),
       ...(schedule.worker ? { worker: schedule.worker } : {}),

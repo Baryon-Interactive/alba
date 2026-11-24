@@ -4,6 +4,14 @@
 // A text with no entry here comes back in English.
 
 export const zh: Record<string, string> = {
+  'stale report': '报告属于先前的运行',
+  'Report "run" must be a non-empty run id.': '报告的 run 字段必须为非空运行编号。',
+  '{file}: "{at}.precheck" must be a command or a program and arguments.': '{file}：{at}.precheck 必须是命令或程序及其参数。',
+  'precheck exited {code}': '预检查退出码为 {code}',
+  'precheck bypassed': '已跳过预检查',
+  'paused after 3 failures': '连续失败三次后已暂停',
+  'max_open reached': '已达到未结束工单上限',
+  'precheck failing since {time}': '预检查自 {time} 起未通过',
   '{file}: "{key}" expects {expected}.': '{file}：“{key}”需要{expected}。',
   'a mapping': '映射',
   'a list': '列表',

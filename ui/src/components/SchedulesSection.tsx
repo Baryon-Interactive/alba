@@ -58,14 +58,27 @@ export function SchedulesSection({ project }: { project: string }) {
                       </>
                     ) : (
                       <>
-                        {dateTime(s.lastFire.firedAt)} · {t('skipped')}{s.lastFire.reason ? ` (${s.lastFire.reason})` : ''}
+                        {dateTime(s.lastFire.firedAt)} · {t(s.lastFire.status)}{s.lastFire.reason ? ` (${s.lastFire.reason})` : ''}
                       </>
                     )}
                   </span>
                 </div>
-                {s.pausedReason && (
-                  <div className="text-xs text-warning">{s.pausedReason}</div>
-                )}
+                <div className="text-xs">
+                  {t('Spend (7 days)')} {s.spend7dUsd === 'unknown' ? t('unknown') : `$${s.spend7dUsd}`}
+                  {s.healthReason && <span className="ml-2 text-warning">{s.healthReason}</span>}
+                </div>
+                {!!s.history?.length && <details className="text-xs">
+                  <summary className="cursor-pointer">{t('History')}</summary>
+                  <ol className="mt-2 space-y-2">
+                    {s.history.map(h => <li key={h.plannedAt} className="break-words">
+                      {h.firstPlannedAt && <>{dateTime(h.firstPlannedAt)} &ndash; </>}{dateTime(h.plannedAt)} ? {t(h.status)}
+                      {h.count && <> ?{h.count}</>}
+                      {h.orderTag && <> ? <TagLink project={project} tag={h.orderTag} /></>}
+                      {h.reason && <> ? {h.reason}</>}{h.precheck && <> ? {t('precheck bypassed')}</>}
+                      {h.output && <pre className="whitespace-pre-wrap break-all">{h.output}</pre>}
+                    </li>)}
+                  </ol>
+                </details>}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => actions.run.mutate(s.id)}>
