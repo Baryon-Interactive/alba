@@ -8,9 +8,9 @@ import { claudeEnvironment } from './claude-protocol.ts';
 import { generic } from './generic.ts';
 import type { WorkerAdapter } from './types.ts';
 export const claude: WorkerAdapter = {
-  verifierArgs(worker, _cwd, prompt, _lastFile, _mcpServers) {
+  verifierArgs(worker, _cwd, prompt, _lastFile, _mcpServers, resume) {
     const model = worker.model ?? worker.launch?.model;
-    return ['-p', prompt, '--output-format', 'json', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--disallowedTools', 'Bash,PowerShell,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Task,Skill', ...(model ? ['--model', model] : [])];
+    return ['-p', prompt, '--output-format', 'json', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--disallowedTools', 'Bash,PowerShell,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Task,Skill', ...(resume ? ['--resume', resume] : []), ...(model ? ['--model', model] : [])];
   },
   verifierEnvironment: (stateDir, workerId, env, envUnset) => claudeEnvironment(stateDir, workerId, env, envUnset, []),
   ...generic, id: 'claude-cli', structured: true, nativeResume: true,

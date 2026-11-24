@@ -1,3 +1,6 @@
+import { phasePrompt, readOnlyChange } from '../run/phase.ts';
+import { orderPhases } from '../orders/phases.ts';
+import { phasesOverride } from '../orders/phase-config.ts';
 import { loadMachines } from '../machines/config.ts';
 import { foundationGaps, foundationStates, formatFoundations, orderTraits } from '../foundations/foundations.ts';
 import { machineInstallPlan, machinesView, probeMachines, startInstall, type MachineView } from '../machines/probe.ts';
@@ -105,7 +108,7 @@ const options = {
   now: { type: 'boolean' }, gate: { type: 'string' },
   project: { type: 'string', multiple: true }, port: { type: 'string' }, stage: { type: 'string' }, json: { type: 'boolean' }, all: { type: 'boolean' }, out: { type: 'string' },
   worker: { type: 'string' }, target: { type: 'string' }, session: { type: 'string' }, outcome: { type: 'string' }, note: { type: 'string' }, file: { type: 'string' },
-  title: { type: 'string' }, kind: { type: 'string' }, role: { type: 'string' }, review: { type: 'string' }, needs: { type: 'string' }, heavy: { type: 'string' }, 'run-model': { type: 'string' }, branch: { type: 'string' }, 'base-ref': { type: 'string' }, worktree: { type: 'string' }, sparse: { type: 'string' }, uses: { type: 'string' }, tools: { type: 'string' },
+  phase: { type: 'string' }, phases: { type: 'string' }, title: { type: 'string' }, kind: { type: 'string' }, role: { type: 'string' }, review: { type: 'string' }, needs: { type: 'string' }, heavy: { type: 'string' }, 'run-model': { type: 'string' }, branch: { type: 'string' }, 'base-ref': { type: 'string' }, worktree: { type: 'string' }, sparse: { type: 'string' }, uses: { type: 'string' }, tools: { type: 'string' },
   quote: { type: 'string' }, decisions: { type: 'string' }, 'spend-cap': { type: 'string' }, protect: { type: 'string' }, help: { type: 'boolean', short: 'h' },
   workers: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'over-cap': { type: 'boolean' }, write: { type: 'boolean' }, 'no-record': { type: 'boolean' }, 'max-dispatch': { type: 'string' },
   'allow-origin': { type: 'string', multiple: true }, 'sign-in': { type: 'boolean' }, applicable: { type: 'boolean' }, text: { type: 'string' }, restart: { type: 'boolean' }, reply: { type: 'string' }, choice: { type: 'string' }, tags: { type: 'string' }, who: { type: 'string' },
@@ -144,11 +147,11 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   orders edit-plan <TAG> [--title t] [--kind k] [--needs A,B] [--intent text] [--role role]
   orders cancel <TAG>
   orders close <TAG> (--merged-elsewhere <commit-or-ref> | --done-by-lead) [--commit <sha>] [--note text]
-  orders add <TAG> [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--run-model m] [--heavy h] [--branch b] [--base-ref local-branch] [--sparse dir,dir] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
+  orders add <TAG> [--phases none] [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--run-model m] [--heavy h] [--branch b] [--base-ref local-branch] [--sparse dir,dir] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
   orders check <TAG>   start a separate read-only verifier (or show the active check)
                     [--quote text] [--decisions text] [--spend-cap n] [--protect a,b]
-  orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b] [--override]   --override approves a failed, awaiting-user (with report), blocked or idle delivery with a note of at least 10 characters
-  orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--role id] [--worker id]   records where an order's work is (an order from a table has no branch); logged as an event
+  orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--phase id (rework)] [--branch b] [--override]   --override approves a failed, awaiting-user (with report), blocked or idle delivery with a note of at least 10 characters
+  orders set <TAG> [--phases none] [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--role id] [--worker id]   records where an order's work is (an order from a table has no branch); logged as an event
   orders run-start <TAG> --worker w [--session s]
   orders run-end <TAG> [--outcome ${RUN_OUTCOMES.join('|')}]   ends the record of the open run (the process is not touched; use "stop" for that); --outcome cancelled also holds the order so that no tick starts it again
   orders report <TAG> --file <report.json | TAG.last.txt>
@@ -304,6 +307,11 @@ function show(orders: Orders, tag: string, project?: ProjectConfig): string {
   const { stage, why } = orders.stage(doc);
   const out: string[] = [`${o.tag}  ${o.title}`, `${t('stage')}: ${stage}  (${why})`];
   const field = (label: string, value: string | undefined) => { if (value) out.push(`${label}: ${value}`); };
+  const phases = project && orderPhases(project, doc);
+  if (phases) field(t('Order phases'), phases.list.map((p, i) => {
+    const last = phases.runsOf(p).at(-1);
+    return `${p.id} ${i + 1}/${phases.list.length}${last ? ` (${[last.worker, last.model].filter(Boolean).join(', ')})` : ''}`;
+  }).join(' → '));
   const sparseDirs = o.worktree && existsSync(o.worktree) ? worktreeSparseDirs(o.worktree) : (project ? effectiveSparse(project, o) : (o.sparse?.length ? o.sparse : undefined));
   field(t('kind'), o.kind); field(t('heavy'), o.heavy); field(t('worker'), o.worker); field(t('model'), o.model); field(t('needs'), o.needs.join(', ')); field(t('condition'), o.condition);
   field(t('source'), o.scheduled?.source); field(t('planned'), o.scheduled?.planned_at);
@@ -833,13 +841,13 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const body = values['body-file'] ? readFileSync(resolveFile(values['body-file'], cfg), 'utf8') : undefined;
         if (values.role) resolveRole(effectiveRoles(cfg, values.workers || process.env.ALBA_WORKERS || cfg.workers ? workersOf(values.workers, cfg) : undefined), { role: values.role, kind: values.kind ?? '' });
         const sparse = values.sparse === undefined ? undefined : values.sparse.trim() === '' ? [] : values.sparse.split(',').map(s => s.trim()).filter(Boolean);
-        const made = createOrder(cfg, orders, { check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, model: values['run-model'], heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], ...(sparse !== undefined ? { sparse } : {}), tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
+        const made = createOrder(cfg, orders, { phases: phasesOverride(values.phases), check: values.check as 'independent' | 'none' | undefined, review: values.review as 'manual' | 'auto' | undefined, tag: rest[0], title: values.title, kind: values.kind, role: values.role, needs: values.needs?.split(',') ?? [], worker: values.worker, model: values['run-model'], heavy: values.heavy, branch: values.branch, base_ref: values['base-ref'], ...(sparse !== undefined ? { sparse } : {}), tags: values.tags?.split(','), skills: values.skills?.split(',').map(s => s.trim()).filter(Boolean), uses: values.uses?.split(',').map(s => s.trim()).filter(Boolean), tools: values.tools !== undefined ? enabledTools(cfg, values.tools) : undefined, worktree: values.worktree, mandate, body, slug: values.slug, queue: values.queue === true });
         return [tagLine(made.doc), made.file ? t('wrote {file}', { file: made.file }) : '', made.tableRow ? t('added a row to the dispatch table') : '', made.tableWarning ?? '', made.foundationWarning ?? ''].filter(Boolean).join('\n');
       }
       case 'act': {
         need(2, `alba orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b]`);
         if (!isHumanAction(rest[1])) fail('Unknown action "{kind}". Allowed: {allowed}.', { kind: rest[1], allowed: HUMAN_ACTIONS.join(', ') });
-        humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true);
+        humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true, values.phase);
         return tagLine(orders.get(rest[0]));
       }
       case 'preflight': {
@@ -851,8 +859,9 @@ ${editorLines(editors, projects.length > 1)}` : body;
       }
       case 'set': {
         need(1, 'alba orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--tools id,id] [--worker id] [--run-model m]');
-        if (values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.sparse === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker or --run-model.');
+        if (values.phases === undefined && values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.sparse === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker, --run-model or --phases.');
         const before = orders.get(rest[0]).order;
+        if (values.phases !== undefined) orders.update(rest[0], { phases: phasesOverride(values.phases) });
         if (values.worker !== undefined) {
           const known = workersOf(values.workers, cfg).workers;
           if (!known.some(w => w.id === values.worker)) fail('Unknown worker "{id}". Known: {known}.', { id: values.worker, known: known.map(w => w.id).join(', ') });
@@ -879,6 +888,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const o = doc.order;
         const fields = (['branch', 'worktree', 'base_ref'] as const).filter(k => o[k] !== before[k]);
         const usesLine = [
+          ...(values.phases !== undefined ? ['  phases: none'] : []),
           ...(values.uses !== undefined && JSON.stringify(o.uses ?? []) !== JSON.stringify(before.uses ?? []) ? [`  uses: ${(before.uses ?? []).join(',') || '-'} -> ${(o.uses ?? []).join(',') || '-'}`] : []),
           ...(values.tools !== undefined && JSON.stringify(o.tools ?? []) !== JSON.stringify(before.tools ?? []) ? [`  tools: ${(before.tools ?? []).join(',') || '-'} -> ${(o.tools ?? []).join(',') || '-'}`] : []),
           ...(values['run-model'] !== undefined ? [`  model: ${before.model || '-'} -> ${o.model || '- (the worker\'s)'}`] : []),
@@ -889,12 +899,24 @@ ${editorLines(editors, projects.length > 1)}` : body;
       case 'run-start': {
         need(1, 'alba orders run-start <TAG> --worker <worker>');
         if (!values.worker) fail('run-start needs --worker.');
-        const { doc, run: r } = orders.runStart(rest[0], { worker: values.worker, session: values.session });
+        const phase = orderPhases(cfg, orders.get(rest[0]))?.current;
+        if (phase?.mode === 'read-only') fail('Use alba run for a read-only phase so the engine enforces its restrictions.');
+        const { doc, run: r } = orders.runStart(rest[0], { worker: values.worker, session: values.session,
+          ...(phase ? { extra: { phase: phase.id, final_phase: true, role: phase.role ?? orders.get(rest[0]).order.role, phase_timeout_minutes: phase.timeout_minutes } } : {}) });
         return `${tagLine(doc)} (${r.id}${r.note ? t(', with rework note: {note}', { note: r.note }) : ''})`;
       }
       case 'run-end': {
         need(1, 'alba orders run-end <TAG> [--outcome o]');
         const outcome = (values.outcome ?? 'completed') as RunOutcome;
+        const open = orders.get(rest[0]).runs.find(r => !r.ended);
+        const changed = open && readOnlyChange(open);
+        if (changed) {
+          orders.store.transaction(() => {
+            orders.runEnd(rest[0], 'failed', { kind: 'nonzero-exit', detail: changed, why: changed });
+            orders.report(rest[0], { status: 'failed', summary: changed, evidence: [], commits: [] });
+          });
+          return tagLine(orders.get(rest[0]));
+        }
         const { doc: ended, run: closed } = orders.runEnd(rest[0], outcome);
         // A run a person ends as completed whose log already ends with its report (a worker whose process stayed after its last
         // message): that report is recorded, as the end of the process would have done.
@@ -904,11 +926,11 @@ ${editorLines(editors, projects.length > 1)}` : body;
         if (found && !stale) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
           requeueUndeliveredInbox(orders, rest[0], closed);
-          if (found.report.status === 'ready') {
+          if (found.report.status === 'ready' && !closed.next_phase) {
             const { mergeBaseBeforeReview } = await import('../check/base-merge.ts');
             mergeBaseBeforeReview(cfg, orders, rest[0], closed);
           }
-          lintDelivery(cfg, orders, rest[0]);
+          if (!closed.next_phase) lintDelivery(cfg, orders, rest[0]);
           return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
         }
         requeueUndeliveredInbox(orders, rest[0], closed);
@@ -931,7 +953,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
           return t('stale report');
         }
         orders.report(rest[0], { ...parsed, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: readFileSync(file, 'utf8') } : {}) }, path.basename(file));
-        lintDelivery(cfg, orders, rest[0]);
+        if (!doc.runs.at(-1)?.next_phase) lintDelivery(cfg, orders, rest[0]);
         return tagLine(orders.get(rest[0]));
       }
       case 'ready': {
@@ -1011,8 +1033,9 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
     const doc = orders.get(command!);
     let promptWorkers: ReturnType<typeof workersOf> | undefined;
     try { promptWorkers = workersOf(values.workers, cfg); } catch { promptWorkers = undefined; }
-    const role = resolveRole(effectiveRoles(cfg, promptWorkers), { ...doc.order, kind: routingOf(cfg, doc).kind || doc.order.kind });
-    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines), roleRules(role));
+    const phases = orderPhases(cfg, doc);
+    const role = resolveRole(effectiveRoles(cfg, promptWorkers), { role: phases?.current.role ?? doc.order.role, kind: routingOf(cfg, doc).kind || doc.order.kind });
+    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines) + phasePrompt(phases), roleRules(role));
     if (values.out) { writeFileSync(values.out, text, 'utf8'); return t('Wrote {file}', { file: values.out }); }
     return text.trimEnd();
   }

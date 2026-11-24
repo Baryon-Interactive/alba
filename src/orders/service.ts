@@ -1,6 +1,7 @@
+import { phasesOverride } from './phase-config.ts';
 import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
 import { ACTION_KINDS, RUN_OUTCOMES, nextSeq, normalizeSparseDirs } from './model.ts';
-import { StaleWrite, type OrderStore } from './store.ts';
+import { writeFileAtomic, StaleWrite, type OrderStore } from './store.ts';
 import { actionProblem, inferStage, type StageResult } from './stage.ts';
 import type { ReportInput } from './report.ts';
 import { UserError, fail, t, withLang } from '../i18n.ts';
@@ -126,7 +127,7 @@ export class Orders {
     }
   }
 
-  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
+  add(input: { phases?: 'none'; check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -139,6 +140,7 @@ export class Orders {
       if (needs.some(n => n.toLowerCase() === input.tag.toLowerCase())) fail('An order cannot need itself.');
       const at = this.now();
       const order: Order = { tag: input.tag, title: input.title.trim(), kind: input.kind, needs, created: at, updated: at };
+      if (input.phases !== undefined) order.phases = phasesOverride(input.phases);
       if (input.check !== undefined) {
         if (!['independent', 'none'].includes(input.check)) fail('Check must be independent or none.');
         order.check = input.check;
@@ -178,9 +180,10 @@ export class Orders {
   }
 
   /** Changes definition fields (not facts). Used when a table is imported again. */
-  update(tag: string, patch: Partial<Pick<Order, 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'sparse' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
+  update(tag: string, patch: Partial<Pick<Order, 'phases' | 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'sparse' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
     return this.retry(() => {
       const doc = this.get(tag);
+      phasesOverride(patch.phases);
       if (patch.check !== undefined && !['independent', 'none'].includes(patch.check)) fail('Check must be independent or none.');
       if (patch.review !== undefined && !['manual', 'auto'].includes(patch.review)) fail('Review must be manual or auto.');
       if (patch.role !== undefined && patch.role !== '' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(patch.role)) fail('Invalid role identifier.');
@@ -259,7 +262,7 @@ export class Orders {
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -319,6 +322,7 @@ export class Orders {
       if (options.author?.trim()) action.author = options.author.trim();
       if (options.requeuedFrom) action.requeued_from = options.requeuedFrom;
       if (options.commit?.trim()) action.commit = options.commit.trim();
+      if (kind === 'rework' && options.phase) action.phase = options.phase;
       if (options.choice !== undefined) action.choice = options.choice;
       if (options.imported) action.imported = true;
       if (options.override) action.override = true;
@@ -396,7 +400,13 @@ export class Orders {
     return this.retry(() => {
       const doc = this.get(tag);
       const run = doc.runs.find(r => r.ended === undefined) ?? doc.runs[doc.runs.length - 1];
+      if (run?.next_phase && input.status === 'ready' && !input.plan?.trim()) fail('A ready planning report needs a nonempty plan.');
       const report: Report = { seq: nextSeq(doc), at: this.now(), status: input.status as ReportStatus, summary: input.summary, evidence: input.evidence, commits: input.commits };
+      if (input.plan !== undefined) {
+        if (Buffer.byteLength(input.plan) > 24 * 1024) fail('Report plan must be Markdown text of at most 24 KiB.');
+        report.plan = input.plan;
+        if (run?.plan_file) writeFileAtomic(run.plan_file, input.plan);
+      }
       if (input.revision) report.revision = input.revision;
       if (input.delivery_text !== undefined) report.delivery_text = input.delivery_text;
       if (run) report.run = run.id;

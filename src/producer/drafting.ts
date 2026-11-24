@@ -1,3 +1,4 @@
+import { orderPhases } from '../orders/phases.ts';
 import { fail } from '../i18n.ts';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -36,7 +37,10 @@ export function readyToDraft(project: ProjectConfig, orders: Orders, workers?: r
     const kind = doc.order.kind;
     const usage = capacityUsage(docs.map(d => ({ stage: orders.stage(d, merged).stage, kind: kindOfOrder(project, d), heavy: d.order.heavy })), project.dispatch.caps)[kind];
     if (usage && usage.used >= usage.cap) return false;
-    return !!workers && !!chooseWorker({ kind, tags: [], workerText: doc.order.worker, role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), doc.order)) }, workers).chosen;
+    if (!workers) return false;
+    const phase = orderPhases(project, doc, kind)?.current;
+    const role = resolveRole(effectiveRoles(project, workersFile), { kind, role: phase?.role ?? doc.order.role });
+    return !!chooseWorker({ kind, tags: [], workerText: phase?.role ? undefined : doc.order.worker, role: rolePolicy(role, phase?.mode === 'read-only') }, workers).chosen;
   });
 }
 
@@ -68,7 +72,10 @@ export function draftPreview(project: ProjectConfig, orders: Orders, draft: Draf
   const proposed = { ...doc, order: { ...doc.order, title: draft.title, kind: draft.kind, worker, needs: draft.needs } };
   const classifier = classifyByRules(project, { ...proposed, order: { ...proposed.order, kind: 'task' } }, draft.body.slice(0, project.classifier?.max_chars ?? 4000), new Date().toISOString());
   const routing = classifyByRules(project, proposed, draft.body.slice(0, project.classifier?.max_chars ?? 4000), new Date().toISOString());
-  const route = chooseWorker({ kind: routing.kind || draft.kind, tags: routing.tags, workerText: doc.order.next_worker ?? worker, role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { ...proposed.order, kind: routing.kind || draft.kind })) }, workers);
+  const kind = routing.kind || draft.kind;
+  const phase = orderPhases(project, proposed, kind)?.current;
+  const role = resolveRole(effectiveRoles(project, workersFile), { kind, role: phase?.role ?? proposed.order.role });
+  const route = chooseWorker({ kind, tags: routing.tags, workerText: doc.order.next_worker ?? (phase?.role ? undefined : worker), role: rolePolicy(role, phase?.mode === 'read-only') }, workers);
   const missingPaths = namedPaths(draft.body).filter(file => {
     if (path.isAbsolute(file) || file.startsWith('../') || /^[A-Za-z]:/.test(file)) return true;
     try { execFileSync('git', ['cat-file', '-e', `${baseRefOf(project)}:${file.replace(/^\.\//, '')}`], { cwd: project.root, stdio: 'ignore', windowsHide: true }); return false; } catch { return true; }

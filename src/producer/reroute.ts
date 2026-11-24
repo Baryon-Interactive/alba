@@ -1,6 +1,8 @@
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
+import { orderPhases } from '../orders/phases.ts';
+import { supportsReadOnly } from '../routing/choose.ts';
 import { roleForOrder } from '../routing/route.ts';
 import { spendToday, ownerOf } from '../usage/spend.ts';
 import type { ProducerExecutionEnv } from './producer.ts';
@@ -13,6 +15,7 @@ export function rerouteRefusal(project: ProjectConfig, orders: Orders, doc: Orde
   if (!worker || !note?.trim() || note.length > 2000) return refuse('target, worker and a non-empty note of at most 2000 characters are required.');
   const target = env.workers.workers.find(w => w.id === worker);
   if (!target) return refuse(`unknown worker ${worker}.`);
+  if (orderPhases(project, doc)?.current.mode === 'read-only' && !supportsReadOnly(target)) return refuse('worker cannot enforce a read-only phase.');
   if (!target.enabled) return refuse(`worker ${worker} is disabled.`);
   if (!project.producer.escalate_to?.includes(worker)) return refuse('worker is not in producer.escalate_to (the default list is empty).');
   const stage = orders.stage(doc).stage;

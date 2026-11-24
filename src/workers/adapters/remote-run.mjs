@@ -111,6 +111,7 @@ export async function runRemote(spec, transport = {}) {
     for (const f of spec.order_files) writeFileSync(path.join(overlay, '.alba', 'order', path.basename(f)), rewrite(readFileSync(f, 'utf8')), 'utf8');
     writeFileSync(path.join(overlay, '.alba', 'order', 'prompt.md'), rewrite(readFileSync(spec.prompt_file, 'utf8')), 'utf8');
     cpSync(fileURLToPath(new URL('./remote-run.ps1', import.meta.url)), path.join(dir, 'run.ps1'));
+    if (spec.read_only) cpSync(fileURLToPath(new URL('./read-only.mjs', import.meta.url)), path.join(dir, 'read-only.mjs'));
     cpSync(fileURLToPath(new URL('./remote-worker.mjs', import.meta.url)), path.join(dir, 'worker.mjs'));
     cpSync(fileURLToPath(new URL('./desktop-run.ps1', import.meta.url)), path.join(dir, 'desktop-run.ps1'));
     cpSync(fileURLToPath(new URL('../../run/environment.mjs', import.meta.url)), path.join(dir, 'environment.mjs'));
@@ -120,7 +121,7 @@ export async function runRemote(spec, transport = {}) {
     lfs = lfsObjects();
     if (lfs.oids.length) writeFileSync(path.join(dir, 'lfs-oids.txt'), lfs.oids.join('\n') + '\n', 'utf8');
     const { program, args, env, env_unset, identity, repo, worktree, branch } = spec;
-    writeFileSync(path.join(dir, 'spec.json'), JSON.stringify({ program, args, env, env_unset, identity, repo, worktree, branch }, null, 2), 'utf8');
+    writeFileSync(path.join(dir, 'spec.json'), JSON.stringify({ program, args, env, env_unset, identity, repo, worktree, branch, read_only: spec.read_only, read_only_home: spec.read_only_home }, null, 2), 'utf8');
     say(`sending ${files.length} alba files and the order to ${spec.ssh}:${runDir}`);
     const make = `powershell -NoProfile -NonInteractive -Command "New-Item -ItemType Directory -Force -Path '${spec.workspace}' | Out-Null"`;
     must(ssh(make), 'creating the workspace');
@@ -267,7 +268,7 @@ export async function runRemote(spec, transport = {}) {
     await sendLfs(pushBranch());
     await sendInbox();
     let updating;
-    const timer = setInterval(() => { if (updating) return; updating = syncBack(false).catch(e => say(e.message)).then(() => sendInbox()).catch(e => say(e.message)).finally(() => { updating = undefined; }); }, spec.sync_minutes * 60000);
+    const timer = spec.read_only ? undefined : setInterval(() => { if (updating) return; updating = syncBack(false).catch(e => say(e.message)).then(() => sendInbox()).catch(e => say(e.message)).finally(() => { updating = undefined; }); }, spec.sync_minutes * 60000);
     let result = { code: 1 };
     for (let i = 0; i < 20; i++) {
       const port = spec.tunnel ? (spec.tunnel_base + i - 1) % 65535 + 1 : 0;
@@ -278,6 +279,13 @@ export async function runRemote(spec, transport = {}) {
     clearInterval(timer);
     if (dispatchFailed) { await updating; throw new Error(`Remote dispatch failed: ${dispatchFailed}`); }
     await updating;
+    if (spec.read_only) {
+      await receiveTar(`${runDir}/result`, resultStage);
+      const check = readFileSync(path.join(resultStage, 'worktree-check'), 'utf8');
+      if (check === 'unchanged' && existsSync(path.join(resultStage, 'last.txt'))) cpSync(path.join(resultStage, 'last.txt'), spec.last_file);
+      writeFileSync(spec.phase_check, check, 'utf8');
+      return result.code ?? 1;
+    }
     let synced = false;
     try { synced = await syncBack(true); } catch (e) { say(e.message); }
     if (synced) await collect();

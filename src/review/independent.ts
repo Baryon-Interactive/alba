@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -97,20 +98,26 @@ export function removeDetachedCheckout(root: string, cwd: string, force = false)
   withGitLockRetrySync(() => reviewGit(root, 'worktree', 'remove', ...(force ? ['-f'] : []), cwd));
 }
 
-export function launchReadOnlyReview(
+export function readOnlyCommand(
   ctx: Pick<RunContext, 'project' | 'probes'>,
   worker: WorkerConfig,
   cwd: string,
   promptInstruction: string,
   lastFile: string,
-  logFile: string,
-): { pid: number; process_started_at?: string } {
+  remote = false,
+  resume?: string,
+) {
   const named = Object.fromEntries(Object.entries(worker.launch!.env).map(([key, value]) => [key, value.replace(/\{skill_names\}|\{skill_allow\}/g, '')]));
   const adapter = workerAdapter(worker.engine);
-  const environment = adapter.verifierEnvironment?.(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) ?? { env: named, envUnset: worker.launch!.env_unset };
-  const mcpServers = adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
-  const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers);
-  const pid = ctx.probes.spawnDetached(worker.launch!.program, args, { cwd, ...environment, logFile });
+  const environment = !remote && adapter.verifierEnvironment ? adapter.verifierEnvironment(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) : { env: named, envUnset: worker.launch!.env_unset };
+  const mcpServers = remote ? [] : adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
+  const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers, resume);
+  return { program: worker.launch!.program, args, ...environment };
+}
+
+export function launchReadOnlyReview(ctx: Pick<RunContext, 'project' | 'probes'>, worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, logFile: string): { pid: number; process_started_at?: string } {
+  const { program, args, ...environment } = readOnlyCommand(ctx, worker, cwd, prompt, lastFile);
+  const pid = ctx.probes.spawnDetached(program, args, { cwd, ...environment, logFile });
   const process_started_at = ctx.probes.processStartedAt?.(pid);
   return { pid, process_started_at };
 }
@@ -132,6 +139,7 @@ function deliveryInputs(project: ProjectConfig, orders: Orders, tag: string) {
   const doc = orders.get(tag), report = doc.reports.at(-1);
   if (!report || !doc.order.branch) throw new Error('Independent check requires a delivery report and a recorded branch.');
   const delivery = doc.runs.find(r => r.id === report.run) ?? doc.runs.at(-1);
+  if (delivery?.next_phase) throw new Error(t('Independent checks require the write phase delivery.'));
   if (!delivery?.worker) throw new Error('Independent check refuses a delivery with no known delivering worker.');
   const body = readFileSync(findOrderFile(project.work_orders, doc.order.tag), 'utf8');
   const lines = body.split(/\r?\n/), heading = lines.findIndex(l => /^##\s+Acceptance\s*$/i.test(l));
@@ -168,10 +176,10 @@ export function parseIndependentVerdict(text: string): IndependentVerdict | unde
 }
 
 /** Deliberately use a restricted engine invocation, never the delivering worker's mutation-capable launch arguments. */
-export function verifierArgs(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[] = []): string[] {
+export function verifierArgs(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[] = [], resume?: string): string[] {
   const args = workerAdapter(worker.engine).verifierArgs;
   if (!args) throw new Error(`No enforced read-only verifier adapter for engine ${worker.engine}. Configure a supported verifier.`);
-  return args(worker, cwd, prompt, lastFile, mcpServers);
+  return args(worker, cwd, prompt, lastFile, mcpServers, resume);
 }
 
 function record(orders: Orders, run: IndependentCheck): IndependentCheck { orders.record(run.tag, 'independent-check', { ...run }); return run; }

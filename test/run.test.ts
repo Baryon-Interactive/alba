@@ -12,7 +12,9 @@ import { approve } from '../src/run/review.ts';
 import { backoffMinutes, isLostSessionError, isTransientError } from '../src/run/transient.ts';
 import type { Run } from '../src/orders/model.ts';
 import { baseRefOf, branchIsMerged, planWorktree } from '../src/run/worktree.ts';
-import type { Probes } from '../src/tick/gather.ts';
+import { tick, type Probes } from '../src/tick/gather.ts';
+import { startIndependentCheck } from '../src/review/independent.ts';
+import { humanAction } from '../src/service/actions.ts';
 import { planTick, type TickInput, type TickOrder } from '../src/tick/plan.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { tempOrders } from './helpers.ts';
@@ -56,6 +58,82 @@ const workersFile = () => validateWorkers({
     { id: 'editor', engine: 'claude-session' },
   ],
 }, 'w.yaml');
+
+test('phase routing, guarded plans, rotation and rework follow the run history', () => {
+  const { project, orders } = fixture();
+  const workers = workersFile();
+  const planner = workers.workers[0];
+  planner.model = 'planning-model';
+  workers.workers.push(...['builder', 'alternate'].map(id => ({ ...planner, id, model: 'writing-model', on_limit: 'rotate' as const })));
+  project.phases = { sim: [{ id: 'plan', mode: 'read-only', role: 'reader' }, { id: 'implement', mode: 'write', role: 'writer' }] };
+  project.roles = {
+    reader: { workers: { only: [planner.id] }, sources: {} },
+    writer: { workers: { only: ['builder', 'alternate'], prefer: ['builder'] }, sources: {} },
+  };
+  const fake = probes();
+  const ctx = { project, orders, workers, probes: fake };
+  const start = () => {
+    const report = tick(project, orders, workers, fake, { record: false }).report;
+    const move = report.moves.find(m => m.tag === 'T1');
+    assert.ok(move && 'worker' in move, JSON.stringify(report));
+    startRun(ctx, 'T1', move.worker, { rotate: move.rotated });
+    return orders.get('T1').runs.at(-1)!;
+  };
+  const finish = (run: Run, plan?: string) => {
+    const block = ['--- alba-report ---', JSON.stringify({ status: 'ready', run: run.id, summary: 'Inspected', plan }), '--- end ---'].join('\n');
+    const p = probes({ fileTime: file => file === run.last_file ? run.started : undefined, readText: file => file === run.last_file ? block : undefined });
+    applyFinish(orders, findFinishes(project, orders, p, workers)[0], project);
+  };
+  const read = start();
+  assert.deepEqual([read.phase, read.worker, read.role, read.final_phase], ['plan', planner.id, 'reader', false]);
+  assert.ok(fake.spawned.at(-1)?.args.includes('read-only'));
+  assert.match(readFileSync(read.prompt_file!, 'utf8'), /read-only planning phase/);
+  const guidance = 'Check the cached key before lookup.';
+  finish(read, guidance);
+  assert.equal(readFileSync(read.plan_file!, 'utf8'), guidance);
+  assert.deepEqual(orders.stage(orders.get('T1')), { stage: 'queued', why: 'plan ready, next phase: implement' });
+  assert.throws(() => startIndependentCheck(ctx, 'T1'), /write phase delivery/);
+  const write = start();
+  assert.equal(write.plan_from, read.id);
+  assert.deepEqual([write.phase, write.worker, write.role, write.final_phase], ['implement', 'builder', 'writer', true]);
+  assert.match(readFileSync(write.prompt_file!, 'utf8'), /Plan from phase plan \(coder, planning-model\)/);
+  assert.ok(readFileSync(write.prompt_file!, 'utf8').includes(guidance));
+  applyFinish(orders, { tag: 'T1', run: write.id, outcome: 'capacity', limit: 'quota', why: 'Quota exhausted' }, project);
+  const rotated = start();
+  assert.deepEqual([rotated.phase, rotated.worker, rotated.rotated?.from], ['implement', 'alternate', 'builder']);
+  finish(rotated);
+  assert.equal(orders.stage(orders.get('T1')).stage, 'awaiting-review');
+  humanAction(project, orders, 'T1', 'rework', 'Check again');
+  const retry = start();
+  assert.equal(retry.phase, 'implement');
+  assert.ok(readFileSync(retry.prompt_file!, 'utf8').includes(guidance));
+  finish(retry);
+  humanAction(project, orders, 'T1', 'rework', 'Inspect again', undefined, false, 'plan');
+  const restarted = start();
+  assert.equal(restarted.phase, 'plan');
+  assert.ok(!readFileSync(restarted.prompt_file!, 'utf8').includes(guidance));
+  writeFileSync(path.join(restarted.cwd!, 'unexpected.txt'), 'change');
+  finish(restarted, 'Invalidated');
+  assert.equal(orders.stage(orders.get('T1')).stage, 'failed');
+  assert.equal(orders.get('T1').runs.at(-1)?.outcome, 'failed');
+  assert.match(orders.get('T1').reports.at(-1)!.summary, /worktree changed/);
+});
+
+test('opted-out orders and unconfigured kinds keep the ordinary stage sequence', () => {
+  for (const optOut of [true, false]) {
+    const { project, orders } = fixture();
+    project.phases = { [optOut ? 'sim' : 'another']: [{ id: 'read', mode: 'read-only' }, { id: 'write', mode: 'write' }] };
+    if (optOut) orders.update('T1', { phases: 'none' });
+    const stage = () => orders.stage(orders.get('T1')).stage;
+    assert.equal(stage(), 'queued');
+    startRun({ project, orders, workers: workersFile(), probes: probes() }, 'T1', 'coder');
+    assert.equal(stage(), 'running');
+    assert.equal(orders.get('T1').runs[0].phase, undefined);
+    orders.runEnd('T1');
+    orders.report('T1', { status: 'ready', summary: 'Complete', evidence: [], commits: [] });
+    assert.equal(stage(), 'awaiting-review');
+  }
+});
 
 test('report block: the new markers, an empty question, and ready leads to awaiting-review', () => {
   const text = 'Done.\n\n--- alba-report ---\n{"status":"ready","summary":"All good","question":"","evidence":["a.txt"],"commits":["abc1234"]}\n--- end ---\n';

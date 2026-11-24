@@ -1,3 +1,4 @@
+import { PhaseBadge } from '@/components/OrderPhases';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useQueries } from '@tanstack/react-query';
@@ -67,6 +68,7 @@ export function BoardCard({ project, o, overlapTags }: { project: string; o: Ord
       <div className="order-title mt-1 line-clamp-2 min-h-10 text-sm break-words">{o.title}</div>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
         {o.lintBounced && <Badge tone="warning">{t('Lint rework')}</Badge>}
+        {o.phase && <PhaseBadge phase={o.phase} />}
         {o.kind && <Badge tone="outline">{o.kind}</Badge>}
         {o.heavy && <Badge tone="outline">{t('Heavy class {kind}', { kind: o.heavy })}</Badge>}
         {(o.run?.worker || o.nextWorker || o.worker) && <Badge tone="neutral">{o.run?.worker ?? (o.nextWorker ? `${t('Next worker')}: ${o.nextWorker}` : o.worker)}</Badge>}

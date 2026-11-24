@@ -1,3 +1,4 @@
+import { orderPhases } from '../orders/phases.ts';
 import type { ProjectConfig } from '../config.ts';
 import { fail, t } from '../i18n.ts';
 import { readOrderFileWithHash } from '../orders/preflight.ts';
@@ -33,13 +34,14 @@ export function stopRun(orders: Orders, tag: string, note?: string): string | un
   return warning;
 }
 
-export function humanAction(project: ProjectConfig, orders: Orders, tag: string, action: HumanAction, note?: string, branch?: string, override = false): string {
+export function humanAction(project: ProjectConfig, orders: Orders, tag: string, action: HumanAction, note?: string, branch?: string, override = false, phase?: string): string {
+  if (phase !== undefined && (action !== 'rework' || !orderPhases(project, orders.get(tag))?.list.some(p => p.id === phase))) fail('Choose a configured phase of this order for rework.');
   if (branch && action !== 'approve') fail('--branch only goes with approve (to record a branch on its own: alba orders set <TAG> --branch b).');
   switch (action) {
     case 'check-independent': case 'check-none': orders.update(tag, { check: action === 'check-independent' ? 'independent' : 'none' }); break;
     case 'review-manual': case 'review-auto': orders.update(tag, { review: action === 'review-manual' ? 'manual' : 'auto' }); break;
     case 'approve': approve(project, orders, tag, note, branch, override); break;
-    case 'rework': rework(orders, tag, note, { max: project.dispatch.max_reworks, override }); break;
+    case 'rework': rework(orders, tag, note, { max: project.dispatch.max_reworks, override, phase }); break;
     case 'queue': {
       if (override) {
         const doc = orders.get(tag);

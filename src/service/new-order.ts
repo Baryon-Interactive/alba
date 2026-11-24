@@ -11,6 +11,7 @@ import { classifyByRules, orderText } from '../routing/classify.ts';
 import { writeBack } from '../table/write.ts';
 
 export interface NewOrderInput {
+  phases?: 'none';
   check?: 'independent' | 'none';
   review?: 'manual' | 'auto';
   role?: string;
@@ -103,7 +104,7 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
     const at = now.toISOString();
     const draft: OrderDoc = { version: 1, order: { tag: input.tag, title: input.title.trim(), kind: input.kind?.trim() || 'task', needs: [], ...(input.tags?.length ? { tags: input.tags.map(x => x.trim().toLowerCase()) } : {}), created: at, updated: at }, runs: [], reports: [], actions: [] };
     const routing = project.kinds?.length ? classifyByRules(project, draft, orderText(project, input.tag), at) : undefined;
-    doc = orders.add({ check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, model: input.model, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree, ...(input.sparse !== undefined ? { sparse: input.sparse } : {}) });
+    doc = orders.add({ phases: input.phases, check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, model: input.model, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree, ...(input.sparse !== undefined ? { sparse: input.sparse } : {}) });
     if (filledSections.length) orders.record(doc.order.tag, 'order-template-filled', { kind: templateKind, sections: filledSections });
   } catch (e) {
     if (file) rmSync(file, { force: true });     // the order was refused (no title, a need on itself): leave no file behind

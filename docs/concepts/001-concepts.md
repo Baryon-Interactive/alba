@@ -3,8 +3,8 @@
 | Concept | What it is |
 |---|---|
 | Project | One game, described by a `alba.yaml`: repository, folder of work-order files, state folder, dispatch rules, optional table mapping. |
-| Order | One unit of work: `tag`, `title`, `kind`, optional explicit `role`, `heavy` class, `needs` (tags that must be merged first), preferred `worker` text, `mandate`, `branch`, `worktree`. Each order resolves to one role before dispatch. |
-| Run | One dispatch of an order to a worker: worker, session, start, end, outcome (`completed`, `failed`, `stalled`, `capacity`, `cancelled`), and the rework note it started with. An order can have many runs: retries, resumes after a drop, a different worker. |
+| Order | One unit of work: `tag`, `title`, `kind`, optional explicit `role`, `heavy` class, `needs` (tags that must be merged first), preferred `worker` text, `mandate`, `branch`, `worktree`. Each dispatch resolves its role from the current phase or the order. |
+| Run | One dispatch of an order to a worker: worker, session, start, end, outcome (`completed`, `failed`, `stalled`, `capacity`, `cancelled`), and the rework note it started with. A run can belong to a configured [phase](../workflow/044-phases.md) with its own role and worker. An order can have many runs: retries, resumes after a drop, a different worker. |
 | Report | A worker's structured report: status, one-line summary, at most one question, evidence paths, commits. |
 | Action | A person's decision: `queue`, `cancel`, `hold`, `release`, `approve`, `rework` (and `stop`, which holds a running order after stopping its processes). |
 | Event | An append-only log line for everything above. |

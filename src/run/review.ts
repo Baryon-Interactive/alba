@@ -150,9 +150,9 @@ export function reworkCount(doc: OrderDoc): number {
  * Send an order back with a note; the note goes into the next run's prompt. With `dispatch.max_reworks` set, a send-back past the
  * limit is refused unless `override` is given: an order that went back that often needs a new approach, a split or a person.
  */
-export function rework(orders: Orders, tag: string, note: string | undefined, options: { max?: number; override?: boolean } = {}): void {
+export function rework(orders: Orders, tag: string, note: string | undefined, options: { max?: number; override?: boolean; phase?: string } = {}): void {
   const done = reworkCount(orders.get(tag));
   if (options.max !== undefined && done >= options.max && !options.override)
     fail('{tag} has been sent back {n} times (dispatch.max_reworks is {max}). Change the approach: split the order, write a new one, do it by hand, or send it back once more with --override.', { tag: orders.get(tag).order.tag, n: done, max: options.max });
-  orders.act(tag, 'rework', { note });
+  orders.act(tag, 'rework', { note, phase: options.phase });
 }

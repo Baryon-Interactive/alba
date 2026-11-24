@@ -1,3 +1,4 @@
+import { PhasePlan } from '@/components/OrderPhases';
 import { useEffect, useState } from 'react';
 import type { EndKind, TranscriptEntry } from '@api';
 import { Link, useParams, useSearchParams } from 'react-router';
@@ -46,6 +47,7 @@ export function RunPage() {
   const base = `/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(tag)}`;
   if (!run) return <Empty>{t('No such run.')} <Link className="text-primary hover:underline" to={base}>{tag}</Link></Empty>;
 
+  const source = run.planFrom && q.data.runs.find(r => r.id === run.planFrom);
   const live = !run.ended;
   const u = run.usage;
   const silentEnd = run.end && SILENT_END_KINDS.has(run.end.kind) ? run.end : undefined;
@@ -63,6 +65,8 @@ export function RunPage() {
         <span className="text-base font-normal">{q.data.order.title}</span>
         <RunStatus {...run} /><StageBadge stage={q.data.stage} />
       </h1>
+      {source && source.phase && <PhasePlan id={source.phase} plan={q.data.reports.findLast(r => r.run === source.id && r.status === 'ready')?.plan} />}
+      {run.phase && <PhasePlan id={run.phase} plan={q.data.reports.findLast(r => r.run === run.id && r.plan)?.plan} />}
       {silentEnd && (
         <div role="alert" className="mb-3 rounded-md border border-destructive/40 border-l-[3px] border-l-destructive bg-destructive/8 px-3.5 py-2.5 text-sm">
           <div className="flex flex-wrap items-center gap-2 font-medium">

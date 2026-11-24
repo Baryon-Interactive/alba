@@ -64,6 +64,20 @@ function renderRun(): string {
   );
 }
 
+it('opens the plan supplied to an implementation run even after a later planning cycle', () => {
+  const detail = makeDetail('report', 'Handed in');
+  detail.runs[0].phase = 'implement';
+  detail.runs[0].planFrom = 'reader-run';
+  detail.runs.push({ ...detail.runs[0], id: 'reader-run', phase: 'inspect', planFrom: undefined });
+  const report = { status: 'ready' as const, seq: 2, at: '', summary: 'Plan ready', evidence: [], commits: [] };
+  detail.reports = [{ ...report, run: 'reader-run', plan: 'Keep the original key.' }, { ...report, run: 'later-run', plan: 'Use a new key.' }];
+  vi.mocked(useOrder).mockReturnValue({ data: detail } as ReturnType<typeof useOrder>);
+  const html = renderRun();
+  expect(html).toContain('Plan from phase inspect');
+  expect(html).toContain('Keep the original key.');
+  expect(html).not.toContain('Use a new key.');
+});
+
 it('shows a silent-end banner with detail and WIP ref for all four silent kinds', () => {
   const silentKinds: EndKind[] = ['stream-cut-mid-turn', 'vanished', 'output-limit', 'context-limit'];
   for (const kind of silentKinds) {

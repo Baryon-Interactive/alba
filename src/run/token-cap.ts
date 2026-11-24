@@ -35,7 +35,8 @@ export function stopTokenCappedRuns(project: ProjectConfig, orders: Orders, work
   for (const doc of orders.all()) {
     const run = doc.runs.find(r => r.ended === undefined);
     if (!run || run.imported) continue;
-    const worker = workers.workers.find(w => w.id === run.worker);
+    const supply = workers.workers.find(w => w.id === run.worker);
+    const worker = run.phase_timeout_minutes === undefined ? supply : { ...supply, max_minutes_per_run: Math.min(run.phase_timeout_minutes, supply?.max_minutes_per_run ?? Infinity) };
     if (worker?.max_tokens_per_run === undefined && worker?.max_minutes_per_run === undefined && worker?.max_usd_per_run === undefined) continue;
     const live = liveRuns.read(project, doc.order.tag, run, probes, doc.order.worktree);
     const usage = totalUsage(liveRuns.accounting(run)?.turns ?? []);

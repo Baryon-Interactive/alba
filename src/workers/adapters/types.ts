@@ -14,7 +14,7 @@ export interface WorkerAdapter {
   nativeResume: boolean;
   finalMessagePrompt?(worker: WorkerConfig, lastFile: string): string;
   prepare(args: string[], context: LaunchContext): { program?: string; args: string[]; env: Record<string, string>; envUnset: string[] };
-  verifierArgs?(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[]): string[];
+  verifierArgs?(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[], resume?: string): string[];
   verifierEnvironment?(stateDir: string, workerId: string, env: Record<string, string>, envUnset: string[]): { env: Record<string, string>; envUnset: string[] };
   verifierServers?(program: string, cwd: string, run: (command: string[]) => string): string[];
   usage(text: string, cut?: boolean): RunUsage | undefined;

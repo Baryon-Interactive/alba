@@ -1,6 +1,15 @@
 // Chinese texts of the console. The words follow docs/glossary.md (工单, 派工, 报告, 授权, 打回返工, 一次巡检, 验收, 参照值 ...).
 // `node scripts/i18n-keys.mjs` checks that every t('...') text in src/ has a line here.
 export const zh: Record<string, string> = {
+  'Worker default model': '执行器默认模型',
+  'Awaiting worker assignment': '等待分配执行器',
+  'Order phases': '工单执行阶段',
+  '{id} {index}/{count}': '{id} {index}/{count}',
+  'Plan from phase {id}': '{id} 阶段的计划',
+  'Phase complete': '已完成',
+  'Current phase': '当前阶段',
+  'Upcoming phase': '待执行',
+  'Restart from phase': '从指定阶段重新开始',
   'Slot': '运行槽位',
   'Port range': '端口范围',
   'Resets in {time}': '距重置还有 {time}',
