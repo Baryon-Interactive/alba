@@ -1,3 +1,4 @@
+import { stopWarning } from './kill-tree.ts';
 import { UserError, t } from '../i18n.ts';
 import type { ProjectConfig } from '../config.ts';
 import type { Run } from '../orders/model.ts';
@@ -146,7 +147,8 @@ export function stopLingeringRun(orders: Orders, probes: Probes, tag: string): s
   const tail = file ? probes.tail(file, TAIL_BYTES) : '';
   const handed = tail ? deliveredReport(tail, { cut: Buffer.byteLength(tail) >= TAIL_BYTES })?.monitor?.pid : undefined;
   const result = run.pid && !run.imported ? probes.stopTree?.(run.pid, run.process_started_at, { launchedAt: run.started, ...(handed ? { spare: [handed] } : {}) }) : undefined;
-  if (!run.pid || !result?.stopped.includes(run.pid)) return t('Refusing to stop process {pid} of {tag}: it is not the process this run started.', { pid: run.pid ?? 0, tag });
-  orders.record(tag, 'lingering-stopped', { run: run.id, pid: run.pid, stopped: result.stopped, left_running: result.leftRunning });
-  return t('{tag}: stopped the process of run {run} (its report was already in the log)', { tag, run: run.id });
+  const warning = result && stopWarning(result);
+  if (!run.pid || !result?.stopped.includes(run.pid)) return warning ?? t('Refusing to stop process {pid} of {tag}: it is not the process this run started.', { pid: run.pid ?? 0, tag });
+  orders.record(tag, 'lingering-stopped', { run: run.id, pid: run.pid, stopped: result.stopped, left_running: result.leftRunning, ...(result.problem && { problem: result.problem }) });
+  return t('{tag}: stopped the process of run {run} (its report was already in the log)', { tag, run: run.id }) + (warning ? ' ' + warning : '');
 }

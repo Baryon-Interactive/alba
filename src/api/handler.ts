@@ -41,7 +41,7 @@ import { sayDeliveryMode } from '../workers/config.ts';
 import { startRun, type RunContext } from '../run/launch.ts';
 import { approve } from '../run/review.ts';
 import { planWorktree } from '../run/worktree.ts';
-import { humanAction } from '../service/actions.ts';
+import { humanAction, stopRun } from '../service/actions.ts';
 import { createOrder } from '../service/new-order.ts';
 import { executeTick } from '../tick/execute.ts';
 import { findWorktree, readQuotaHistory, tick, type Probes } from '../tick/gather.ts';
@@ -1233,8 +1233,11 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
           message = t('Merged. Wrote {file} (branch is in the base branch; accept: {accept})', { file: r.acceptFile, accept: r.accept });
           break;
         }
-        case 'queue': case 'hold': case 'release': case 'cancel': case 'rework': case 'stop':
+        case 'queue': case 'hold': case 'release': case 'cancel': case 'rework':
           humanAction(view.config, view.orders, tag, action as 'queue', note);
+          break;
+        case 'stop':
+          message = stopRun(view.orders, tag, note);
           break;
         case 'close': {
           const how = str(body, 'how', true)!;

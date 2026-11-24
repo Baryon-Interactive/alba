@@ -7,7 +7,7 @@ import { UserError, fail, t, withLang } from '../i18n.ts';
 import { pendingNotes } from '../run/prompt.ts';
 import { openQuestions, requeueUndeliveredInbox, type OutboxEntry } from '../run/messages.ts';
 import { processStartedAt } from '../monitor/process.ts';
-import { runProcessMatches, stopProcessTreeVerified } from '../run/kill-tree.ts';
+import { runProcessMatches, stopWarning, stopProcessTreeVerified } from '../run/kill-tree.ts';
 
 /** The engine: every change to an order goes through here, so every change is validated and logged. */
 /**
@@ -259,7 +259,7 @@ export class Orders {
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -300,8 +300,12 @@ export class Orders {
           if (run.pid && this.processes.alive(run.pid)) {
             // A run whose process creation time was never recorded is identified by its launch window instead.
             const verified = !run.imported && runProcessMatches(this.processStart(run.pid), run.process_started_at, run.started);
-            if (!verified || !this.processes.stop(run.pid, run.process_started_at, { launchedAt: run.started }).stopped.includes(run.pid)) {
+            const result = verified ? this.processes.stop(run.pid, run.process_started_at, { launchedAt: run.started }) : undefined;
+            const warning = result && stopWarning(result);
+            if (warning) options.onStopWarning?.(warning);
+            if (!result?.stopped.includes(run.pid)) {
               if (kind === 'cancel') continue;
+              if (warning) fail('Cannot hold {tag}. {warning}', { tag: doc.order.tag, warning });
               fail('Cannot hold {tag}: process {pid} cannot be verified as this run; no hold was recorded.', { tag: doc.order.tag, pid: run.pid });
             }
           }

@@ -1,7 +1,14 @@
+import { processStartedAt } from '../monitor/process.ts';
+import { t } from '../i18n.ts';
 import { execFile, execFileSync } from 'node:child_process';
 
 export interface ProcessInfo { pid: number; parentPid: number; createdAt: string }
-export interface ProcessStop { stopped: number[]; leftRunning: number[] }
+export interface ProcessStop { stopped: number[]; leftRunning: number[]; problem?: 'listing' | 'stop' }
+
+export function stopWarning(result: ProcessStop): string | undefined {
+  if (result.problem === 'listing') return t('Could not list descendants. Some processes may still be running.');
+  if (result.problem === 'stop') return t('Could not confirm the stop. Some processes may still be running.');
+}
 
 const requirePlatform = () => {
   if (!['win32', 'linux', 'darwin'].includes(process.platform)) throw new Error(`Process management is unsupported on ${process.platform}.`);
@@ -35,7 +42,7 @@ function snapshotCommand(): { program: string; args: string[]; timeout: number; 
     return row && !row[4].startsWith('Z') ? [{ pid: Number(row[1]), parentPid: Number(row[2]), createdAt: row[3] }] : [];
   }) };
   // One CIM query for the whole snapshot. Unreadable creation times cannot identify a real descendant.
-  const script = "@(Get-CimInstance Win32_Process | Where-Object { $null -ne $_.CreationDate } | Select-Object ProcessId,ParentProcessId,@{Name='CreatedAt';Expression={$_.CreationDate.ToUniversalTime().ToString('o')}}) | ConvertTo-Json -Compress";
+  const script = "@(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate -ErrorAction Stop | Where-Object { $null -ne $_.CreationDate } | Select-Object ProcessId,ParentProcessId,@{Name='CreatedAt';Expression={$_.CreationDate.ToUniversalTime().ToString('o')}}) | ConvertTo-Json -Compress";
   return { program: 'powershell', args: ['-NoProfile', '-NonInteractive', '-Command', script], timeout: 30000, parse: text => {
     const rows = JSON.parse(text.trim() || '[]') as { ProcessId: number; ParentProcessId: number; CreatedAt: string }[] | { ProcessId: number; ParentProcessId: number; CreatedAt: string };
     return (Array.isArray(rows) ? rows : [rows]).map(p => ({ pid: Number(p.ProcessId), parentPid: Number(p.ParentProcessId), createdAt: p.CreatedAt }));
@@ -127,13 +134,26 @@ export interface StopOptions {
   launchedAt?: string;
   /** Descendants to leave running, each with everything under it (the job a delivered report hands to the monitor). */
   spare?: readonly number[];
+  snapshot?: () => ProcessInfo[];
 }
 
 function stopValidated(pid: number, expectedStartedAt: string | undefined, tree: boolean, options: StopOptions = {}): ProcessStop {
   const none = { stopped: [], leftRunning: [] };
   if (!Number.isInteger(pid) || pid <= 0) return none;
   if (expectedStartedAt ? !Number.isFinite(Date.parse(expectedStartedAt)) : !Number.isFinite(Date.parse(options.launchedAt ?? ''))) return none;
-  const processes = processSnapshot();
+  const snapshot = options.snapshot ?? processSnapshot;
+  let processes: ProcessInfo[];
+  let problem: ProcessStop['problem'];
+  try { processes = snapshot(); }
+  catch {
+    try { processes = snapshot(); }
+    catch {
+      problem = 'listing';
+      const createdAt = processStartedAt(pid);
+      if (!createdAt || !runProcessMatches(createdAt, expectedStartedAt, options.launchedAt)) return { ...none, problem };
+      processes = [{ pid, parentPid: 0, createdAt }];
+    }
+  }
   const root = processes.find(p => p.pid === pid);
   if (!root || !runProcessMatches(root.createdAt, expectedStartedAt, options.launchedAt)) return none;
   const descendants = descendantPids(processes, pid);
@@ -142,7 +162,12 @@ function stopValidated(pid: number, expectedStartedAt: string | undefined, tree:
   const targets = tree ? [...descendants.filter(id => !spared.has(id)), pid] : [pid];
   const leftRunning = tree ? descendants.filter(id => spared.has(id)) : descendants;
   if (process.platform !== 'win32') {
-    return { stopped: terminateThenKill(targets.map(id => processes.find(p => p.pid === id)!)), leftRunning };
+    // If the full table is unavailable, recheck just the root before TERM and before any escalation.
+    const deps = problem ? { ...posixDeps, snapshot: () => {
+      const createdAt = processStartedAt(pid);
+      return createdAt ? [{ pid, parentPid: 0, createdAt }] : [];
+    } } : posixDeps;
+    return { stopped: terminateThenKill(targets.map(id => processes.find(p => p.pid === id)!), deps), leftRunning, ...(problem && { problem }) };
   }
   // Recheck identity immediately before each stop as a pid may have been reused since the snapshot.
   const commands = targets.map(id => {
@@ -150,13 +175,13 @@ function stopValidated(pid: number, expectedStartedAt: string | undefined, tree:
     return `try { $p = Get-Process -Id ${id} -ErrorAction Stop; if ($p.StartTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'") -eq '${at}') { Stop-Process -InputObject $p -Force -ErrorAction Stop; ${id} } } catch { }`;
   });
   const text = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', commands.join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
-  return { stopped: text.trim().split(/\s+/).map(Number).filter(id => targets.includes(id)), leftRunning };
+  return { stopped: text.trim().split(/\s+/).map(Number).filter(id => targets.includes(id)), leftRunning, ...(problem && { problem }) };
 }
 
 /** Stop the verified root and real descendants, leaves first, on all supported platforms. */
 export function stopProcessTree(pid: number, expectedStartedAt: string | undefined, launchedAt?: string): number[] {
   requirePlatform();
-  try { return stopValidated(pid, expectedStartedAt, true, { launchedAt }).stopped; } catch { return []; }
+  return stopProcessTreeVerified(pid, expectedStartedAt, { launchedAt }).stopped;
 }
 
 /**
@@ -165,13 +190,13 @@ export function stopProcessTree(pid: number, expectedStartedAt: string | undefin
  */
 export function stopProcessTreeVerified(pid: number, expectedStartedAt: string | undefined, options: StopOptions = {}): ProcessStop {
   requirePlatform();
-  try { return stopValidated(pid, expectedStartedAt, true, options); } catch { return { stopped: [], leftRunning: [] }; }
+  try { return stopValidated(pid, expectedStartedAt, true, options); } catch { return { stopped: [], leftRunning: [], problem: 'stop' }; }
 }
 
 /** Lingering workers may own background jobs: validate identity and stop only the worker. */
 export function stopProcessOnly(pid: number, expectedStartedAt: string | undefined): ProcessStop {
   requirePlatform();
-  try { return stopValidated(pid, expectedStartedAt, false); } catch { return { stopped: [], leftRunning: [] }; }
+  try { return stopValidated(pid, expectedStartedAt, false); } catch { return { stopped: [], leftRunning: [], problem: 'stop' }; }
 }
 
 export interface TreeStop { gone: boolean; stopped: number[]; problem?: string }

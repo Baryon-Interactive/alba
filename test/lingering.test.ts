@@ -166,6 +166,13 @@ test('a lingering stop spares the job its delivered report hands to the monitor,
   assert.deepEqual(s.orders.store.events().find(e => e.type === 'lingering-stopped')?.data?.left_running, [4321]);
 });
 
+test('a lingering root stop records and reports a failed descendant listing', () => {
+  const s = setup({ on_lingering: 'stop' });
+  s.probes.stopTree = pid => ({ stopped: [pid], leftRunning: [], problem: 'listing' });
+  assert.match(stopLingeringRun(s.orders, s.probes, 'T1'), /Could not list descendants.*may still be running/);
+  assert.equal(s.orders.store.events().find(e => e.type === 'lingering-stopped')?.data?.problem, 'listing');
+});
+
 test('a refused lingering stop leaves the run open and never falls back to another stop', () => {
   const s = setup({ on_lingering: 'stop' });
   s.probes.stopTree = () => ({ stopped: [], leftRunning: [] });

@@ -12,7 +12,7 @@ import { UserError, currentLang, t, withLang } from '../i18n.ts';
 import type { ActionKind } from '../orders/model.ts';
 import { actionProblem } from '../orders/stage.ts';
 import { findFinishes } from '../run/finish.ts';
-import { NOTE_REQUIRED, humanAction, isHumanAction } from '../service/actions.ts';
+import { NOTE_REQUIRED, stopRun, humanAction, isHumanAction } from '../service/actions.ts';
 import { executeTick } from '../tick/execute.ts';
 import { systemProbes, tick, type Probes } from '../tick/gather.ts';
 import { formatReport } from '../tick/plan.ts';
@@ -241,7 +241,10 @@ export function createBoard(options: ServerOptions): Board {
         if (!v || !isHumanAction(action)) return send(res, 400, messagePage(snap, t('Bad request'), t('Unknown project or action.'), 'bad'));
         const back = `/o/${encodeURIComponent(v.config.id)}/${encodeURIComponent(tag)}`;
         try {
-          humanAction(v.config, v.orders, tag, action, form.get('note')?.trim() || undefined, undefined, form.get('override') === '1');
+          if (action === 'stop') {
+            const warning = stopRun(v.orders, tag, form.get('note') ?? undefined);
+            if (warning) { invalidate(); return send(res, 200, messagePage(snap, tag, warning, 'bad', back)); }
+          } else humanAction(v.config, v.orders, tag, action, form.get('note')?.trim() || undefined, undefined, form.get('override') === '1');
         } catch (e) {
           if (!(e instanceof UserError)) throw e;
           return send(res, 400, messagePage(snap, t('Not done'), e.message, 'bad', back));

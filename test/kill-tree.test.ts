@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
-import { descendantPids, processStartMatches, stopProcessOnly, stopProcessTree, treeMembers } from '../src/run/kill-tree.ts';
+import { descendantPids, processStartMatches, stopProcessTreeVerified, stopProcessOnly, stopProcessTree, treeMembers } from '../src/run/kill-tree.ts';
 import { systemProbes } from '../src/tick/gather.ts';
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -35,6 +36,35 @@ test('observed descendants bridge exited parents and exclude reused parent ident
   assert.deepEqual(treeMembers([child], target).map(p => p.pid), [30]);
   assert.deepEqual(treeMembers([child, p(20, 1, 20), p(40, 20, 21)], target).map(p => p.pid), [30]);
   assert.deepEqual(treeMembers([p(30, 1, 30)], target), []);
+});
+
+for (const persistent of [false, true]) test(`snapshot failure ${persistent ? 'reports unlisted descendants and stops the verified root' : 'retries and stops the tree'}`, async () => {
+  const root = spawn(process.execPath, ['-e', `
+    const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio:'ignore', detached:true, windowsHide:true });
+    console.log(child.pid);
+    setInterval(()=>{},1000);`], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+  let child = 0;
+  try {
+    child = Number(String((await once(root.stdout!, 'data'))[0]).trim());
+    assert.ok(root.pid && child > 0);
+    const rootAt = systemProbes.processStartedAt!(root.pid), childAt = systemProbes.processStartedAt!(child);
+    assert.ok(rootAt && childAt);
+    let attempts = 0;
+    const snapshot = () => {
+      attempts++;
+      if (persistent || attempts === 1) throw new Error('Fixture listing failure');
+      return [{ pid: root.pid!, parentPid: process.pid, createdAt: rootAt }, { pid: child, parentPid: root.pid!, createdAt: childAt }];
+    };
+    const result = stopProcessTreeVerified(root.pid, rootAt, { snapshot });
+    assert.equal(attempts, 2);
+    assert.deepEqual(result.stopped, persistent ? [root.pid] : [child, root.pid]);
+    assert.equal(result.problem, persistent ? 'listing' : undefined);
+    if (persistent) assert.ok(alive(child));
+    assert.ok(await waitFor(() => !alive(root.pid!)));
+  } finally {
+    if (child && alive(child)) process.kill(child);
+    if (root.pid && alive(root.pid)) root.kill();
+  }
 });
 
 for (const tree of [true, false]) {

@@ -1088,10 +1088,10 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
 
   if (group === 'stop') {
     need0(command, 'alba stop <TAG> [--note text]');
-    stopRun(orders, command!, values.note);
+    const warning = stopRun(orders, command!, values.note);
     const doc = orders.get(command!);
     return `${tagLine(doc)}
-${t('Stopped run {run}. The order is held: start it on a worker with "alba run {tag} --worker <id>", or release it with "alba orders act {tag} release".', { run: [...doc.runs].reverse().find(r => r.outcome === 'cancelled')?.id ?? '-', tag: doc.order.tag })}`;
+${t('Stopped run {run}. The order is held: start it on a worker with "alba run {tag} --worker <id>", or release it with "alba orders act {tag} release".', { run: [...doc.runs].reverse().find(r => r.outcome === 'cancelled')?.id ?? '-', tag: doc.order.tag })}${warning ? '\n' + warning : ''}`;
   }
   if (group === 'run') {
     need0(command, 'alba run <TAG> --worker <id> [--dry-run] [--over-cap]');
