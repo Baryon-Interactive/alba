@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +13,7 @@ import { validateProject } from '../src/config.ts';
 import { stateStore } from '../src/orders/backend.ts';
 import { Orders } from '../src/orders/service.ts';
 import { gatesConfig, type NightlyGate } from '../src/gates/config.ts';
-import { cancelNightlyRuns, nightlyWindow, runNightlyGates } from '../src/gates/runner.ts';
+import { type GateRunOptions, cancelNightlyRuns, nightlyWindow, runNightlyGates } from '../src/gates/runner.ts';
 import { yieldDecision } from '../src/gates/priority.ts';
 import { knownStartedAt, primeStartedAt, resetStartedAtCache } from '../src/monitor/process.ts';
 import { gatesState, gatesStatus } from '../src/gates/state.ts';
@@ -36,11 +36,22 @@ async function until(check: () => boolean, message = 'async state ready') {
   while (!check() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(check(), message);
 }
+// Scheduling and result fixtures run single-process commands. Dedicated tree and timeout
+// tests below use the native identity lookup, descendant scan and verified shutdown.
+function runFixtureGates(project: Parameters<typeof runNightlyGates>[0], orders: Orders, options: GateRunOptions) {
+  return runNightlyGates(project, orders, { ...options, commandOptions: { sweep: false, lookupStartedAt: async () => undefined } });
+}
+
+let seedRepo: string | undefined;
 function fixture(backend: 'sqlite' | 'files' = 'sqlite', gates = [gate()]) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-nightly-')), root = path.join(dir, 'game'), file = path.join(dir, 'alba.yaml');
   mkdirSync(root); mkdirSync(path.join(dir, 'orders'));
   const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], { encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
-  git('init', '-q', '-b', 'main'); writeFileSync(path.join(root, 'input.txt'), 'baseline'); git('add', '.'); git('commit', '-qm', 'Baseline');
+  if (!seedRepo) {
+    git('init', '-q', '-b', 'main'); writeFileSync(path.join(root, 'input.txt'), 'baseline'); git('add', '.'); git('commit', '-qm', 'Baseline');
+    seedRepo = mkdtempSync(path.join(os.tmpdir(), 'alba-gate-seed-'));
+    cpSync(root, seedRepo, { recursive: true });
+  } else cpSync(seedRepo, root, { recursive: true });
   const raw = { id: 'sample', name: 'Sample', root, work_orders: path.join(dir, 'orders'), state_dir: path.join(dir, 'state'), state: { backend }, dispatch: { caps: { sim: 1 } }, resources: { rig: { slots: 2 } }, gates: { nightly: gates, window: '01:00-06:00' } };
   writeFileSync(file, stringify(raw));
   const project = validateProject(raw, file), orders = new Orders(stateStore(project));
@@ -106,39 +117,39 @@ test('gates defer to a held order resource even with spare slots, queued orders 
   const f = fixture('sqlite', [gate('reference', '', { uses: ['rig'], kind: 'sim' })]); f.merge();
   f.orders.add({ tag: 'HOLDER', title: 'Running simulation', kind: 'sim', uses: ['rig'] }); f.orders.act('HOLDER', 'queue');
   f.orders.runStart('HOLDER', { worker: 'fake' }); acquireLeases(f.project, f.orders, f.orders.get('HOLDER'), undefined, new Date());
-  assert.match((await runNightlyGates(f.project, f.orders, { now: f.at() })).reason!, /held by order/);
+  assert.match((await runFixtureGates(f.project, f.orders, { now: f.at() })).reason!, /held by order/);
   f.orders.runEnd('HOLDER'); f.orders.act('HOLDER', 'cancel');
   acquireAcceptanceResources(f.project, f.orders, 'TRIAL', ['rig']);
-  assert.match((await runNightlyGates(f.project, f.orders, { now: f.at() })).reason!, /held by job TRIAL/);
+  assert.match((await runFixtureGates(f.project, f.orders, { now: f.at() })).reason!, /held by job TRIAL/);
   releaseAcceptanceResources(f.project, f.orders, 'TRIAL');
   f.orders.add({ tag: 'QUEUED', title: 'Queued simulation', kind: 'sim' }); f.orders.act('QUEUED', 'queue');
-  assert.match((await runNightlyGates(f.project, f.orders, { now: f.at() })).reason!, /priority/);
+  assert.match((await runFixtureGates(f.project, f.orders, { now: f.at() })).reason!, /priority/);
   f.orders.act('QUEUED', 'cancel');
-  assert.match((await runNightlyGates(f.project, f.orders, { now: f.at(), ordersFirst: true })).reason!, /priority/);
+  assert.match((await runFixtureGates(f.project, f.orders, { now: f.at(), ordersFirst: true })).reason!, /priority/);
   acquireAcceptanceResources(f.project, f.orders, 'TRIAL', ['sim']);
-  assert.match((await runNightlyGates(f.project, f.orders, { now: f.at() })).reason!, /cap/i);
+  assert.match((await runFixtureGates(f.project, f.orders, { now: f.at() })).reason!, /cap/i);
   releaseAcceptanceResources(f.project, f.orders, 'TRIAL');
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at() })).status, 'passed'); noScratch(f);
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at() })).status, 'passed'); noScratch(f);
 });
 
 test('failure attribution starts at the last full pass, one case survives intake and a later pass closes it', async () => {
   const f = fixture(); f.merge('DEMO-A');
-  await runNightlyGates(f.project, f.orders, { now: f.at() });
+  await runFixtureGates(f.project, f.orders, { now: f.at() });
   const from = gatesState(f.project).lastPass!.commit;
   f.project.gates!.nightly = [gate('reference', 'console.error("regression"); process.exit(4)')];
   f.merge('DEMO-B'); const commit = f.merge('DEMO-C');
-  const failed = await runNightlyGates(f.project, f.orders, { now: f.at(2) });
+  const failed = await runFixtureGates(f.project, f.orders, { now: f.at(2) });
   assert.equal(failed.status, 'failed'); assert.equal(failed.run?.results[0].exit, 4);
   let cases = producerCases(f.project, true).filter(c => c.trigger === 'nightly-gate-failed');
   assert.equal(cases.length, 1); assert.equal(cases[0].facts.from, from); assert.equal(cases[0].facts.commit, commit);
   assert.deepEqual(cases[0].facts.mergedOrders, ['DEMO-B', 'DEMO-C']);
   intakeProducer(f.project, f.orders, { verify: false });
-  await runNightlyGates(f.project, f.orders, { force: true });
+  await runFixtureGates(f.project, f.orders, { force: true });
   cases = producerCases(f.project, true).filter(c => c.trigger === 'nightly-gate-failed'); assert.equal(cases.length, 1);
   assert.match(readFileSync(failed.run!.results[0].log, 'utf8'), /regression/);
   assert.equal(producerLog(f.project, f.orders).rows.filter(r => r.kind === 'nightly-gates').length, 3);
   f.project.gates!.nightly = [gate()];
-  assert.equal((await runNightlyGates(f.project, f.orders, { force: true })).status, 'passed');
+  assert.equal((await runFixtureGates(f.project, f.orders, { force: true })).status, 'passed');
   assert.equal(producerCases(f.project, true).filter(c => c.trigger === 'nightly-gate-failed').length, 0); noScratch(f);
 });
 
@@ -157,23 +168,23 @@ test('scratch uses main commit instead of dirty checkout, result readers parse J
     gate('regex', 'console.log("PASS value=8")', { result: { pass: { regex: '^PASS' }, value: { regex: 'value=(\\d+)', group: 1 } } }),
     gate('file', 'require("fs").writeFileSync("result.json",JSON.stringify({ok:"yes",score:9}))', { result: { pass: { json_pointer: '/ok', file: 'result.json', equals: 'yes' }, value: { json_pointer: '/score', file: 'result.json' } } })]);
   const commit = f.git('rev-parse', 'HEAD'); f.git('checkout', '-qb', 'unmerged'); writeFileSync(path.join(f.root, 'input.txt'), 'dirty');
-  const result = await runNightlyGates(f.project, f.orders, { force: true });
+  const result = await runFixtureGates(f.project, f.orders, { force: true });
   assert.equal(result.status, 'passed', JSON.stringify(result)); assert.equal(result.run?.commit, commit);
   assert.deepEqual(result.run?.results.map(r => r.value), [7, 8, 9]); assert.equal(readFileSync(path.join(f.root, 'input.txt'), 'utf8'), 'dirty');
   f.project.gates!.nightly = [gate('bad', 'console.log("invalid")', { result: { pass: { json_pointer: '/ok' } } })];
-  assert.equal((await runNightlyGates(f.project, f.orders, { force: true })).status, 'error'); noScratch(f);
+  assert.equal((await runFixtureGates(f.project, f.orders, { force: true })).status, 'error'); noScratch(f);
 });
 
 test('active gates reserve resources and caps, concurrent invocations wait and queued work takes the next turn', async () => {
   const f = fixture('sqlite', [gate('first', 'setTimeout(()=>console.log("ok"),150)', { kind: 'sim', uses: ['rig'] }), gate('second')]); f.merge();
   let pending = false;
-  const job = runNightlyGates(f.project, f.orders, { now: f.at(), ordersFirst: () => pending });
+  const job = runFixtureGates(f.project, f.orders, { now: f.at(), ordersFirst: () => pending });
   await until(() => activeLeases(f.project, f.orders).some(l => l.acceptance?.cap === 'sim'));
   assert.equal(activeLeases(f.project, f.orders).filter(l => l.acceptance?.cap === 'sim').length, 1);
   assert.ok(startBlocked(f.project.resources!, activeLeases(f.project, f.orders), occupants(f.project, f.orders), { tag: 'ORDER', kind: 'sim', uses: ['rig'] }));
-  assert.equal((await runNightlyGates(f.project, f.orders, { force: true })).status, 'waiting');
+  assert.equal((await runFixtureGates(f.project, f.orders, { force: true })).status, 'waiting');
   pending = true; assert.equal((await job).status, 'waiting'); noScratch(f);
-  const resumed = await runNightlyGates(f.project, f.orders, { now: f.at() });
+  const resumed = await runFixtureGates(f.project, f.orders, { now: f.at() });
   assert.equal(resumed.status, 'passed'); assert.equal(resumed.run?.results.length, 2); assert.equal(gatesState(f.project).runs.length, 1); noScratch(f);
 });
 
@@ -182,12 +193,12 @@ test('a gate named run cannot release the batch lock before the next gate finish
   const ready = path.join(f.dir, 'slow-started'), release = path.join(f.dir, 'slow-release');
   f.project.gates!.nightly[1]!.argv = [process.execPath, '-e', `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(ready)},'ready'); const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)})){clearInterval(timer);}},20);`];
   const watcher = watch(f.dir, { signal: t.signal });
-  const job = runNightlyGates(f.project, f.orders, { force: true });
+  const job = runFixtureGates(f.project, f.orders, { force: true });
   try {
     // Hold a real gate at a filesystem handshake instead of racing a 300 ms sleep.
     while (!existsSync(ready)) await once(watcher, 'change', { signal: t.signal });
     assert.equal(gatesState(f.project).runs.at(-1)?.results.length, 1);
-    assert.match((await runNightlyGates(f.project, f.orders, { force: true })).reason!, /already running/);
+    assert.match((await runFixtureGates(f.project, f.orders, { force: true })).reason!, /already running/);
   } finally {
     watcher.close(); writeFileSync(release, 'release');
     assert.equal((await job).status, 'passed');
@@ -197,10 +208,10 @@ test('a gate named run cannot release the batch lock before the next gate finish
 
 test('the last nights are retained and partial reruns do not advance the full checkpoint', async () => {
   const f = fixture('sqlite', [gate('first'), gate('second')]); f.project.gates!.only_if_merged = false;
-  for (let day = 1; day <= 4; day++) assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at(day), keepNights: 3 })).status, 'passed');
+  for (let day = 1; day <= 4; day++) assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at(day), keepNights: 3 })).status, 'passed');
   const state = gatesState(f.project); assert.equal(state.runs.length, 3); assert.equal(state.runs[0].night, '2026-01-02');
   assert.equal(readdirSync(path.join(f.project.state_dir, 'nightly-gates')).length, 3);
-  f.merge(); await runNightlyGates(f.project, f.orders, { now: f.at(4), force: true, gate: 'first', keepNights: 3 });
+  f.merge(); await runFixtureGates(f.project, f.orders, { now: f.at(4), force: true, gate: 'first', keepNights: 3 });
   assert.deepEqual(gatesState(f.project).lastFull, state.lastFull); assert.equal(gatesStatus(f.project)?.gates.length, 2); noScratch(f);
 });
 
@@ -209,17 +220,17 @@ test('config defaults and strict validation, disabled projects have no state cha
   assert.equal(f.project.gates?.only_if_merged, true);
   for (const over of [{ nightly: [gate(), gate()] }, { window: '25:00-26:00' }, { window: '01:00-01:00' }, { only_if_merged: 'yes' }, { nightly: [gate('x', '', { cwd: '../outside' })] }, { nightly: [gate('x', '', { uses: ['missing'] })] }, { nightly: [gate('x', '', { kind: 'missing' })] }, { nightly: [gate('x', '', { timeout_minutes: 0 })] }, { nightly: [gate('x', '', { result: { pass: { regex: '[' } } })] }]) assert.throws(() => gatesConfig({ ...f.project.gates, ...over }, f.project), /gates/);
   delete f.project.gates;
-  assert.equal((await runNightlyGates(f.project, f.orders, { force: true })).status, 'skipped'); assert.equal(gatesStatus(f.project), undefined);
+  assert.equal((await runFixtureGates(f.project, f.orders, { force: true })).status, 'skipped'); assert.equal(gatesStatus(f.project), undefined);
   assert.equal(existsSync(path.join(f.project.state_dir, '_nightly-gates.json')), false);
 });
 
 test('forced daytime batches leave the coming scheduled night and merge checkpoint available', async () => {
   const f = fixture(); f.merge();
-  const forced = await runNightlyGates(f.project, f.orders, { force: true, now: f.at(1, 12) });
+  const forced = await runFixtureGates(f.project, f.orders, { force: true, now: f.at(1, 12) });
   assert.equal(forced.status, 'passed'); assert.equal(forced.run?.forced, true);
   assert.equal(gatesState(f.project).lastFull, undefined);
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at() })).status, 'passed');
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at() })).status, 'skipped'); noScratch(f);
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at() })).status, 'passed');
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at() })).status, 'skipped'); noScratch(f);
 });
 
 test('nightly leases reject reused identities, expired owners and legacy unidentified pids', async () => {
@@ -233,12 +244,12 @@ test('nightly leases reject reused identities, expired owners and legacy unident
   assert.equal(acceptanceLeaseActive({ ...lease, acceptance: { pid: process.pid, nightly: true } }, now), false);
   assert.equal(acceptanceLeaseActive({ ...lease, acceptance: { pid: process.pid } }, now), true);
   writeStateFile(f.project, '_leases.json', JSON.stringify({ leases: [{ ...lease, acceptance: { ...lease.acceptance, started_at: '2000-01-01T00:00:00Z' } }] }));
-  assert.equal((await runNightlyGates(f.project, f.orders, { force: true })).status, 'passed'); noScratch(f);
+  assert.equal((await runFixtureGates(f.project, f.orders, { force: true })).status, 'passed'); noScratch(f);
 });
 
 test('batch lock covers the sum of multi-day gates and uses real expiry time', async () => {
   const f = fixture('sqlite', [gate('soak', 'setTimeout(()=>{},100)', { timeout_minutes: 4320 }), gate('second', '', { timeout_minutes: 4320 })]);
-  const job = runNightlyGates(f.project, f.orders, { force: true, now: f.at() });
+  const job = runFixtureGates(f.project, f.orders, { force: true, now: f.at() });
   await until(() => readLeases(f.project).some(l => l.tag === 'nightly:run'));
   const lock = readLeases(f.project).find(l => l.tag === 'nightly:run')!;
   assert.ok(Date.parse(lock.expires) - Date.now() > 144 * 3600000);
@@ -249,17 +260,17 @@ test('batch lock covers the sum of multi-day gates and uses real expiry time', a
 
 test('setup errors do not blame merged orders or close an existing regression case', async () => {
   const f = fixture('sqlite', [gate('reference', 'process.exit(3)')]); f.merge();
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at() })).status, 'failed');
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at() })).status, 'failed');
   writeFileSync(path.join(f.root, 'fixture.cmd'), '@echo off\r\nexit /b 0\r\n'); f.git('add', '.'); f.git('commit', '-qm', 'Fixture batch script');
   for (const broken of [gate('reference', '', { cwd: 'missing' }), gate('reference', '', { argv: ['nonexistent-fixture-executable'] }), ...(process.platform === 'win32' ? [gate('reference', '', { argv: ['./fixture.cmd'] })] : [])]) {
     f.project.gates!.nightly = [broken];
-    const result = await runNightlyGates(f.project, f.orders, { force: true });
+    const result = await runFixtureGates(f.project, f.orders, { force: true });
     assert.equal(result.status, 'error', JSON.stringify(result)); assert.equal(result.run?.results[0].status, 'error');
     assert.equal(producerCases(f.project, true).filter(c => c.trigger === 'nightly-gate-failed').length, 1);
     noScratch(f);
   }
   const fresh = fixture('sqlite', [gate('missing', '', { cwd: 'missing' })]); fresh.merge();
-  assert.equal((await runNightlyGates(fresh.project, fresh.orders, { force: true })).status, 'error');
+  assert.equal((await runFixtureGates(fresh.project, fresh.orders, { force: true })).status, 'error');
   assert.equal(producerCases(fresh.project, true).filter(c => c.trigger === 'nightly-gate-failed').length, 0);
   assert.ok(producerLog(fresh.project, fresh.orders).rows.some(r => r.kind === 'nightly-notice' && /setup error/.test(r.note)));
 });
@@ -294,7 +305,7 @@ test('failed worktree creation preserves its reason and an unregistered leftover
   const f = fixture('sqlite', [gate('first'), gate('second')]); f.merge();
   const hook = path.join(f.root, '.git', 'hooks', 'post-checkout');
   writeFileSync(hook, '#!/bin/sh\necho fixture-checkout-failure >&2\nexit 9\n'); chmodSync(hook, 0o755);
-  const failed = await runNightlyGates(f.project, f.orders, { now: f.at() });
+  const failed = await runFixtureGates(f.project, f.orders, { now: f.at() });
   assert.equal(failed.status, 'error'); assert.equal(failed.run?.results.length, 1);
   assert.match(failed.run!.results[0].reason!, /worktree add.*exited/);
   assert.match(failed.run!.results[0].reason!, /fixture-checkout-failure/);
@@ -302,19 +313,19 @@ test('failed worktree creation preserves its reason and an unregistered leftover
   noScratch(f); rmSync(hook);
   const leftover = path.join(f.project.state_dir, 'nightly-gates', `worktree-${failed.run!.id}`);
   mkdirSync(leftover); writeFileSync(path.join(leftover, 'leftover.txt'), 'not registered');
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at() })).status, 'skipped');
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at(2) })).status, 'passed'); noScratch(f);
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at() })).status, 'skipped');
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at(2) })).status, 'passed'); noScratch(f);
 });
 
 test('interrupted runs become abandoned after night, definition, selection changes or disablement', async () => {
   for (const change of ['night', 'definition', 'selection', 'disabled']) {
     const f = fixture('sqlite', [gate('first'), gate('second')]); f.merge();
     let calls = 0;
-    const paused = await runNightlyGates(f.project, f.orders, { now: f.at(), ordersFirst: () => ++calls >= 2 });
+    const paused = await runFixtureGates(f.project, f.orders, { now: f.at(), ordersFirst: () => ++calls >= 2 });
     assert.equal(paused.status, 'waiting');
     if (change === 'definition') f.project.gates!.nightly[0].argv = [process.execPath, '-e', 'console.log("changed")'];
     if (change === 'disabled') delete f.project.gates;
-    await runNightlyGates(f.project, f.orders, { now: f.at(change === 'night' ? 2 : 1), ...(change === 'selection' ? { gate: 'second' } : {}) });
+    await runFixtureGates(f.project, f.orders, { now: f.at(change === 'night' ? 2 : 1), ...(change === 'selection' ? { gate: 'second' } : {}) });
     assert.equal(gatesState(f.project).runs.find(r => r.id === paused.run!.id)?.status, 'abandoned');
     assert.ok(gatesState(f.project).runs.find(r => r.id === paused.run!.id)?.ended); noScratch(f);
   }
@@ -360,19 +371,19 @@ test('CLI and serve share resource-aware priority and its two-hour cap', async (
 
 test('error attempts retry hourly at most three times and retain already completed gates', async () => {
   const f = fixture('sqlite', [gate('first'), gate('reader', 'console.log("invalid")', { result: { pass: { json_pointer: '/ok' } } })]); f.merge();
-  const first = await runNightlyGates(f.project, f.orders, { now: f.at() });
+  const first = await runFixtureGates(f.project, f.orders, { now: f.at() });
   assert.equal(first.status, 'error'); assert.deepEqual(first.run?.results.map(r => r.status), ['passed', 'error']);
   const original = first.run!.results[0];
-  assert.equal((await runNightlyGates(f.project, f.orders, { now: f.at() })).status, 'skipped');
+  assert.equal((await runFixtureGates(f.project, f.orders, { now: f.at() })).status, 'skipped');
   for (let attempt = 2; attempt <= 3; attempt++) {
     // Put the saved attempt in the fixture's synthetic scheduling timeline.
     const state = gatesState(f.project); state.runs[0].ended = f.at(1, attempt).toISOString(); writeStateFile(f.project, '_nightly-gates.json', JSON.stringify(state));
-    assert.equal((await runNightlyGates(f.project, f.orders, { now: new Date(f.at(1, attempt).getTime() + 30 * 60_000) })).status, 'skipped');
-    const next = await runNightlyGates(f.project, f.orders, { now: f.at(1, attempt + 1) });
+    assert.equal((await runFixtureGates(f.project, f.orders, { now: new Date(f.at(1, attempt).getTime() + 30 * 60_000) })).status, 'skipped');
+    const next = await runFixtureGates(f.project, f.orders, { now: f.at(1, attempt + 1) });
     assert.equal(next.status, 'error'); assert.equal(next.run?.id, first.run!.id); assert.equal(next.run?.attempts, attempt);
     assert.deepEqual(next.run?.results[0], original);
   }
-  assert.match((await runNightlyGates(f.project, f.orders, { now: f.at(1, 5) })).reason!, /3 attempts/);
+  assert.match((await runFixtureGates(f.project, f.orders, { now: f.at(1, 5) })).reason!, /3 attempts/);
   assert.equal(gatesState(f.project).runs.length, 1); assert.equal(gatesState(f.project).lastFull, undefined); noScratch(f);
 });
 
@@ -397,10 +408,10 @@ test('cached process identities expire so a reused live PID is checked again', a
 
 test('BOM-prefixed result files pass and malformed result files are infrastructure errors', async () => {
   const f = fixture('sqlite', [gate('bom', 'require("fs").writeFileSync("result.json","\\ufeff"+JSON.stringify({ok:true,value:12}))', { result: { pass: { json_pointer: '/ok', file: 'result.json' }, value: { json_pointer: '/value', file: 'result.json' } } })]);
-  const passed = await runNightlyGates(f.project, f.orders, { force: true });
+  const passed = await runFixtureGates(f.project, f.orders, { force: true });
   assert.equal(passed.status, 'passed'); assert.equal(passed.run?.results[0].value, 12);
   f.project.gates!.nightly[0].argv = [process.execPath, '-e', 'require("fs").writeFileSync("result.json","{")'];
-  const error = await runNightlyGates(f.project, f.orders, { force: true });
+  const error = await runFixtureGates(f.project, f.orders, { force: true });
   assert.equal(error.status, 'error'); assert.match(error.run!.results[0].reason!, /Cannot read gate result/);
   assert.equal(producerCases(f.project, true).filter(c => c.trigger === 'nightly-gate-failed').length, 0); noScratch(f);
 });
@@ -593,7 +604,7 @@ test('a state read failure after lock acquisition releases the lock and renewal 
     }
     return read(key);
   });
-  const result = await runNightlyGates(f.project, f.orders, { force: true });
+  const result = await runFixtureGates(f.project, f.orders, { force: true });
   assert.equal(failed, true); assert.equal(result.status, 'error'); assert.match(result.reason!, /post-lock state read/);
   assert.deepEqual(readLeases(f.project), []);
   assert.equal(clear.mock.callCount(), 1);
