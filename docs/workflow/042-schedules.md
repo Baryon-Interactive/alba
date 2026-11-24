@@ -32,6 +32,7 @@ schedules:
 | `daily_at` | one of three | `HH:MM` in 24-hour local time. |
 | `cron` | one of three | Five-field expression (`minute hour day-of-month month day-of-week`, local time) supporting `*`, comma lists, `a-b` ranges and `*/n` steps (`0` and `7` both mean Sunday). |
 | `catch_up` | no | `latest` (default) or `none`. |
+| `precheck` | no | Command to run in the project's base checkout before creating an automatic order. An array names the program and its arguments directly. A string runs through the platform shell. |
 | `max_open` | no | Whole number `>= 1` (default `1`). |
 | `enabled` | no | `true` (default) or `false`. |
 | `kind`, `worker`, `priority`, `needs` | no | Order fields passed to each created order as `alba orders add` sets them. |
@@ -56,6 +57,10 @@ Each serve loop pass and each real `alba tick` evaluates enabled, non-paused sch
 - **`catch_up: latest` (default)**: computes the latest planned time at or before the current clock. After a multi-day downtime, only that most recent missed planned time fires once — never a burst of every missed slot.
 - **`catch_up: none`**: missed planned times older than the current pass interval are skipped; only a planned time due within the last pass interval fires.
 
+After a schedule has an observed slot, each gap between observed slots gets one `missed` history row. It gives the count and the first and last planned times. On first observation Alba only considers the latest due slot. Repeating the pass does not count a gap again.
+
+A precheck has 60 seconds to finish. Exit zero allows creation. A nonzero exit records `skipped-precheck` and the last 20 lines of combined output. A timeout or failure to launch the command records `precheck-failed`. Neither outcome creates an order or changes its failure streak. Manual runs bypass a configured check and carry `precheck: "bypassed"` on their receipt. Other limits still apply.
+
 Every fire is keyed on `(schedule id, planned time)`:
 
 - On the **SQLite backend**, the receipt (`schedule_fires` table, schema version 8) and the new order are written inside the same `BEGIN IMMEDIATE` transaction.
@@ -79,6 +84,7 @@ alba schedules resume <id> [--json]
 ```
 
 - `list` shows each schedule's state (`active`, `paused`, `paused (auto)`, `disabled`), cadence, next planned time, last fire (with created order tag or skip reason) and open count.
+- The health line shows why a schedule is held and the USD spend for runs of its orders started in the past seven days. An unavailable cost or failed spend read shows `unknown`. The last ten history rows are newest first. Consecutive skips for the same reason show their count and time range. Expand **History** on the Tick page to read the output.
 - `run <id>` fires immediately, keyed on the current minute so running it twice in the same minute creates one order.
 - `pause <id>` and `resume <id>` persist in project state (`schedule_state` table on SQLite or `_schedules.json` on the file backend) and never edit `alba.yaml`.
 
