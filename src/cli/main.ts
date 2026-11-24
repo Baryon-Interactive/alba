@@ -1,4 +1,5 @@
 import { phasePrompt, readOnlyChange } from '../run/phase.ts';
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { phasesOverride } from '../orders/phase-config.ts';
 import { loadMachines } from '../machines/config.ts';
@@ -900,7 +901,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         need(1, 'alba orders run-start <TAG> --worker <worker>');
         if (!values.worker) fail('run-start needs --worker.');
         const phase = orderPhases(cfg, orders.get(rest[0]))?.current;
-        if (phase?.mode === 'read-only') fail('Use alba run for a read-only phase so the engine enforces its restrictions.');
+        if (isReadOnlyPhase(phase)) fail('Use alba run for a read-only phase so the engine enforces its restrictions.');
         const { doc, run: r } = orders.runStart(rest[0], { worker: values.worker, session: values.session,
           ...(phase ? { extra: { phase: phase.id, final_phase: true, role: phase.role ?? orders.get(rest[0]).order.role, phase_timeout_minutes: phase.timeout_minutes } } : {}) });
         return `${tagLine(doc)} (${r.id}${r.note ? t(', with rework note: {note}', { note: r.note }) : ''})`;

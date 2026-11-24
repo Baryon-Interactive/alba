@@ -1,3 +1,4 @@
+import { validateSubtasks } from '../orders/subtasks.ts';
 import { readOnlyChange } from './phase.ts';
 import { runProcessMatches } from './kill-tree.ts';
 import { textSessionId } from '../workers/adapters/index.ts';
@@ -214,7 +215,12 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       if (printed) report = boundReport(printed, run.events_file ?? run.log, stream.finalText || tail);
       if (report) { from = path.basename(run.log); fromLog = true; }
     }
-    if (run.next_phase && report?.status === 'ready' && !report.plan?.trim()) {
+    if (run.split_kinds && report?.status === 'ready') {
+      try { validateSubtasks(report.subtasks, run.split_kinds); }
+      catch (error) { broken = (error as Error).message; report = undefined; }
+    } else if (report?.subtasks) {
+      broken = 'Only a ready split phase may propose subtasks.'; report = undefined;
+    } else if (run.next_phase && report?.status === 'ready' && !report.plan?.trim()) {
       broken = 'A ready planning report needs a nonempty plan.';
       report = undefined;
     }

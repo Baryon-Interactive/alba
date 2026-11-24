@@ -1,3 +1,4 @@
+import { validateSubtasks } from './subtasks.ts';
 import { phasesOverride } from './phase-config.ts';
 import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
 import { ACTION_KINDS, RUN_OUTCOMES, nextSeq, normalizeSparseDirs } from './model.ts';
@@ -400,8 +401,11 @@ export class Orders {
     return this.retry(() => {
       const doc = this.get(tag);
       const run = doc.runs.find(r => r.ended === undefined) ?? doc.runs[doc.runs.length - 1];
-      if (run?.next_phase && input.status === 'ready' && !input.plan?.trim()) fail('A ready planning report needs a nonempty plan.');
+      if (run?.split_kinds && input.status === 'ready') validateSubtasks(input.subtasks, run.split_kinds);
+      else if (input.subtasks) fail('Only a ready split phase may propose subtasks.');
+      if (!run?.split_kinds && run?.next_phase && input.status === 'ready' && !input.plan?.trim()) fail('A ready planning report needs a nonempty plan.');
       const report: Report = { seq: nextSeq(doc), at: this.now(), status: input.status as ReportStatus, summary: input.summary, evidence: input.evidence, commits: input.commits };
+      if (input.subtasks) report.subtasks = input.subtasks;
       if (input.plan !== undefined) {
         if (Buffer.byteLength(input.plan) > 24 * 1024) fail('Report plan must be Markdown text of at most 24 KiB.');
         report.plan = input.plan;

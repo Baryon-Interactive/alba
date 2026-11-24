@@ -1,3 +1,5 @@
+import { childKinds } from '../orders/subtasks.ts';
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { phasePrompt, worktreeFingerprint } from './phase.ts';
 import { readOnlyCommand } from '../review/independent.ts';
@@ -243,7 +245,8 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   if (!worker) fail('Choose a worker with --worker <id>.');
   const phases = orderPhases(project, doc);
   const phase = phases?.current;
-  const readOnly = phase?.mode === 'read-only';
+  const readOnly = isReadOnlyPhase(phase);
+  if (phase?.mode === 'split' && doc.order.parent) fail('A child order cannot split.');
   const role = roleForOrder(project, doc, workers);
   if (!role.id) fail('no role for this order; configure a matching or default role.');
   const tools = readOnly ? { problems: [], tools: [] } : orderTools(project, doc, routingOf(project, doc).kind || doc.order.kind);
@@ -414,6 +417,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // check fails.
   const remotePhaseCheck = readOnly && remote ? path.join(runsDir, `${doc.order.tag}-${runId}.worktree-check`) : undefined;
   const phaseFacts: Partial<Run> = phases && phase ? {
+    ...(phase.mode === 'split' ? { split_kinds: childKinds(project) } : {}),
     phase: phase.id, final_phase: !readOnly, next_phase: phases.list[phases.index + 1]?.id,
     phase_timeout_minutes: phase.timeout_minutes, plan_from: phases.previousPlan()?.run.id,
     ...(readOnly ? { worktree_fingerprint: worktreeFingerprint(plan.path), remote_phase_check: remotePhaseCheck,

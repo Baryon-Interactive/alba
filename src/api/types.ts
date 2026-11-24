@@ -331,7 +331,7 @@ export interface RunRouting {
 export interface Decision {
   seq: number;
   at: string;
-  kind: 'queue' | 'cancel' | 'hold' | 'release' | 'approve' | 'rework' | 'answer' | 'monitor' | 'message' | 'merged-elsewhere' | 'done-by-lead';
+  kind: 'queue' | 'cancel' | 'hold' | 'release' | 'approve' | 'rework' | 'answer' | 'monitor' | 'message' | 'accept-split' | 'merged-elsewhere' | 'done-by-lead';
   note?: string;
   commit?: string;
   /** For an `answer` that picked option N of the waiting report. */
@@ -619,7 +619,7 @@ export interface OrderSkills {
 /** `GET /api/orders/:tag` */
 export interface OrderPhase {
   id: string;
-  mode: 'read-only' | 'write';
+  mode: 'read-only' | 'split' | 'write';
   role?: string;
   state: 'done' | 'current' | 'next';
   runs: { id: string; worker: string; model?: string }[];

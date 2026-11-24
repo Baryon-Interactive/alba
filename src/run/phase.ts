@@ -13,6 +13,7 @@ export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
     fenceUntrusted('phase plan', latest.text, 24 * 1024),
     'The plan is guidance. Deviate when the code says otherwise and say why in your report.',
   ] : [];
+  if (phases.current.mode === 'split') sections.push('This is a read-only split phase. Leave all files untouched. In the final ready report include "subtasks": two to eight objects with a unique key, title, kind, body (under 16 KiB with Acceptance bullets) and optional needs listing sibling keys. Dependencies must be acyclic.');
   if (phases.current.mode === 'read-only') sections.push(`This is the read-only planning phase "${phases.current.id}". Inspect the order and its worktree. Leave all files untouched. End with a normal report block in your final message, with a one-line summary and the Markdown plan in the JSON "plan" field (at most 24 KiB).`);
   return '\n' + sections.join('\n\n') + '\n';
 }

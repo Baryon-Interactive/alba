@@ -73,6 +73,7 @@ export function inferStage(order: Order, runs: readonly Run[], reports: readonly
   if (reportingRun?.next_phase) {
     if (open) return hit('running', t('run {id} by {worker} is open', { id: open.id, worker: open.worker }));
     if (reportingRun.outcome !== 'completed') return hit('failed', t('The planning run did not complete.'));
+    if (current?.subtasks && !actions.some(a => a.kind === 'accept-split' && a.report === current.seq)) return hit('awaiting-user', t('Review the proposed child orders.'), 'card');
     if (unmet.length) return hit('waiting-needs', t('queued, waiting for {needs} to be merged', { needs: unmet.join(', ') }));
     return hit('queued', t('{phase} ready, next phase: {next}', { phase: reportingRun.phase!, next: reportingRun.next_phase }));
   }
@@ -103,6 +104,7 @@ export const CLOSE_STAGES: readonly Stage[] = [
 /** Why an action is not allowed in the current stage, or undefined if it is allowed. */
 export function actionProblem(stage: Stage, kind: ActionKind): string | undefined {
   const allowed: Record<ActionKind, readonly Stage[]> = {
+    'accept-split': ['awaiting-user'],
     queue: ['draft', 'idle', 'monitoring', 'blocked', 'failed', 'dropped', 'cancelled'],
     cancel: ['planned', 'draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'held', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
     hold: ['draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
