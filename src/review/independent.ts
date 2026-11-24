@@ -17,6 +17,7 @@ import type { RunContext } from '../run/launch.ts';
 import { startedAtForCheck, tick, type Probes } from '../tick/gather.ts';
 import type { WorkerConfig } from '../workers/config.ts';
 import { ownerOf } from '../usage/spend.ts';
+import { consultsToday } from '../consult/config.ts';
 import { processStartMatches } from '../run/kill-tree.ts';
 import { withGitLockRetrySync } from '../sync/git.ts';
 
@@ -55,12 +56,12 @@ export function independentChecks(orders: Orders, tag?: string): IndependentChec
   return latestRunEvents<IndependentCheck>(orders, 'independent-check', tag);
 }
 export function latestIndependentCheck(orders: Orders, tag: string): IndependentCheck | undefined { return independentChecks(orders, tag).at(-1); }
-export function reviewRunsToday(orders: Orders, now: Date): number {
+export function reviewRunsToday(orders: Orders, now: Date, stateDir?: string): number {
   const day = now.toISOString().slice(0, 10);
   const checks = independentChecks(orders).filter(r => r.started.slice(0, 10) === day).length;
   const firstPasses = latestRunEvents<{ id: string; status: string; started: string }>(orders, 'first-pass')
     .filter(r => r.status !== 'skipped' && r.started.slice(0, 10) === day).length;
-  return checks + firstPasses;
+  return checks + firstPasses + consultsToday(stateDir ?? orders.store.dir, day);
 }
 
 export function reviewBudgetExhausted(project: ProjectConfig, orders: Orders, now: Date): boolean {
@@ -69,7 +70,7 @@ export function reviewBudgetExhausted(project: ProjectConfig, orders: Orders, no
   const day = now.toISOString().slice(0, 10);
   const producerReviews = readStateJson<{ kind: string; started: string }[]>(project, '_producer-work-sessions.json', [])
     .filter(r => r.kind !== 'draft' && r.started.slice(0, 10) === day).length;
-  return reviewRunsToday(orders, now) + producerReviews >= cap;
+  return reviewRunsToday(orders, now, project.state_dir) + producerReviews >= cap;
 }
 
 export function chooseReviewerFromPool(

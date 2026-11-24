@@ -95,6 +95,7 @@ import { listNamedLocks, runNamedLock, usage as lockUsage } from '../run/named-l
 import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance, regionError, type PixelRegion } from '../verify/png.ts';
 import { runNotifyCli } from './notify.ts';
 import { runSchedulesCli } from './schedules.ts';
+import { readRunConsults } from '../consult/config.ts';
 
 /** What a person needs to open the console: the sign-in link (it carries this start's key) and the file programs read the key from. */
 const signInLines = (port: number, key: string): string => t('Sign in: {url}\nKey file (for programs of this account): {file}', { url: `http://127.0.0.1:${port}/login?key=${key}`, file: keyFile(port) });
@@ -335,6 +336,17 @@ function show(orders: Orders, tag: string, project?: ProjectConfig): string {
     const wipRefs = [...new Set(endedWithDetail.map(r => r.end?.wip_ref).filter((x): x is string => !!x))];
     for (const ref of wipRefs) {
       out.push(`  ${t('WIP snapshot')}: git show --stat ${ref}  |  ${t('restore')}: git checkout ${ref} -- <path>`);
+    }
+  }
+  const consultTarget = doc.runs.find(r => r.ended === undefined) ?? [...doc.runs].sort((a, b) => b.seq - a.seq)[0];
+  const consultDir = project?.state_dir ?? orders.store.dir;
+  const consults = consultTarget ? readRunConsults(consultDir, o.tag, consultTarget.id) : [];
+  if (consults.length && consultTarget) {
+    out.push('', `${t('Consults')} (${consultTarget.id}):`);
+    for (const c of consults) {
+      const tok = c.usage?.total_tokens !== undefined ? `  ${c.usage.total_tokens} tok` : '';
+      const who = c.model ? `${c.consultant} (${c.model})` : c.consultant;
+      out.push(`  ${c.at}  ${who}  ${c.outcome}  ${c.seconds}s${tok}  ${c.question.replace(/\s+/g, ' ').slice(0, 120)}`);
     }
   }
   const latest = doc.reports[doc.reports.length - 1];

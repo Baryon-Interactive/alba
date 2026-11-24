@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { expect, it, vi } from 'vitest';
-import type { EndKind, OrderDetail } from '@api';
+import type { EndKind, OrderDetail, RunConsult } from '@api';
 import { RunPage } from './RunPage';
 import { useOrder } from '@/lib/queries';
 
@@ -91,4 +91,32 @@ it('does not show the silent-end banner for report or nonzero-exit runs', () => 
     expect(html).not.toContain('role="alert"');
     expect(html).not.toContain('Silent end');
   }
+});
+
+it('renders run consults with question, consultant, time, outcome, and collapsible answer block', () => {
+  const detail = makeDetail('report', 'completed');
+  const consult: RunConsult = {
+    at: '2026-11-16T00:02:30Z',
+    question: 'Why does the physics integrator overshoot on steep slopes?',
+    files: ['src/physics.ts'],
+    consultant: 'claude-advisor',
+    model: 'claude-sonnet-4-6',
+    seconds: 4.2,
+    outcome: 'ok',
+    answer_length: 58,
+    answer: 'Clamp the impulse normal before integrating velocity.',
+    usage: { source: 'claude-json', total_tokens: 520, cost_usd: 0.01 },
+  };
+  detail.runs[0].consults = [consult];
+  vi.mocked(useOrder).mockReturnValue({
+    isError: false,
+    data: detail,
+  } as ReturnType<typeof useOrder>);
+  const html = renderRun();
+  expect(html).toContain('Consults');
+  expect(html).toContain('claude-advisor');
+  expect(html).toContain('claude-sonnet-4-6');
+  expect(html).toContain('Why does the physics integrator overshoot on steep slopes?');
+  expect(html).toContain('<details');
+  expect(html).toContain('Clamp the impulse normal before integrating velocity.');
 });

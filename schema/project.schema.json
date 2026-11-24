@@ -77,6 +77,30 @@
         ],
         "additionalProperties": false
       }
+    },
+    "consult": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "role": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "default": "consultant"
+        },
+        "max_per_run": { "type": "integer", "minimum": 1, "default": 3 },
+        "timeout_minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "default": 10
+        },
+        "kinds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

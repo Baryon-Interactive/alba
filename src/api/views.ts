@@ -27,7 +27,8 @@ import { CAPABILITIES } from '../workers/config.ts';
 import { effectiveKind, toRouting } from '../routing/route.ts';
 import type { Probes } from '../tick/gather.ts';
 import type { OrderActivity } from '../tick/plan.ts';
-import { orderSpend, spendToday, usageOf } from '../usage/spend.ts';
+import { readRunConsults } from '../consult/config.ts';
+import { orderSpend, spendToday, stateDirOfRun, usageOf } from '../usage/spend.ts';
 import type { WorkersFile } from '../workers/config.ts';
 import type { QuotaReading } from '../workers/quota.ts';
 import { NEEDS_YOU, type ProjectView, type Snapshot } from '../web/snapshot.ts';
@@ -78,9 +79,10 @@ function observeRun(run: StoredRun | undefined, env: ViewEnv, activity?: OrderAc
   return { alive, quietMinutes, liveness: livenessOf(alive, quietMinutes) };
 }
 
-export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: OrderActivity, dispatch?: ProjectConfig['dispatch']): A.Run {
+export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: OrderActivity, dispatch?: ProjectConfig['dispatch'], stateDir?: string): A.Run {
   const port = dispatch && run.slot !== undefined ? computePortBase(dispatch, run.slot) : undefined;
   const observation = observeRun(run, env, activity);
+  const consults = readRunConsults(stateDirOfRun(run, stateDir), tag, run.id);
   return {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
@@ -90,6 +92,7 @@ export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: Orde
     ...(run.role ? { role: run.role, role_source: run.role_source, role_effort: run.role_effort, role_reasoning: run.role_reasoning, mcp_servers: run.mcp_servers, role_warnings: run.role_warnings } : {}),
     ...(run.routing ? { routing: run.routing } : {}), ...(run.skills ? { skills: run.skills } : {}),
     ...(run.monitor ? { monitor: true } : {}), ...(run.rotated ? { rotatedFrom: { worker: run.rotated.from, reason: run.rotated.reason, paid: run.rotated.paid === true, ...(run.rotated.text ? { text: run.rotated.text } : {}) } } : {}), ...(run.handoff_file ? { handoffFile: run.handoff_file } : {}), ...(run.limit ? { limit: run.limit } : {}), ...(run.end ? { end: run.end } : {}),
+    ...(consults.length ? { consults } : {}),
   };
 }
 
@@ -111,10 +114,11 @@ export function actionsFor(stage: Stage, env: ViewEnv, waitingFor?: A.WaitingFor
   return { allowed, unavailable };
 }
 
-function spendOf(doc: OrderDoc, env: ViewEnv): A.OrderSpend | undefined {
+function spendOf(doc: OrderDoc, env: ViewEnv, stateDir?: string): A.OrderSpend | undefined {
   const credits = creditsOf(doc);
-  if (!doc.runs.some(r => !r.imported && (r.ended || r.usage)) && doc.order.mandate?.spend_cap === undefined && !credits) return undefined;
-  const spend = orderSpend(doc, env.workers?.workers ?? [], env.probes, env.cachedOnly);
+  const hasConsult = doc.runs.some(r => readRunConsults(stateDirOfRun(r, stateDir), doc.order.tag, r.id).some(c => c.outcome !== 'refused'));
+  if (!hasConsult && !doc.runs.some(r => !r.imported && (r.ended || r.usage)) && doc.order.mandate?.spend_cap === undefined && !credits) return undefined;
+  const spend = orderSpend(doc, env.workers?.workers ?? [], env.probes, env.cachedOnly, stateDir);
   return credits ? { ...spend, credits } : spend;
 }
 
@@ -129,7 +133,7 @@ export function monitorViewOf(doc: OrderDoc, stage: Stage): A.MonitorView | unde
 export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: AttentionMark): A.OrderSummary {
   const open = doc.runs.find(r => r.ended === undefined);
   const observation = observeRun(open, env, activity);
-  const spend = spendOf(doc, env);
+  const spend = spendOf(doc, env, project.state_dir);
   const o = doc.order;
   return {
     ...attentionState(doc, mark),
@@ -194,7 +198,7 @@ export function runList(view: View, env: ViewEnv, query: { since?: string; worke
   }
   const page = rows.slice(from, from + query.limit);
   const last = page[page.length - 1];
-  const items = page.map(r => ({ ...toRun(r.run, r.doc.order.tag, env, view.rows?.find(row => row.tag === r.doc.order.tag)?.activity, view.config.dispatch), project: view.config.id, tag: r.doc.order.tag, title: r.doc.order.title, stage: view.orders.stage(r.doc, merged).stage }));
+  const items = page.map(r => ({ ...toRun(r.run, r.doc.order.tag, env, view.rows?.find(row => row.tag === r.doc.order.tag)?.activity, view.config.dispatch, view.config.state_dir), project: view.config.id, tag: r.doc.order.tag, title: r.doc.order.title, stage: view.orders.stage(r.doc, merged).stage }));
   return { project: view.config.id, count: items.length, items, ...(page.length === query.limit && from + query.limit < rows.length && last ? { next: `${last.started}|${last.key}` } : {}) };
 }
 
@@ -229,7 +233,7 @@ export function workerViews(snap: Snapshot, env: ViewEnv, only?: ProjectView): A
   const merged = new Map<string, A.Worker>();
   const spent = new Map<string, number>();
   const now = env.probes.now();
-  for (const v of views) for (const [id, usd] of spendToday(v.orders.all(), env.workers?.workers ?? [], env.probes, now, env.cachedOnly)) spent.set(id, (spent.get(id) ?? 0) + usd);
+  for (const v of views) for (const [id, usd] of spendToday(v.orders.all(), env.workers?.workers ?? [], env.probes, now, env.cachedOnly, v.config.state_dir)) spent.set(id, (spent.get(id) ?? 0) + usd);
   for (const v of views) for (const w of v.workers ?? []) {
     const have = merged.get(w.config.id);
     const reading = w.config.quota ? (v.quotas ?? []).find(q => q.source === w.config.quota) : undefined;
@@ -318,7 +322,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     const size = statSync(path).size;
     file = { path, markdown: readFileSync(path, 'utf8').slice(0, FILE_LIMIT), truncated: size > FILE_LIMIT };
   } catch { /* an order without a file */ }
-  const spend = spendOf(doc, env);
+  const spend = spendOf(doc, env, view.config.state_dir);
   const routingNow = routingOf(view.config, doc);
   const check = lastCheck(events);
   const deliveryLint = lastCheck(events, true);
@@ -354,7 +358,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
     needsStatus: o.needs.map(n => { try { return { tag: n, stage: view.orders.stage(view.orders.get(n), merged).stage }; } catch { return { tag: n }; } }),
     actions: actions.allowed, unavailable: actions.unavailable,
-    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch)), reports: doc.reports.map(toReport),
+    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch, view.config.state_dir)), reports: doc.reports.map(toReport),
     referencedDecisions: referencedDecisions(view.config, doc, file?.markdown), questions: (doc.questions ?? []).map(toQuestion), quotes: (doc.quotes ?? []).map(q => toQuote(view.config.id, o.tag, q)), lessons: lessonsForOrder(view.config, doc),
     decisions: doc.actions.map(a => ({ seq: a.seq, at: a.at, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.imported ? { imported: true } : {}), ...(a.override ? { override: true } : {}) })),
     ...(check ? { lastCheck: check } : {}), ...(deliveryLint ? { deliveryLint } : {}), ...(verify ? { verify } : {}), ...(spend ? { spend } : {}),

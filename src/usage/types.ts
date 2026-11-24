@@ -4,6 +4,7 @@ export interface Pricing { input_per_mtok: number; cached_input_per_mtok: number
 export interface UsageRow extends RunUsage {
   project: string; order: string; run: string; worker: string; engine: string; model: string;
   turn: number; at: string; kind: string; rework: boolean; resume: boolean; open: boolean; merged: boolean;
+  consult?: boolean;
   signals?: UsageSignal[]; signal_rules?: string; merged_at?: string; subscription?: boolean;
   raw?: Record<string, unknown>; estimate?: number; currency?: string;
   quota?: { window: string; percent: number; shared: boolean }[];

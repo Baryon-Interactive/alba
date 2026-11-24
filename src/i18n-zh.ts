@@ -1191,6 +1191,16 @@ export const zh: Record<string, string> = {
   'Idempotency-Key must be 1 to 100 characters of letters, digits, "-" and "_".': 'Idempotency-Key 必须为 1 到 100 个字母、数字、“-”或“_”。',
   'Idempotency-Key "{key}" was already used with a different request.': 'Idempotency-Key “{key}” 已用于另一个不同的请求。',
   'A request with Idempotency-Key "{key}" is still in progress.': '带有 Idempotency-Key “{key}” 的请求仍在进行中。',
+  // consult
+  '{file}: "consult" must be a mapping.': '{file}：“consult”必须是映射。',
+  '{file}: unknown key(s) under "consult": {keys}.': '{file}：“consult”下存在未知键：{keys}。',
+  '{file}: "consult.enabled" must be true or false.': '{file}：“consult.enabled”必须是 true 或 false。',
+  '{file}: "consult.role" must be a role name.': '{file}：“consult.role”必须是角色名。',
+  '{file}: "consult.max_per_run" must be a whole number >= 1.': '{file}：“consult.max_per_run”必须是大于等于 1 的整数。',
+  '{file}: "consult.timeout_minutes" must be a positive number <= 30.': '{file}：“consult.timeout_minutes”必须是小于等于 30 的正数。',
+  '{file}: "consult.kinds" must be a non-empty list of kinds.': '{file}：“consult.kinds”必须是非空类型列表。',
+  'No such run: {key}.': '没有这次派工：{key}。',
+  'Consults': '跨模型咨询',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

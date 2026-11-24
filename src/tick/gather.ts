@@ -353,7 +353,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
     }
   }
   const checks = independentChecks(orders);
-  const spent = spendToday(docs, workersFile.workers, probes, now);
+  const spent = spendToday(docs, workersFile.workers, probes, now, false, project.state_dir);
   const workers: WorkerState[] = workersFile.workers.map(config => {
     const reading = config.quota ? quotas.find(q => q.source === config.quota) : undefined;
     const a = availability(config, reading, history, now);
@@ -497,7 +497,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
       ...(preflightWaiting ? { preflightWaiting: true } : {}),
       role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { ...o, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind })),
       tag: o.tag, stage: open ? 'running' : stage, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind, kindTags: routing.tags, heavy: heavyOf(project, d), workerText: o.worker, pinnedWorker: pinProblem ? undefined : o.next_worker,
-      ...(o.mandate?.spend_cap !== undefined ? { spendCapUsd: o.mandate.spend_cap, spentUsd: orderSpend(d, workersFile.workers, probes).cost_usd ?? 0 } : {}),
+      ...(o.mandate?.spend_cap !== undefined ? { spendCapUsd: o.mandate.spend_cap, spentUsd: orderSpend(d, workersFile.workers, probes, false, project.state_dir).cost_usd ?? 0 } : {}),
       priority: o.priority,
       row: o.source?.row ?? 1e6 + index,
       rework: notes.some(n => n.kind === 'rework' || n.kind === 'answer' || n.kind === 'message'),
