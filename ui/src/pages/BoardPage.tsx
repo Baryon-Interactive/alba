@@ -18,6 +18,8 @@ import { monitorResultLabel, stepText } from '@/lib/monitoring';
 import { cn } from '@/lib/utils';
 import { t } from '@/i18n';
 
+import { RunPeek } from '@/components/RunPeek';
+import { OrderQuestion } from '@/components/OrderQuestion';
 import { MarkAllRead, MuteMenu, UnreadDot } from '@/components/OrderAttention';
 
 const ALL = '';
@@ -80,6 +82,8 @@ function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; o
       {o.monitor && <div className="mt-1 truncate text-xs text-muted-foreground">{monitorResultLabel(o.monitor.lastResult)}{o.monitor.lastCheckAt ? ` · ${t('last {when}', { when: ago(o.monitor.lastCheckAt) })}` : ''}</div>}
       {o.uses && o.uses.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{o.uses.map(u => <Badge key={u} tone="outline" className="font-mono text-[10px]">{u}</Badge>)}</div>}
       {o.openCommand && <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">$ {o.openCommand}</div>}
+      <OrderQuestion project={project} o={o} />
+      {(o.stage === 'running' || o.stage === 'monitoring') && <RunPeek project={project} tag={o.tag} />}
     </article>
   );
 }

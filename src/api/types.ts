@@ -357,6 +357,7 @@ export interface AttentionState {
 }
 
 export interface OrderSummary extends AttentionState {
+  waitingQuestion?: { text: string; options?: QuestionOption[] };
   nextWorker?: string;
   review?: 'manual' | 'auto';
   lintBounced?: boolean;

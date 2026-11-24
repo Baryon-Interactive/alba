@@ -1,21 +1,19 @@
 import { UnreadDot } from '@/components/OrderAttention';
-import { useState } from 'react';
+import { AnswerForm, OrderQuestion } from '@/components/OrderQuestion';
 import { Link } from 'react-router';
-import { AlertTriangle, CheckCircle2, CircleDollarSign, GitPullRequest, HelpCircle, Hand, Images, MousePointerClick, OctagonAlert, Send } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleDollarSign, GitPullRequest, HelpCircle, Hand, Images, MousePointerClick, OctagonAlert } from 'lucide-react';
 import type { OrderAction, OrderSummary } from '@api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/misc';
-import { ActionButtons, ActionDialog } from '@/components/ActionDialog';
-import { OptionsPicker } from '@/components/OptionsPicker';
+import { ActionButtons } from '@/components/ActionDialog';
 import { ReportEvidence } from '@/components/ReportEvidence';
 import { QuoteCard } from '@/components/QuoteCard';
 import { EmptyState, ErrorBox, PageHeader, Section, StageBadge, TagLink, UsageText, orderMeta } from '@/components/common';
 import { visibleActions } from '@/lib/stages';
 import { groupNeedsYou, type NeedsGroup } from '@/lib/needs';
-import { useAct, useOverview, useProjectId } from '@/lib/queries';
+import { useOverview, useProjectId } from '@/lib/queries';
 import { ago } from '@/lib/format';
 import { stepText } from '@/lib/monitoring';
 import { t } from '@/i18n';
@@ -31,11 +29,6 @@ function Meta({ o }: { o: OrderSummary }) {
 
 /** The question in words, with the answer box beside it: sending it opens the confirmation. */
 function AnswerCard({ project, o }: { project: string; o: OrderSummary }) {
-  const [text, setText] = useState('');
-  const [confirm, setConfirm] = useState(false);
-  const [own, setOwn] = useState(false);
-  const act = useAct(project);
-  const options = o.report?.options ?? [];
   return (
     <Card className="border-warning/35 p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -45,18 +38,7 @@ function AnswerCard({ project, o }: { project: string; o: OrderSummary }) {
       </div>
       <Meta o={o} />
       {o.report?.summary && o.report.summary !== o.report.question && <p className="mt-2 text-sm text-muted-foreground">{o.report.summary}</p>}
-      <blockquote className="mt-2 rounded-md border-l-[3px] border-primary bg-primary/6 px-3 py-2 text-[14px] whitespace-pre-wrap">{o.report?.question ?? o.why}</blockquote>
-      {options.length > 0 && (
-        <OptionsPicker project={project} tag={o.tag} options={options} submit={(choice, note) => act.mutateAsync({ tag: o.tag, action: 'answer', choice, text: note || undefined })} />
-      )}
-      {(options.length === 0 || own) && (
-        <div className="mt-3 flex items-end gap-2">
-          <Textarea value={text} onChange={e => setText(e.target.value)} placeholder={t('Type your answer…')} className="min-h-14 flex-1" />
-          <Button disabled={!text.trim()} onClick={() => setConfirm(true)}><Send />{t('Answer')}</Button>
-        </div>
-      )}
-      {options.length > 0 && !own && <button className="mt-2 text-xs text-primary hover:underline" onClick={() => setOwn(true)}>{t('Answer in your own words instead')}</button>}
-      {confirm && <ActionDialog project={project} tag={o.tag} action="answer" open onOpenChange={o2 => !o2 && setConfirm(false)} initialText={text} context={o.report?.question} />}
+      <AnswerForm project={project} o={o} />
     </Card>
   );
 }
@@ -114,7 +96,7 @@ function StuckRow({ project, o }: { project: string; o: OrderSummary }) {
           <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{o.report?.summary ?? o.why}</p>
-        {o.report?.question && <p className="mt-1 rounded-md bg-muted px-2.5 py-1.5 text-sm">{o.report.question}</p>}
+        <OrderQuestion project={project} o={o} />
       </div>
       <div className="flex items-center gap-2"><ActionButtons project={project} tag={o.tag} actions={o.actions} only={(['answer', 'rework', 'queue', 'cancel'] as OrderAction[]).filter(a => o.actions.includes(a))} context={o.report?.question} /></div>
     </Card>
@@ -203,7 +185,7 @@ export function NeedsPage() {
             {o.running.items.map(r => (
               <div key={r.tag} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
                 <UnreadDot tag={r.tag} /><TagLink project={project} tag={r.tag} />
-                <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span><OrderQuestion project={project} o={r} />
                 <span className="text-xs text-muted-foreground">{r.run?.worker}</span>
                 {stepText(r.progress) && <Badge tone="outline" title={r.progress?.current}>{stepText(r.progress)}</Badge>}
                 <span className="text-xs text-muted-foreground tabular-nums">{r.run ? t('started {ago}', { ago: ago(r.run.started) }) : ''}</span>

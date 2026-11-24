@@ -142,7 +142,9 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
       const o = doc.order, open = doc.runs.find(r => !r.ended);
       const monitor = monitorViewOf(doc, stage.stage);
       const newest = open && row?.activity ? [row.activity.lastCommitAt, open.imported ? undefined : open.started, row.activity.logAt].filter((x): x is string => !!x).sort().pop() : undefined;
-      return { ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      const waitingQuestion = (stage.stage === 'awaiting-user' || stage.stage === 'blocked') && stage.waitingFor !== 'card' && latest?.question
+        ? { text: latest.question, options: latest.options && toOptions(latest.options) } : undefined;
+      return { ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
         ...(newest ? { quietMinutes: Math.max(0, Math.round((env.probes.now().getTime() - Date.parse(newest)) / 60000)) } : {}), ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),

@@ -1,3 +1,4 @@
+import { OrderQuestion } from '@/components/OrderQuestion';
 import { UnreadDot } from '@/components/OrderAttention';
 import { Link } from 'react-router';
 import type { ProjectOverview } from '@api';
@@ -64,9 +65,10 @@ function Attention({ o }: { o: ProjectOverview }) {
     <div className="max-h-72 overflow-y-auto divide-y">
       {actionable.map(item => <div key={item.tag} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
         <StageBadge stage={item.stage} waitingFor={item.waitingFor} />
-        <Link to={orderPath(o.project, item.tag)} className="min-w-52 flex-1 text-sm hover:underline"><span className="mr-2 font-mono text-xs text-muted-foreground"><UnreadDot tag={item.tag} />{item.tag}</span>{item.title}{item.report?.question && <span className="ml-2 text-xs text-muted-foreground">{item.report.question}</span>}</Link>
+        <Link to={orderPath(o.project, item.tag)} className="min-w-52 flex-1 text-sm hover:underline"><span className="mr-2 font-mono text-xs text-muted-foreground"><UnreadDot tag={item.tag} />{item.tag}</span>{item.title}</Link>
+        <OrderQuestion project={o.project} o={item} />
         <div className="flex flex-wrap items-center gap-2">
-          {item.stage === 'awaiting-review' ? <><Button asChild size="sm" variant="ghost"><Link to={`${orderPath(o.project, item.tag)}?tab=review`}>{t('Review the diff')}</Link></Button><ActionButtons project={o.project} tag={item.tag} actions={item.actions} only={item.actions.filter(a => a === 'approve' || a === 'rework')} noBranch={!item.branch} /></> : item.stage === 'awaiting-user' && item.waitingFor !== 'card' ? <ActionButtons project={o.project} tag={item.tag} actions={item.actions} only={['answer']} context={item.report?.question} /> : <Button asChild size="sm" variant="outline"><Link to={orderPath(o.project, item.tag)}>{item.waitingFor === 'card' ? t('Open order') : t('Look at the problem')}</Link></Button>}
+          {item.stage === 'awaiting-review' ? <><Button asChild size="sm" variant="ghost"><Link to={`${orderPath(o.project, item.tag)}?tab=review`}>{t('Review the diff')}</Link></Button><ActionButtons project={o.project} tag={item.tag} actions={item.actions} only={item.actions.filter(a => a === 'approve' || a === 'rework')} noBranch={!item.branch} /></> : item.stage === 'awaiting-user' && item.waitingFor !== 'card' ? null : <Button asChild size="sm" variant="outline"><Link to={orderPath(o.project, item.tag)}>{item.waitingFor === 'card' ? t('Open order') : t('Look at the problem')}</Link></Button>}
         </div>
       </div>)}
       {picks.map(p => <div key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-2"><span className="text-xs text-warning">{t('Waiting for a pick')}</span><span className="flex-1 text-sm">{p.title}</span><Button asChild size="sm" variant="outline"><Link to={`${base}/picks#${encodeURIComponent(p.id)}`}>{t('Look and choose')}</Link></Button></div>)}
@@ -80,10 +82,10 @@ function Attention({ o }: { o: ProjectOverview }) {
 function Live({ o }: { o: ProjectOverview }) {
   return <section className={`${panel} rise`} style={nth(2)}><div className="flex items-center justify-between border-b px-5 py-3"><h2 className="flex items-center gap-2 text-[13px] font-semibold">{o.live.items.length > 0 && <span aria-hidden className="ping size-1.5 rounded-full bg-info" />}{t('Live work')} <span className="rounded-full bg-info/15 px-2 py-0.5 text-[11px] text-info tabular-nums">{o.live.items.length}</span></h2><Link className="text-xs text-muted-foreground hover:underline" to={`${projectPath(o.project)}/runs`}>{t('All runs')}</Link></div>
     {!o.live.items.length && <div className="px-4"><Empty>{t('Nothing is running')}</Empty></div>}
-    <div className="max-h-80 overflow-y-auto divide-y">{o.live.items.map(r => <Link key={r.tag} to={r.run ? `${orderPath(o.project, r.tag)}/runs/${encodeURIComponent(r.run.id)}` : orderPath(o.project, r.tag)} className={`block border-l-[3px] px-4 py-2 hover:bg-accent/30 ${(r.commitMinutes ?? 0) > 60 ? 'border-l-destructive bg-destructive/5' : (r.commitMinutes ?? 0) > 45 ? 'border-l-warning bg-warning/5' : 'scanline border-l-info'}`}>
+    <div className="max-h-80 overflow-y-auto divide-y">{o.live.items.map(r => <div key={r.tag}><Link to={r.run ? `${orderPath(o.project, r.tag)}/runs/${encodeURIComponent(r.run.id)}` : orderPath(o.project, r.tag)} className={`block border-l-[3px] px-4 py-2 hover:bg-accent/30 ${(r.commitMinutes ?? 0) > 60 ? 'border-l-destructive bg-destructive/5' : (r.commitMinutes ?? 0) > 45 ? 'border-l-warning bg-warning/5' : 'scanline border-l-info'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="font-mono text-xs text-info"><UnreadDot tag={r.tag} />{r.tag}</span><span className="min-w-52 flex-1 text-sm font-medium">{r.title}</span><span className="text-xs">{r.run?.worker ?? r.worker ?? '—'}</span><span className="text-xs text-muted-foreground">{t('Elapsed {time}', { time: duration(r.run?.started ?? r.monitor?.started ?? r.updated, o.at) })}</span></div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs"><span className="min-w-52 flex-1 text-muted-foreground">{stepText(r.progress)}{r.progress?.current ? ` · ${r.progress.current}` : t('No step reported')}</span><span className={`font-medium ${commitAgeClass(r.commitMinutes)}`}>{r.commitMinutes === undefined ? t('Commit time unknown') : t('{n} min without a commit', { n: r.commitMinutes })}</span><span className="tabular-nums text-muted-foreground">{tokens(r.spend?.total_tokens)} {t('tokens')}</span></div>
-    </Link>)}</div>
+    </Link><div className="px-4"><OrderQuestion project={o.project} o={r} /></div></div>)}</div>
   </section>;
 }
 
