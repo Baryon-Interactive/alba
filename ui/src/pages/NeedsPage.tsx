@@ -1,3 +1,4 @@
+import { UnreadDot } from '@/components/OrderAttention';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, GitPullRequest, HelpCircle, Hand, Images, MousePointerClick, OctagonAlert, Send } from 'lucide-react';
@@ -38,7 +39,7 @@ function AnswerCard({ project, o }: { project: string; o: OrderSummary }) {
   return (
     <Card className="border-warning/35 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <TagLink project={project} tag={o.tag} />
+        <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
         <span className="font-medium">{o.title}</span>
         <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
       </div>
@@ -66,7 +67,7 @@ function CardWaitCard({ project, o }: { project: string; o: OrderSummary }) {
     <Card className="border-warning/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <TagLink project={project} tag={o.tag} />
+          <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
           <span className="font-medium">{o.title}</span>
           <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
         </div>
@@ -87,7 +88,7 @@ function ReviewCard({ project, o }: { project: string; o: OrderSummary }) {
     <Card className="border-warning/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <TagLink project={project} tag={o.tag} />
+          <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
           <span className="font-medium">{o.title}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -108,7 +109,7 @@ function StuckRow({ project, o }: { project: string; o: OrderSummary }) {
     <Card className="flex flex-wrap items-start justify-between gap-3 p-3.5">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <TagLink project={project} tag={o.tag} />
+          <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
           <span className="font-medium">{o.title}</span>
           <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
         </div>
@@ -135,7 +136,7 @@ function Group({ project, g }: { project: string; g: NeedsGroup }) {
           <div className="grid gap-2">
             {(g.picks ?? []).map(p => (
               <Card key={p.id} className="flex flex-wrap items-center justify-between gap-3 p-3.5">
-                <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold">{p.id}</span><span className="font-medium">{p.title}</span>{p.order && <TagLink project={project} tag={p.order} className="text-xs" />}<Badge tone="outline">{t('{n} options', { n: p.options })}</Badge></div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold">{p.id}</span><span className="font-medium">{p.title}</span><UnreadDot tag={p.order} />{p.order && <TagLink project={project} tag={p.order} className="text-xs" />}<Badge tone="outline">{t('{n} options', { n: p.options })}</Badge></div>
                 <Button asChild size="sm" variant="outline"><Link to={`${base}/picks#${encodeURIComponent(p.id)}`}>{t('Look and choose')}</Link></Button>
               </Card>
             ))}
@@ -150,7 +151,7 @@ function Group({ project, g }: { project: string; g: NeedsGroup }) {
           <div className="grid gap-2">
             {g.cards.map(c => (
               <Card key={c.tag} className="flex items-center justify-between gap-3 p-3.5">
-                <div className="flex items-center gap-2"><TagLink project={project} tag={c.tag} /><span className="text-sm text-muted-foreground">{t('is ready; the tick can only offer it to you, to start in {worker}', { worker: c.worker })}</span></div>
+                <div className="flex items-center gap-2"><UnreadDot tag={c.tag} /><TagLink project={project} tag={c.tag} /><span className="text-sm text-muted-foreground">{t('is ready; the tick can only offer it to you, to start in {worker}', { worker: c.worker })}</span></div>
                 <Button asChild size="sm" variant="outline"><Link to={`${base}/orders/${encodeURIComponent(c.tag)}`}>{t('Open order')}</Link></Button>
               </Card>
             ))}
@@ -166,7 +167,7 @@ function Group({ project, g }: { project: string; g: NeedsGroup }) {
             {g.problems.map((p, i) => (
               <Card key={i} className="border-warning/40 p-3 text-sm">
                 <div className="flex items-center gap-2">
-                  {p.tag && <TagLink project={project} tag={p.tag} />}
+                  <UnreadDot tag={p.tag} />{p.tag && <TagLink project={project} tag={p.tag} />}
                   <span>{p.tag ? p.text.replace(new RegExp(`^${p.tag}: `), '') : p.text}</span>
                   <Badge tone="outline" className="ml-auto">{p.kind}</Badge>
                 </div>
@@ -201,7 +202,7 @@ export function NeedsPage() {
           <Card className="divide-y">
             {o.running.items.map(r => (
               <div key={r.tag} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-                <TagLink project={project} tag={r.tag} />
+                <UnreadDot tag={r.tag} /><TagLink project={project} tag={r.tag} />
                 <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span>
                 <span className="text-xs text-muted-foreground">{r.run?.worker}</span>
                 {stepText(r.progress) && <Badge tone="outline" title={r.progress?.current}>{stepText(r.progress)}</Badge>}

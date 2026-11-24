@@ -13,6 +13,7 @@ import { hasJsonStream, resolveRunTab } from '@/components/TranscriptLogic';
 import { Empty, ErrorBox, StageBadge, UsageText } from '@/components/common';
 import { useOrder, useProjectId } from '@/lib/queries';
 import { dateTime, duration, tokens } from '@/lib/format';
+import { useSeenWhilePresent } from '@/components/OrderAttention';
 import { t } from '@/i18n';
 
 const SILENT_END_KINDS: ReadonlySet<EndKind> = new Set(['stream-cut-mid-turn', 'vanished', 'output-limit', 'context-limit']);
@@ -31,6 +32,7 @@ export function RunPage() {
   const { tag = '', runId = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const q = useOrder(project, tag);
+  useSeenWhilePresent(project, tag, q.data);
   const [loadedEntries, setLoadedEntries] = useState<readonly TranscriptEntry[] | undefined>(undefined);
 
   useEffect(() => {

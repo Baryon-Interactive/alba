@@ -1,6 +1,11 @@
 // Chinese texts of the console. The words follow docs/glossary.md (工单, 派工, 报告, 授权, 打回返工, 一次巡检, 验收, 参照值 ...).
 // `node scripts/i18n-keys.mjs` checks that every t('...') text in src/ has a line here.
 export const zh: Record<string, string> = {
+  'Unread only': '仅看未读',
+  'Mark all read': '全部标为已读',
+  'Mute order': '静音此工单',
+  'Unmute order': '取消工单静音',
+  'Order menu for {tag}': '工单 {tag} 的菜单',
   'First-pass review': '初审',
   'send-back': '建议退回',
   'unsure': '无法确定',

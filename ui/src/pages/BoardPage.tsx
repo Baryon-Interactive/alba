@@ -18,6 +18,8 @@ import { monitorResultLabel, stepText } from '@/lib/monitoring';
 import { cn } from '@/lib/utils';
 import { t } from '@/i18n';
 
+import { MarkAllRead, MuteMenu, UnreadDot } from '@/components/OrderAttention';
+
 const ALL = '';
 const DONE_LIMIT = 12;
 
@@ -48,17 +50,16 @@ function useOverlapTags(project: string, items: OrderSummary[]): Map<string, str
 function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; overlapTags?: string[] }) {
   const quiet = o.quietMinutes;
   return (
-    <Link
-      to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}`}
+    <article
       className={`${o.stage === 'running' ? 'scanline live-glow ' : ''}relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]`}
       style={{ '--stage': statusColor(o.stage) } as React.CSSProperties}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1 font-mono text-[13px] font-semibold">
-          <span className="truncate">{o.tag}</span>
+          <Link className="truncate hover:underline after:absolute after:inset-0" to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}`}>{o.tag}<span className="sr-only"> {o.title}</span></Link><UnreadDot unread={o.unread} />
           {overlapTags && overlapTags.length > 0 && <OverlapWarning tags={overlapTags} />}
         </span>
-        <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
+        <div className="relative flex items-center gap-1"><StageBadge stage={o.stage} waitingFor={o.waitingFor} /><MuteMenu project={project} tag={o.tag} muted={o.muted} /></div>
       </div>
       <div className="mt-1 line-clamp-2 min-h-10 text-sm break-words">{o.title}</div>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
@@ -79,7 +80,7 @@ function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; o
       {o.monitor && <div className="mt-1 truncate text-xs text-muted-foreground">{monitorResultLabel(o.monitor.lastResult)}{o.monitor.lastCheckAt ? ` · ${t('last {when}', { when: ago(o.monitor.lastCheckAt) })}` : ''}</div>}
       {o.uses && o.uses.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{o.uses.map(u => <Badge key={u} tone="outline" className="font-mono text-[10px]">{u}</Badge>)}</div>}
       {o.openCommand && <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">$ {o.openCommand}</div>}
-    </Link>
+    </article>
   );
 }
 
@@ -95,13 +96,14 @@ export function BoardPage() {
   const items = q.data?.items ?? [];
   const overlapByTag = useOverlapTags(project, items);
   const filters = { stage: get('stage'), kind: get('kind'), heavy: get('heavy'), worker: get('worker'), text: get('q').trim().toLowerCase() };
+  const unreadOnly = get('unread') === '1';
   const filtered = useMemo(
     () => items.filter(o =>
-      (!filters.stage || o.stage === filters.stage) && (!filters.kind || o.kind === filters.kind) && (!filters.heavy || o.heavy === filters.heavy) && (!filters.worker || (o.run?.worker ?? o.nextWorker ?? o.worker) === filters.worker)
+      (!unreadOnly || o.unread) && (!filters.stage || o.stage === filters.stage) && (!filters.kind || o.kind === filters.kind) && (!filters.heavy || o.heavy === filters.heavy) && (!filters.worker || (o.run?.worker ?? o.nextWorker ?? o.worker) === filters.worker)
       && (!filters.text || `${o.tag} ${o.title}`.toLowerCase().includes(filters.text))),
-    [items, filters.stage, filters.kind, filters.heavy, filters.worker, filters.text],
+    [items, unreadOnly, filters.stage, filters.kind, filters.heavy, filters.worker, filters.text],
   );
-  const active = !!(filters.stage || filters.kind || filters.heavy || filters.worker || filters.text);
+  const active = !!(unreadOnly || filters.stage || filters.kind || filters.heavy || filters.worker || filters.text);
   const hideEmpty = get('empty') === 'hide';
 
   if (q.isError) return <ErrorBox error={q.error} />;
@@ -127,6 +129,8 @@ export function BoardPage() {
         {sel('heavy', t('All heavy classes'), distinct(items, o => o.heavy))}
         {sel('worker', t('All workers'), distinct(items, o => o.run?.worker ?? o.nextWorker ?? o.worker))}
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={hideEmpty} onChange={e => set('empty', e.target.checked ? 'hide' : '')} />{t('Hide empty columns')}</label>
+        <label className="inline-flex items-center gap-1.5 text-xs"><input type="checkbox" checked={unreadOnly} onChange={e => set('unread', e.target.checked ? '1' : '')} />{t('Unread only')}</label>
+        <MarkAllRead project={project} />
         {active && <button onClick={() => setParams({}, { replace: true })} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><X className="size-3" />{t('Clear filters')}</button>}
       </div>
       <div className="stagger flex min-h-[60vh] items-start gap-3 overflow-x-auto pb-4">

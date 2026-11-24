@@ -26,6 +26,7 @@ import { draftKey, hasDraft } from '@/lib/drafts';
 import { errorText, useAct, useOrder, useOrders, useProjectId, useRoute } from '@/lib/queries';
 import { actionExplain, actionLabel, stageLabel, visibleActions, waitingFor } from '@/lib/stages';
 import { ago, dateTime, duration } from '@/lib/format';
+import { useSeenWhilePresent, MuteMenu } from '@/components/OrderAttention';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { statusColor } from '@/components/StatusPalette';
@@ -295,6 +296,7 @@ export function OrderPage() {
   const [params, setParams] = useSearchParams();
   const [closing, setClosing] = useState(false);
   const q = useOrder(project, tag);
+  useSeenWhilePresent(project, tag, q.data);
   const { hash } = useLocation();
   useEffect(() => {
     if (!q.data || !hash) return;
@@ -322,6 +324,7 @@ export function OrderPage() {
       <div className="relative mb-5 flex flex-wrap items-start justify-between gap-3 overflow-hidden rounded-2xl border bg-card px-5 pt-5 pb-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)]" style={{ '--stage': statusColor(d.stage) } as React.CSSProperties}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold text-muted-foreground">{d.order.tag}</span><StageBadge stage={d.stage} waitingFor={d.waitingFor} />{watchHref && <Link className="text-xs font-medium text-primary hover:underline" to={watchHref}>{t('Watch')}</Link>}{d.order.review === 'manual' && <Badge tone="warning">{t('Manual review')}</Badge>}</div>
+          <MuteMenu project={project} tag={tag} muted={d.muted} />
           <h1 className="mt-1.5 text-[24px] leading-tight font-semibold tracking-[-0.02em]">{d.order.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{stageLabel(d.stage, d.waitingFor)} — {d.why}</p>
         </div>
