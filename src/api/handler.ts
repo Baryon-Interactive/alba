@@ -1,5 +1,5 @@
 import { attentionState } from './attention.ts';
-import { attentionMarks, saveAttentionMarks } from '../orders/attention-store.ts';
+import { attentionFor, saveAttentionMarks } from '../orders/attention-store.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
 import { hasLegacyRoles, migrateRoles } from '../roles/migrate.ts';
 import { editConfig, EDITABLE, readEditable, type ConfigEdit } from '../config-edit.ts';
@@ -1101,7 +1101,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (fields.check !== undefined && fields.check !== 'independent' && fields.check !== 'none') throw new ApiFailure(400, 'bad_request', '"check" is independent or none.');
       if (fields.review !== undefined && fields.review !== 'manual' && fields.review !== 'auto') throw new ApiFailure(400, 'bad_request', '"review" is manual or auto.');
       const doc = editOrderFields(view.config, view.orders, ctx.workers, parts[1], fields as OrderFields);
-      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionMarks(view.orders.store).get(doc.order.tag)));
+      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionFor(view.orders.store)(doc.order.tag)));
     }
     if (parts[0] === 'orders' && parts[2] === 'body' && parts.length === 3) {
       const text = str(body, 'text', true)!;

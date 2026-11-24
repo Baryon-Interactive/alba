@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import { attentionState } from '../src/api/attention.ts';
-import { livenessOf } from '../src/api/views.ts';
-import { saveAttentionMarks, attentionMarks } from '../src/orders/attention-store.ts';
+import { summaries, livenessOf } from '../src/api/views.ts';
+import { initializeAttentionBaseline, saveAttentionMarks, attentionMarks } from '../src/orders/attention-store.ts';
 import { SqliteStore } from '../src/orders/sqlite-store.ts';
+import { Orders } from '../src/orders/service.ts';
 import { FileStore } from '../src/orders/store.ts';
 import { migrateState, exportState } from '../src/orders/state.ts';
 import type { OrderDoc } from '../src/orders/model.ts';
@@ -70,6 +71,29 @@ for (const Store of [FileStore, SqliteStore]) test(`${Store.name} retains monoto
   const reopened = new Store(dir);
   assert.deepEqual(attentionMarks(reopened).get('T1'), { tag: 'T1', seen_at: at(4), muted: true });
   if (reopened instanceof SqliteStore) reopened.close();
+});
+
+for (const Store of [FileStore, SqliteStore]) test(`${Store.name} views use a fixed baseline for historical merges`, async () => {
+  let now = new Date(at(1));
+  const f = await fixture({ populate: false, now: () => now });
+  const store = new Store(path.join(f.dir, 'history'));
+  const orders = new Orders(store, () => now.toISOString());
+  const view = { config: f.board.ctx.projects[0], orders };
+  const unread = () => summaries(view, { probes: f.board.ctx.probes }, true).filter(o => o.unread).map(o => o.tag);
+  const merge = (tag: string) => {
+    orders.add({ tag, title: 'Demo', kind: 'docs' });
+    orders.act(tag, 'merged-elsewhere', { commit: 'abc1234' });
+  };
+  try {
+    for (let i = 1; i <= 5; i++) merge(`T${i}`);
+    assert.equal(unread().length, 5);
+    initializeAttentionBaseline(store, now);
+    assert.deepEqual(unread(), []);
+    now = new Date(at(2));
+    merge('T6');
+    initializeAttentionBaseline(store, new Date(at(3)));
+    assert.deepEqual(unread(), ['T6']);
+  } finally { if (store instanceof SqliteStore) store.close(); }
 });
 
 test('migration and export preserve read and mute marks', () => {

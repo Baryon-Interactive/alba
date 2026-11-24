@@ -13,6 +13,7 @@ import type * as A from '../api/types.ts';
 import { newFleetLock } from './fleet.ts';
 import { createNotifier } from '../notify/notifier.ts';
 import { scrubSecrets } from '../notify/channels.ts';
+import { initializeAttentionBaseline } from '../orders/attention-store.ts';
 import { Orders } from '../orders/service.ts';
 import { stateStore, closeStateStores } from '../orders/backend.ts';
 import { closeMachineStores } from '../resources/machine-store.ts';
@@ -36,6 +37,7 @@ export function startServe(options: ServeOptions): StartedServe {
       lockReleases.push(rel);
       releases.push(rel);
     }
+    for (const project of options.projects) initializeAttentionBaseline(stateStore(project), options.probes.now());
   } catch (error) { unlock(); throw error; }
 
   let exitRecorded = false;

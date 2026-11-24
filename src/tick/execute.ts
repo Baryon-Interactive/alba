@@ -1,3 +1,4 @@
+import { initializeAttentionBaseline } from '../orders/attention-store.ts';
 import { t } from '../i18n.ts';
 import { runAcceptanceTrials } from '../review/acceptance.ts';
 import { applyFinish, findFinishes, type Finish } from '../run/finish.ts';
@@ -26,6 +27,7 @@ import { runSchedules } from '../schedules/engine.ts';
  *  3. report like the dry run does, plus what was done.
  */
 export function executeTick(ctx: RunContext, options: { maxDispatch: number }): TickResult {
+  initializeAttentionBaseline(ctx.orders.store, ctx.probes.now());
   const done: string[] = [];
   const failures: string[] = [];
   const silentEnds: Finish[] = [];

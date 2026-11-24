@@ -11,6 +11,22 @@ export function attentionMarks(store: OrderStore): Map<string, AttentionMark> {
   return new Map(rows.map(row => [row.tag, row]));
 }
 
+const baselineKey = 'attention-baseline';
+
+export function initializeAttentionBaseline(store: OrderStore, now: Date): void {
+  if (store.readMeta(baselineKey) !== undefined) return;
+  store.transaction(() => {
+    if (store.readMeta(baselineKey) === undefined) store.writeMeta(baselineKey, now.toISOString());
+  });
+}
+
+/** Read the project baseline and individual marks once per view. */
+export function attentionFor(store: OrderStore) {
+  const baseline = store.readMeta(baselineKey) as string | undefined;
+  const marks = attentionMarks(store);
+  return (tag: string) => ({ ...marks.get(tag), baseline });
+}
+
 export function saveAttentionMarks(store: OrderStore, changes: AttentionMark[]): void {
   if (!changes.length) return;
   store.transaction(() => {
