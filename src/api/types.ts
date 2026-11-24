@@ -349,7 +349,14 @@ export interface VerifyItem { name: string; status: 'pass' | 'fail' | 'warn'; re
 export interface VerifyResult { tag: string; at: string; run?: string; results: VerifyItem[]; ok: boolean; exitCode: 0 | 1 }
 
 /** The line of an order in lists and on the overview. */
-export interface OrderSummary {
+export interface AttentionState {
+  attention?: { at: string; reason: 'stage' | 'question' | 'run-ended'; text: string };
+  seen?: string;
+  muted?: boolean;
+  unread?: boolean;
+}
+
+export interface OrderSummary extends AttentionState {
   nextWorker?: string;
   review?: 'manual' | 'auto';
   lintBounced?: boolean;
@@ -569,7 +576,7 @@ export interface OrderSkills {
 }
 
 /** `GET /api/orders/:tag` */
-export interface OrderDetail {
+export interface OrderDetail extends AttentionState {
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };
   acceptance?: import('../review/acceptance.ts').AcceptanceCard;

@@ -21,13 +21,13 @@ export class SqliteStore implements OrderStore {
     if (this.db.prepare('PRAGMA journal_mode').get()?.journal_mode !== 'wal') this.db.exec('PRAGMA journal_mode=WAL');
     const schema = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get();
     const version = schema ? this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version as number | null : undefined;
-    if (version && version > 7) { this.db.close(); throw new Error(t('State schema {version} is newer than this program supports.', { version })); }
-    if (version === 6 || version === 7) return;
+    if (version && version > 8) { this.db.close(); throw new Error(t('State schema {version} is newer than this program supports.', { version })); }
+    if (version === 6 || version === 7 || version === 8) return;
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
       const current = this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version as number | null;
-      if (current && current > 7) throw new Error(t('State schema {version} is newer than this program supports.', { version: current }));
+      if (current && current > 8) throw new Error(t('State schema {version} is newer than this program supports.', { version: current }));
       if (!current) {
         this.db.exec(`
           CREATE TABLE orders (tag TEXT PRIMARY KEY, document TEXT NOT NULL, updated TEXT NOT NULL, version INTEGER NOT NULL);
@@ -96,6 +96,20 @@ export class SqliteStore implements OrderStore {
         CREATE INDEX IF NOT EXISTS design_docs_order ON design_docs(doc_order, id);
         INSERT INTO schema_version VALUES (7)`);
     });
+  }
+
+  ensureAttentionSchema(): void {
+    if (this.hasAttentionSchema()) return;
+    this.transaction(() => {
+      if (this.hasAttentionSchema()) return;
+      this.ensureDesignDocsSchema();
+      this.db.exec(`CREATE TABLE order_attention (tag TEXT PRIMARY KEY, seen_at TEXT, muted INTEGER NOT NULL DEFAULT 0);
+        INSERT INTO schema_version VALUES (8)`);
+    });
+  }
+
+  hasAttentionSchema(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'order_attention'").get();
   }
 
   counts(): { orders: number; events: number; meta: number; 'quota-history': number } {

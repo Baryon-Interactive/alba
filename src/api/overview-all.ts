@@ -1,3 +1,4 @@
+import { attentionMarks } from '../orders/attention-store.ts';
 import { usageRows } from '../usage/store.ts';
 import { readOrders } from './read-orders.ts';
 import { usageDashboard, budgetWarnings, sinceDate } from '../usage/accounting.ts';
@@ -73,6 +74,7 @@ export function overviewAll(snap: Snapshot, workersFile?: WorkersFile, extra: (p
     const merged = view.orders.mergedSet(docs);
     const rows = new Map(view.rows.flatMap(r => r.activity ? [[r.tag, r.activity] as const] : []));
     const capacityOrders: { stage: Stage; kind: string; heavy?: string }[] = [];
+    const marks = attentionMarks(view.orders.store);
     const items = docs.map(doc => {
       const stage = view.orders.stage(doc, merged);
       const capacityStage = doc.runs.some(r => r.ended === undefined) ? 'running' : stage.stage;
@@ -81,7 +83,7 @@ export function overviewAll(snap: Snapshot, workersFile?: WorkersFile, extra: (p
         capacityOrders.push({ stage: capacityStage, kind: isGenericKind(o.kind) ? routingOf(view.config, doc, now.toISOString()).kind || o.kind : o.kind, heavy: o.heavy });
       }
       const latest = [...doc.reports].sort((a, b) => b.seq - a.seq)[0];
-      return summaryOf(view.config, doc, stage, env, rows.get(doc.order.tag), NEEDS_YOU.includes(stage.stage) ? latest : undefined);
+      return summaryOf(view.config, doc, stage, env, rows.get(doc.order.tag), NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks.get(doc.order.tag));
     });
     const needs = items.filter(i => NEEDS_YOU.includes(i.stage));
     const running = items.filter(i => i.run);

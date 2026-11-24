@@ -1,3 +1,5 @@
+import { attentionState } from './attention.ts';
+import { attentionMarks, type AttentionMark } from '../orders/attention-store.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
 import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
@@ -107,12 +109,13 @@ export function monitorViewOf(doc: OrderDoc, stage: Stage): A.MonitorView | unde
   return { spec, started: m.started, deadline: m.deadline, checks: m.checks, ...(m.last_at ? { lastCheckAt: m.last_at } : {}), ...(m.last_result ? { lastResult: m.last_result } : {}), ...(m.tail ? { tail: m.tail } : {}) };
 }
 
-export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport): A.OrderSummary {
+export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: AttentionMark): A.OrderSummary {
   const open = doc.runs.find(r => r.ended === undefined);
   const newest = open && activity ? [activity.lastCommitAt, open.imported ? undefined : open.started, activity.logAt].filter((x): x is string => !!x).sort().pop() : undefined;
   const spend = spendOf(doc, env);
   const o = doc.order;
   return {
+    ...attentionState(doc, mark),
     ...(open && liveRuns.peek(open) ? { live: liveRuns.peek(open) } : {}), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}),
     ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
     ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}),
@@ -130,6 +133,7 @@ export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageRes
 export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSummary[] {
   const docs = view.orders.all();
   const merged = view.orders.mergedSet(docs);
+  const marks = attentionMarks(view.orders.store);
   return docs.map(doc => {
     const stage = view.orders.stage(doc, merged);
     const row = view.rows?.find(r => r.tag === doc.order.tag);
@@ -138,7 +142,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
       const o = doc.order, open = doc.runs.find(r => !r.ended);
       const monitor = monitorViewOf(doc, stage.stage);
       const newest = open && row?.activity ? [row.activity.lastCommitAt, open.imported ? undefined : open.started, row.activity.logAt].filter((x): x is string => !!x).sort().pop() : undefined;
-      return { ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      return { ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
         ...(newest ? { quietMinutes: Math.max(0, Math.round((env.probes.now().getTime() - Date.parse(newest)) / 60000)) } : {}), ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
@@ -147,7 +151,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
         ...(open && row?.activity?.progress ? { progress: row.activity.progress } : {}),
         ...(monitor ? { monitor: { started: monitor.started, deadline: monitor.deadline, checks: monitor.checks, lastCheckAt: monitor.lastCheckAt, lastResult: monitor.lastResult } } : {}), actions: actionsFor(stage.stage, env, stage.waitingFor).allowed };
     }
-    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined);
+    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks.get(doc.order.tag));
   }).sort((a, b) => (a.tag < b.tag ? -1 : 1));
 }
 
@@ -317,6 +321,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const nudge = open ? readNudges(view.config)[nudgeKey(o.tag, open.id)] : undefined;
   const firstPass = currentFirstPass(view.orders, doc);
   return {
+    ...attentionState(doc, attentionMarks(view.orders.store).get(o.tag)),
     producerNotes: { project: producerNotes(view.config), order: producerNotes(view.config, o.tag) },
     ...(doc.reroutes?.length ? { reroutes: doc.reroutes.slice(-10).map(r => ({ id: r.id, at: r.at, from: r.from, to: r.to, note: r.note, brief: doc.runs.find(run => run.reroute === r.id)?.previous_attempts ?? r.brief })) } : {}),
     project: view.config.id,

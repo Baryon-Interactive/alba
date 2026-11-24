@@ -4,6 +4,7 @@
 // A text with no entry here comes back in English.
 
 export const zh: Record<string, string> = {
+  'Run {id} ended': '派工 {id} 已结束',
   '{file}: "{key}" expects {expected}.': '{file}：“{key}”需要{expected}。',
   'a mapping': '映射',
   'a list': '列表',
