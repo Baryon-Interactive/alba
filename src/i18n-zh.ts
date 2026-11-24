@@ -1186,7 +1186,6 @@ export const zh: Record<string, string> = {
   '{file}: "dispatch.port_block" must be a whole number between 1 and 10000.': '{file}：“dispatch.port_block”必须是 1 到 10000 之间的整数。',
   'sparse {error}.': '稀疏目录 {error}。',
   'sparse worktree': '稀疏工作树',
-  'orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker or --run-model.': 'orders set 需要 --branch、--worktree、--base-ref、--sparse、--uses、--tools、--role、--worker 或 --run-model。',
   // schedules
   'source': '来源',
   'planned': '计划时间',
