@@ -266,6 +266,8 @@ export interface Run {
   /** The tool started this process itself (and can read its log). */
   pid?: number;
   alive?: boolean;
+  /** Nonnegative integer slot assigned to a local run (`ALBA_SLOT`); absent for remote or imported runs. */
+  slot?: number;
   attempt?: number;
   hasLog: boolean;
   usage: RunUsage;

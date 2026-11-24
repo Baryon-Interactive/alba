@@ -66,7 +66,7 @@ export function toRun(run: StoredRun, tag: string, env: ViewEnv): A.Run {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
     ...(run.ended ? { ended: run.ended } : {}), ...(run.outcome ? { outcome: run.outcome } : {}), ...(run.note ? { note: run.note } : {}),
-    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...(alive !== undefined ? { alive } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
+    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...(alive !== undefined ? { alive } : {}), ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
     hasLog: !!run.log && existsSync(run.log), usage: usageOf(run, env.workers?.workers ?? [], env.probes),
     ...(run.role ? { role: run.role, role_source: run.role_source, role_effort: run.role_effort, role_reasoning: run.role_reasoning, mcp_servers: run.mcp_servers, role_warnings: run.role_warnings } : {}),
     ...(run.routing ? { routing: run.routing } : {}), ...(run.skills ? { skills: run.skills } : {}),

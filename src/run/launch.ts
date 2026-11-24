@@ -21,6 +21,8 @@ import { liveMessagesEnabled, type WorkersFile } from '../workers/config.ts';
 import { selectLessons, workerLessonRun, type LessonSelection } from '../lessons/select.ts';
 import { routingOf } from '../routing/classify.ts';
 import { acquireLeases, activeLeases, capFull, capHolds, kindOfOrder, occupants, releaseLease, startBlocked, usesOf, type CapHold } from '../resources/leases.ts';
+import { existingMachineStore, hasMachineResources, machineStoreFor, projectMachineContext, type MachineRunSlotRow } from '../resources/machine-store.ts';
+import { runProcessMatches } from './kill-tree.ts';
 import { stateTransaction } from '../orders/state-files.ts';
 import { excludeLocally, mountSkills } from '../skills/mount.ts';
 import { cleanAgyInboxHooks, ensureInbox, installAgyInboxHooks, installInboxHook, installLockHelper } from './inbox.ts';
@@ -56,7 +58,7 @@ export interface RouteNote { why: string; rejected: { worker: string; reason: st
 
 export type StartResult =
   | { mode: 'card'; tag: string; worker: string; text: string }
-  | { mode: 'start'; tag: string; worker: string; run?: string; cwd: string; branch: string; created: boolean; pid?: number; log?: string; /** The engine's earlier session was continued. */ resumed?: boolean; dryRun: boolean };
+  | { mode: 'start'; tag: string; worker: string; run?: string; cwd: string; branch: string; created: boolean; pid?: number; log?: string; slot?: number; /** The engine's earlier session was continued. */ resumed?: boolean; dryRun: boolean };
 
 const slash = (p: string) => p.replace(/\\/g, '/');
 
@@ -144,6 +146,78 @@ export function slotsPrompt(caps: readonly CapHold[], uses: readonly string[], o
   return lines.join('\n') + '\n';
 }
 
+/** Computes `ALBA_PORT_BASE = port_base + slot * port_block` (default block 10) when `dispatch.port_base` is set. */
+export function computePortBase(dispatch: Pick<ProjectConfig['dispatch'], 'port_base' | 'port_block'>, slot: number): number | undefined {
+  return dispatch.port_base !== undefined ? dispatch.port_base + slot * (dispatch.port_block || 10) : undefined;
+}
+
+/** One-line prompt note naming `ALBA_SLOT` (and `ALBA_PORT_BASE` when configured). */
+export function runSlotPrompt(slot: number | undefined, portBase: number | undefined): string {
+  if (slot === undefined) return '';
+  return `\nThis run holds slot ${slot} (\`ALBA_SLOT=${slot}\`${portBase !== undefined ? `, \`ALBA_PORT_BASE=${portBase}\`` : ''}).\n`;
+}
+
+function slotMachineStore(project: ProjectConfig) {
+  const ctx = projectMachineContext(project);
+  return hasMachineResources(project) ? machineStoreFor(project) : existingMachineStore(ctx?.file);
+}
+
+function openLocalRuns(orders: Orders): { tag: string; run: string; slot?: number; pid?: number; started_at?: string; since: string }[] {
+  const out: { tag: string; run: string; slot?: number; pid?: number; started_at?: string; since: string }[] = [];
+  for (const d of orders.all()) {
+    for (const r of d.runs) {
+      if (r.ended === undefined && !r.host) {
+        out.push({ tag: d.order.tag, run: r.id, ...(r.slot !== undefined ? { slot: r.slot } : {}), ...(r.pid !== undefined ? { pid: r.pid } : {}), ...(r.process_started_at ? { started_at: r.process_started_at } : {}), since: r.started });
+      }
+    }
+  }
+  return out;
+}
+
+function isSlotRowActive(row: MachineRunSlotRow, probes: Probes): boolean {
+  if (row.pid === undefined) return true;
+  if (!probes.isAlive(row.pid)) return false;
+  if (!probes.processStartedAt) return true;
+  return runProcessMatches(probes.processStartedAt(row.pid), row.started_at, row.since);
+}
+
+function smallestFreeSlot(used: ReadonlySet<number>, preferred?: number): number {
+  if (preferred !== undefined && Number.isInteger(preferred) && preferred >= 0 && !used.has(preferred)) return preferred;
+  let slot = 0;
+  while (used.has(slot)) slot++;
+  return slot;
+}
+
+function peekLocalRunSlot(project: ProjectConfig, orders: Orders, preferred: number | undefined, probes: Probes): number {
+  const ownOpen = openLocalRuns(orders);
+  const store = slotMachineStore(project);
+  if (store) {
+    return store.peekRunSlot({ project: project.id, stateDir: project.state_dir, preferred, ownOpen, checkActive: row => isSlotRowActive(row, probes) });
+  }
+  const used = new Set(ownOpen.map(o => o.slot).filter((s): s is number => s !== undefined));
+  return smallestFreeSlot(used, preferred);
+}
+
+export function allocateLocalRunSlot(project: ProjectConfig, orders: Orders, tag: string, runId: string, preferred: number | undefined, probes: Probes): number {
+  const ownOpen = openLocalRuns(orders);
+  const store = slotMachineStore(project);
+  if (store) {
+    return store.claimRunSlot({ project: project.id, stateDir: project.state_dir, tag, run: runId, preferred, ownOpen, checkActive: row => isSlotRowActive(row, probes), now: probes.now() });
+  }
+  const used = new Set(ownOpen.map(o => o.slot).filter((s): s is number => s !== undefined));
+  return smallestFreeSlot(used, preferred);
+}
+
+function bindLocalRunSlotPid(project: ProjectConfig, tag: string, runId: string, pid: number, startedAt?: string): void {
+  const store = slotMachineStore(project);
+  if (store) store.bindRunSlotPid(project.id, project.state_dir, tag, runId, pid, startedAt);
+}
+
+export function releaseLocalRunSlot(project: ProjectConfig, tag: string, runId: string): void {
+  const store = slotMachineStore(project);
+  if (store) store.releaseRunSlot(project.id, project.state_dir, tag, runId);
+}
+
 /**
  * Starts one order on one worker: worktree, prompt file, background process, run record.
  * Card-only workers are never started; the result says a person has to click a card.
@@ -222,9 +296,16 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // And git refuses to move the base branch from this run (a worker merged its branch into main in the main checkout).
   let guard: { installed: boolean; warning?: string } | undefined;
   if (main) { try { guard = installBaseGuard(project.root, baseRefOf(project)); } catch (e) { guard = { installed: false, warning: `the base-branch guard hook was not installed: ${(e as Error).message.split('\n')[0]}` }; } }
+  const previous = [...doc.runs].filter(r => r.ended !== undefined).sort((a, b) => b.seq - a.seq)[0];
+  const preferredSlot = !remote && previous?.slot !== undefined ? previous.slot : undefined;
   if (created && project.dispatch.provision) {
     const [program, ...args] = project.dispatch.provision;
-    try { execFileSync(program, args, { cwd: plan.path, stdio: 'ignore', timeout: 600000, windowsHide: true }); }
+    const previewSlot = !remote ? peekLocalRunSlot(project, orders, preferredSlot, ctx.probes) : undefined;
+    const previewPort = previewSlot !== undefined ? computePortBase(project.dispatch, previewSlot) : undefined;
+    const provisionEnv = previewSlot !== undefined
+      ? { ...process.env, ALBA_SLOT: String(previewSlot), ...(previewPort !== undefined ? { ALBA_PORT_BASE: String(previewPort) } : {}) }
+      : process.env;
+    try { execFileSync(program, args, { cwd: plan.path, env: provisionEnv, stdio: 'ignore', timeout: 600000, windowsHide: true }); }
     catch (e) { fail('The provision command failed in {cwd}: {why}', { cwd: plan.path, why: (e as Error).message.split('\n')[0] }); }
   }
   const runId = `r${doc.runs.length + 1}`;
@@ -238,7 +319,6 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
 
   // An engine that can continue a conversation is resumed after a transient failure, and when a person answered its question
   // (the answer is all it is told then); every other start is a new session.
-  const previous = [...doc.runs].filter(r => r.ended !== undefined).sort((a, b) => b.seq - a.seq)[0];
   const notes = pendingNotes(doc);
   const pending = notes[notes.length - 1];
   const reroute = doc.order.next_worker === worker.id ? doc.reroutes?.findLast(r => r.to === worker.id && !doc.runs.some(run => run.reroute === r.id)) : undefined;
@@ -290,9 +370,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // A handed-over order: the prompt is only the path of the continuation file (what the branch holds, the last report, the questions, the end of the log, the usual instructions).
   const handoff = rotating ? writeHandoff({ project, doc, from: { worker: rotating.from, run: previous }, to: worker.id, why: rotating.reason, worktree: plan.path, runId, probes: ctx.probes, lessons: getLessons(), skills: skillPlan.listed }) : undefined;
   const activeSparse = worktreeSparseDirs(plan.path);
-  const writtenPrompt = withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
-  writeFileSync(promptFile, writtenPrompt, 'utf8');
-  const recordedPrompt = recordRunPrompt({ workOrders: project.work_orders, doc, skills: skillPlan.listed, selection: chosenLessons, promptText, writtenPrompt, rules, handoff });
+  const buildWrittenPrompt = (slot?: number, portBase?: number) => withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + runSlotPrompt(slot, portBase) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
   const sessionId = resumeSession ?? randomUUID();
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = launchArgs(worker.launch, values, resumeSession !== undefined);
@@ -320,6 +398,8 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // check fails.
   const launch = worker.launch;
   let run: Run;
+  let slot: number | undefined;
+  let portBase: number | undefined;
   try {
     run = withFleetLock(() => stateTransaction(project, () => {
       const fresh = orders.get(doc.order.tag);
@@ -347,14 +427,25 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
         orders.record(doc.order.tag, 'worker-set', { from: from ?? null, to: worker.id, why: 'a person started a run on it' });
       }
       orders.update(doc.order.tag, { branch: plan.branch, worktree: plan.path });
-      const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}), lessons: recordedPrompt.lessons, prompt_bytes: recordedPrompt.prompt_bytes } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
+      slot = !remote ? allocateLocalRunSlot(project, orders, doc.order.tag, runId, preferredSlot, ctx.probes) : undefined;
+      portBase = slot !== undefined ? computePortBase(project.dispatch, slot) : undefined;
+      const writtenPrompt = buildWrittenPrompt(slot, portBase);
+      writeFileSync(promptFile, writtenPrompt, 'utf8');
+      const recordedPrompt = recordRunPrompt({ workOrders: project.work_orders, doc, skills: skillPlan.listed, selection: chosenLessons, promptText, writtenPrompt, rules, handoff });
+      const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(slot !== undefined ? { slot } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}), lessons: recordedPrompt.lessons, prompt_bytes: recordedPrompt.prompt_bytes } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
       orders.record(doc.order.tag, 'lessons-mounted', { run: opened.id, ...recordedPrompt.lessons });
       if (project.resources) acquireLeases(project, orders, orders.get(doc.order.tag), opened.id, ctx.probes.now());
       return opened;
     }));
   } catch (e) {
+    if (slot !== undefined) { try { releaseLocalRunSlot(project, doc.order.tag, runId); } catch { /* reconciled on next claim */ } }
     if (editor) dropEditor(project, doc.order.tag, editor.slot.pool);
     throw e;
+  }
+  if (slot !== undefined) {
+    environment.env.ALBA_SLOT = String(slot);
+    if (portBase !== undefined) environment.env.ALBA_PORT_BASE = String(portBase);
+    environment.envUnset = environment.envUnset.filter(n => n !== 'ALBA_SLOT' && n !== 'ALBA_PORT_BASE');
   }
   let pid: number | undefined;
   let processStartedAt: string | undefined;
@@ -368,15 +459,17 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
       program: command.program, args: command.args, env: environment.env, envUnset: environment.envUnset, specFile: path.join(runsDir, `${doc.order.tag}-${run.id}.remote.json`) }) : command;
     pid = ctx.probes.spawnDetached(started.program, started.args, { cwd: plan.path, ...(remote ? { env: {}, envUnset: [] } : environment), logFile: log, ...(eventsFile ? { eventsFile } : {}) });
     processStartedAt = ctx.probes.processStartedAt?.(pid);
+    if (slot !== undefined) { try { bindLocalRunSlotPid(project, doc.order.tag, run.id, pid, processStartedAt); } catch { /* best effort */ } }
     orders.patchRun(doc.order.tag, run.id, { pid, ...(processStartedAt ? { process_started_at: processStartedAt } : {}) });
     if (rotating && rotated) orders.record(doc.order.tag, 'run-rotated', { run: run.id, from: rotating.from, to: worker.id, reason: rotating.reason, paid: rotated.paid, text: rotated.text, ...(handoff ? { handoff } : {}) });
-    return { ...base, created, run: run.id, pid, log, resumed: resumeSession !== undefined, dryRun: false };
+    return { ...base, created, run: run.id, pid, log, ...(slot !== undefined ? { slot } : {}), resumed: resumeSession !== undefined, dryRun: false };
   } catch (e) {
     // A step after the run was recorded failed: what was started is stopped (its whole tree, identified by its creation time or
     // the run's launch window), the run ends as failed and its leases go back. Each part is tried on its own: a run this could
     // not end is ended by the tick once it has had no process for `LAUNCH_GRACE_MINUTES`.
     if (pid !== undefined) { try { ctx.probes.kill?.(pid, processStartedAt, run.started); } catch { /* the tick sees the process */ } }
     try { orders.runEnd(doc.order.tag, 'failed'); } catch { /* ended later by the tick */ }
+    if (slot !== undefined) { try { releaseLocalRunSlot(project, doc.order.tag, run.id); } catch { /* reconciled on next claim */ } }
     if (project.resources) { try { for (const name of usesOf(project, doc)) releaseLease(project, orders, name, doc.order.tag, t('the run did not start'), ctx.probes.now()); } catch { /* reconciled by the tick */ } }
     // A worker that was spawned may have started the editor: its slot stays bound to the ended run, so the tick stops that editor.
     if (editor && pid === undefined) { try { dropEditor(project, doc.order.tag, editor.slot.pool); } catch { /* reconciled by the tick */ } }

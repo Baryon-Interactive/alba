@@ -118,6 +118,7 @@ export interface Run {
   last_file?: string;       // where the worker was told to write its final message
   prompt_file?: string;
   cwd?: string;
+  slot?: number;            // smallest free integer slot >= 0 held by this local run while open
   attempt?: number;         // 1 for a fresh start, 2.. for automatic resumes after transient errors
   routing?: { kind: string; why: string; rejected: { worker: string; reason: string }[] };   // why this worker was chosen
   skills?: string[];        // names of the skills put into the worktree for this run

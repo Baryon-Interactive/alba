@@ -27,6 +27,8 @@ export interface DispatchRules {
   base_ref?: string;
   sparse?: string[];                // cone-mode directories checked out in new worktrees (relative, no "..")
   checkout_workers: number;         // git checkout.workers concurrency for sparse worktrees (default 4)
+  port_base?: number;               // optional base port for ALBA_PORT_BASE (= port_base + slot * port_block)
+  port_block: number;               // port stride per run slot (default 10)
   long_command_minutes: number;     // a worker whose last command is still running is waiting, not stalled, for this long
   rework_reserve: number;           // extra slots per capped class that only reworked orders may use
   provision?: string[];             // command run in a new worktree (program and arguments, no shell)
@@ -932,14 +934,14 @@ export const DEFAULT_LONG_COMMANDS: string[] = [];
 
 const dispatchDefaults = (): DispatchRules => ({
   caps: {}, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6,
-  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true, checkout_workers: 4,
+  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true, checkout_workers: 4, port_block: 10,
 });
 
 function validateDispatch(raw: unknown, file: string): DispatchRules {
   if (raw === undefined) return dispatchDefaults();
   if (!isRecord(raw)) fail('{file}: "dispatch" must be a mapping.', { file });
   const out: DispatchRules = dispatchDefaults();
-  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'sparse', 'checkout_workers', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'sparse', 'checkout_workers', 'port_base', 'port_block', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "dispatch": {keys}.', { file, keys: unknown.join(', ') });
   if (raw.caps !== undefined) {
     if (!isRecord(raw.caps)) fail('{file}: "dispatch.caps" must be a mapping of name to a whole number.', { file });
@@ -1017,6 +1019,18 @@ function validateDispatch(raw: unknown, file: string): DispatchRules {
       fail('{file}: "dispatch.checkout_workers" must be a whole number >= 1.', { file });
     }
     out.checkout_workers = raw.checkout_workers;
+  }
+  if (raw.port_base !== undefined) {
+    if (typeof raw.port_base !== 'number' || !Number.isInteger(raw.port_base) || raw.port_base < 1 || raw.port_base > 65535) {
+      fail('{file}: "dispatch.port_base" must be a whole number between 1 and 65535.', { file });
+    }
+    out.port_base = raw.port_base;
+  }
+  if (raw.port_block !== undefined) {
+    if (typeof raw.port_block !== 'number' || !Number.isInteger(raw.port_block) || raw.port_block < 1 || raw.port_block > 10000) {
+      fail('{file}: "dispatch.port_block" must be a whole number between 1 and 10000.', { file });
+    }
+    out.port_block = raw.port_block;
   }
   return out;
 }
