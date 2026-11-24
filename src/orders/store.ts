@@ -29,7 +29,7 @@ const revisions = new WeakMap<OrderDoc, number>();
 export const revisionOf = (doc: OrderDoc): number => revisions.get(doc) ?? 0;
 export const withRevision = (doc: OrderDoc, revision: number): OrderDoc => { revisions.set(doc, revision); return doc; };
 export function validateTag(tag: string): void {
-  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(tag)) fail('Invalid order tag "{tag}": use letters, digits, "-" and "_", starting with a letter.', { tag });
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}(?:\.[1-8])?$/.test(tag)) fail('Invalid order tag "{tag}": use letters, digits, "-" and "_", starting with a letter.', { tag });
 }
 
 /** Writes via a temporary file in the same directory, then renames, so readers never see half a file. */

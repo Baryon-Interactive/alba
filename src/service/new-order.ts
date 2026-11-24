@@ -4,6 +4,7 @@ import type { ProjectConfig } from '../config.ts';
 import { fail, t } from '../i18n.ts';
 import { foundationNotice } from '../foundations/foundations.ts';
 import type { Mandate, OrderDoc } from '../orders/model.ts';
+import { validateTag } from '../orders/store.ts';
 import { nextFreeTag, type Orders } from '../orders/service.ts';
 import { fillOrderBody } from '../orders/templates.ts';
 import { findOrderFile } from '../run/prompt.ts';
@@ -11,6 +12,7 @@ import { classifyByRules, orderText } from '../routing/classify.ts';
 import { writeBack } from '../table/write.ts';
 
 export interface NewOrderInput {
+  parent?: string;
   phases?: 'none';
   check?: 'independent' | 'none';
   review?: 'manual' | 'auto';
@@ -82,7 +84,7 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
   }
   if (input.body !== undefined) {
     if (!input.body.trim()) fail('The work-order text is empty.');
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(input.tag)) fail('Invalid order tag "{tag}": use letters, digits, "-" and "_", starting with a letter.', { tag: input.tag });
+    validateTag(input.tag);
     if (input.slug !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,60}$/.test(input.slug)) fail('The file name part "{slug}" may only use letters, digits, "-" and "_".', { slug: input.slug });
     let existing: string | undefined;
     try { existing = findOrderFile(project.work_orders, input.tag); } catch { /* none yet */ }
@@ -104,7 +106,7 @@ export function createOrder(project: ProjectConfig, orders: Orders, input: NewOr
     const at = now.toISOString();
     const draft: OrderDoc = { version: 1, order: { tag: input.tag, title: input.title.trim(), kind: input.kind?.trim() || 'task', needs: [], ...(input.tags?.length ? { tags: input.tags.map(x => x.trim().toLowerCase()) } : {}), created: at, updated: at }, runs: [], reports: [], actions: [] };
     const routing = project.kinds?.length ? classifyByRules(project, draft, orderText(project, input.tag), at) : undefined;
-    doc = orders.add({ phases: input.phases, check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, model: input.model, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree, ...(input.sparse !== undefined ? { sparse: input.sparse } : {}) });
+    doc = orders.add({ parent: input.parent, phases: input.phases, check: input.check, review: input.review, role: input.role, ...(routing ? { routing } : {}), tag: input.tag, title: input.title, kind: input.kind?.trim() || 'task', needs: input.needs, worker: input.worker, model: input.model, heavy: input.heavy, mandate: input.mandate, tags: input.tags, skills: input.skills, uses: input.uses, tools: input.tools, branch: input.branch, base_ref: input.base_ref, worktree: input.worktree, ...(input.sparse !== undefined ? { sparse: input.sparse } : {}) });
     if (filledSections.length) orders.record(doc.order.tag, 'order-template-filled', { kind: templateKind, sections: filledSections });
   } catch (e) {
     if (file) rmSync(file, { force: true });     // the order was refused (no title, a need on itself): leave no file behind

@@ -18,7 +18,7 @@ phases:
       role: developer
 ```
 
-Use one or more read-only phases followed by exactly one write phase. Within each kind, ids must be unique and match `[a-z][a-z0-9-]*`. Omitting `role` uses the order's usual role resolution. A phase role uses its own worker preferences, capabilities, quota and concurrency checks. A positive `timeout_minutes` limits an individual run at dispatcher passes. A tighter worker time limit still applies.
+Use one or more read-only phases followed by exactly one write phase. The first phase can also [split the order into children](045-split-and-integrate.md). Within each kind, ids must be unique and match `[a-z][a-z0-9-]*`. Omitting `role` uses the order's usual role resolution. A phase role uses its own worker preferences, capabilities, quota and concurrency checks. A positive `timeout_minutes` limits an individual run at dispatcher passes. A tighter worker time limit still applies.
 
 `alba orders add CACHE --title "Check cache lookup" --kind code --phases none` opts out when creating an order. `alba orders set CACHE --phases none` opts out on an existing order. Kinds without a phase list use the ordinary dispatch flow.
 

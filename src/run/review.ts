@@ -5,6 +5,7 @@ import type { ProjectConfig } from '../config.ts';
 import { fail, t } from '../i18n.ts';
 import type { Orders } from '../orders/service.ts';
 import { readTemplate } from './prompt.ts';
+import { mergeChild } from '../review/child-merge.ts';
 import { branchIsMerged, baseRefOf } from './worktree.ts';
 import { acceptanceMergeRunning, approveInTransaction, mergeAcceptance, recoverAcceptanceMerge, trialAcceptance } from '../review/acceptance.ts';
 import { acceptDesignChanges, DesignAcceptanceError } from '../design/worker.ts';
@@ -12,7 +13,7 @@ import type { OrderDoc } from '../orders/model.ts';
 import { intakeOutputDir } from '../design/docs.ts';
 import { assertIndependentCheckPassed } from '../review/independent.ts';
 
-export interface ApproveResult { acceptFile: string; merge: string; accept: string }
+export interface ApproveResult { acceptFile: string; merge: string; accept: string; parent?: string }
 
 /**
  * Approve an order that is waiting for review. An optional acceptance pipeline owns trial and merge;
@@ -39,6 +40,7 @@ export function approve(project: ProjectConfig, orders: Orders, tag: string, not
     const missing = systems.filter(system => !['accepted', 'dropped'].includes(statuses.get(system) ?? 'pending'));
     if (missing.length) fail('{tag} still has intake systems awaiting review: {systems}.', { tag: doc.order.tag, systems: missing.join(', ') });
   }
+  if (stage === 'awaiting-user' && doc.reports.at(-1)?.subtasks) fail('Decide the split before approving the parent.');
   const overrideStage = ['failed', 'blocked', 'idle'].includes(stage) || (stage === 'awaiting-user' && doc.reports.length > 0);
   if (stage !== 'awaiting-review' && !overrideStage) fail('{tag} is {stage}; only an order that is awaiting review can be approved.', { tag: doc.order.tag, stage });
   if (overrideStage && !override) fail('{tag} is {stage}; approving it needs --override and a note of at least 10 characters.', { tag: doc.order.tag, stage });
@@ -67,16 +69,16 @@ export function approve(project: ProjectConfig, orders: Orders, tag: string, not
     try { recoverAcceptanceMerge(project, orders); }
     catch (error) { fail('Acceptance failed: {reason}', { reason: (error as Error).message }); }
   }
-  if (pipeline && !branchIsMerged(project, branch)) {
+  if (pipeline && !doc.order.parent && !doc.actions.some(a => a.kind === 'accept-split') && !branchIsMerged(project, branch)) {
     try { return mergeAcceptance(project, orders, doc.order.tag, note, orders.actor, override); }
     catch (error) { fail('Acceptance failed: {reason}', { reason: (error as Error).message }); }
   }
-  if (!branchIsMerged(project, branch)) {
+  if (!doc.order.parent && !branchIsMerged(project, branch)) {
     fail('Branch "{branch}" is not in {base} yet. Merge it yourself first (merging is manual in this version), then approve.', { branch, base: baseRefOf(project).replace('refs/heads/', '') });
   }
   // The branch is in the base. A person who merged it by hand made their own merge; a branch with no commits of its own
   // delivered nothing to merge, and its trial still has to pass: the pipeline's steps are never skipped for it.
-  if (doc.order.kind === 'intake' || (project.accept && !mergedByHand(project, doc, branch))) {
+  if (!doc.order.parent && (doc.order.kind === 'intake' || (project.accept && !mergedByHand(project, doc, branch)))) {
     const trial = trialAcceptance(project, orders, doc.order.tag, false, override);
     if (trial.status !== 'passed') fail('Acceptance failed: {reason}', { reason: trial.reason ?? `${doc.order.kind === 'intake' ? 'Intake check' : 'Trial'} ${trial.status}.` });
   }
@@ -92,6 +94,10 @@ export function approve(project: ProjectConfig, orders: Orders, tag: string, not
       const tailText = `${err.stdout ?? ''}\n${err.stderr ?? ''}`.trim().split('\n').slice(-8).join('\n');
       fail('The accept command failed:\n{tail}', { tail: tailText || err.message });
     }
+  }
+  if (doc.order.parent) {
+    const merge = mergeChild(project, orders, tag, branch, note, override, pipeline);
+    return { acceptFile: '', merge, accept, parent: doc.order.parent };
   }
   const acceptFile = path.join(project.work_orders, `${doc.order.tag}.accept.md`);
   const noteWritten = !existsSync(acceptFile);

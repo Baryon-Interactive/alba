@@ -19,12 +19,13 @@ export function orderPhases(project: ProjectConfig, doc: OrderDoc, kind = doc.or
     const recorded = list.findIndex(p => p.id === run.phase);
     if (recorded >= 0) {
       index = recorded;
-      if (run.ended && run.outcome === 'completed' && run.next_phase && doc.reports.findLast(r => r.run === run.id)?.status === 'ready') {
+      if ((!run.split_kinds || doc.actions.some(a => a.kind === 'accept-split')) && run.ended && run.outcome === 'completed' && run.next_phase && doc.reports.findLast(r => r.run === run.id)?.status === 'ready') {
         const next = list.findIndex(p => p.id === run.next_phase);
         index = next >= 0 ? next : Math.min(index + 1, list.length - 1);
       }
     }
   }
+  if (list[index]?.mode === 'split' && doc.actions.some(a => a.kind === 'accept-split')) index++;
   const runsOf = (phase: Phase) => {
     const i = list.indexOf(phase);
     const cutoff = reset.findLast(a => startIndex(a) <= i)?.seq ?? 0;

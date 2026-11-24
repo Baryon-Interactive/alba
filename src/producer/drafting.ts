@@ -1,3 +1,4 @@
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { fail } from '../i18n.ts';
 import { createHash } from 'node:crypto';
@@ -40,7 +41,7 @@ export function readyToDraft(project: ProjectConfig, orders: Orders, workers?: r
     if (!workers) return false;
     const phase = orderPhases(project, doc, kind)?.current;
     const role = resolveRole(effectiveRoles(project, workersFile), { kind, role: phase?.role ?? doc.order.role });
-    return !!chooseWorker({ kind, tags: [], workerText: phase?.role ? undefined : doc.order.worker, role: rolePolicy(role, phase?.mode === 'read-only') }, workers).chosen;
+    return !!chooseWorker({ kind, tags: [], workerText: phase?.role ? undefined : doc.order.worker, role: rolePolicy(role, isReadOnlyPhase(phase)) }, workers).chosen;
   });
 }
 
@@ -75,7 +76,7 @@ export function draftPreview(project: ProjectConfig, orders: Orders, draft: Draf
   const kind = routing.kind || draft.kind;
   const phase = orderPhases(project, proposed, kind)?.current;
   const role = resolveRole(effectiveRoles(project, workersFile), { kind, role: phase?.role ?? proposed.order.role });
-  const route = chooseWorker({ kind, tags: routing.tags, workerText: doc.order.next_worker ?? (phase?.role ? undefined : worker), role: rolePolicy(role, phase?.mode === 'read-only') }, workers);
+  const route = chooseWorker({ kind, tags: routing.tags, workerText: doc.order.next_worker ?? (phase?.role ? undefined : worker), role: rolePolicy(role, isReadOnlyPhase(phase)) }, workers);
   const missingPaths = namedPaths(draft.body).filter(file => {
     if (path.isAbsolute(file) || file.startsWith('../') || /^[A-Za-z]:/.test(file)) return true;
     try { execFileSync('git', ['cat-file', '-e', `${baseRefOf(project)}:${file.replace(/^\.\//, '')}`], { cwd: project.root, stdio: 'ignore', windowsHide: true }); return false; } catch { return true; }

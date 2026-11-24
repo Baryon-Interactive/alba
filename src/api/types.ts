@@ -16,7 +16,7 @@ export type { RoleWorkerResult } from '../roles/statistics.ts';
 
 export const STAGES = [
   'cancelled', 'merged', 'held', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped',
-  'running', 'monitoring', 'idle', 'waiting-needs', 'planned', 'queued', 'draft',
+  'running', 'monitoring', 'idle', 'waiting-children', 'waiting-needs', 'planned', 'queued', 'draft',
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
@@ -24,7 +24,7 @@ export type Stage = (typeof STAGES)[number];
  * What a person can do to an order. `answer`, `run` and `stop` are not stored as plain actions: `answer` continues the worker's session,
  * `run` starts it now (a held order on the worker named), `stop` ends the open run's whole process tree and holds the order.
  */
-export const ORDER_ACTIONS = ['queue', 'hold', 'release', 'cancel', 'approve', 'rework', 'answer', 'run', 'stop', 'close'] as const;
+export const ORDER_ACTIONS = ['queue', 'hold', 'release', 'cancel', 'approve', 'rework', 'answer', 'run', 'stop', 'close', 'accept-split'] as const;
 export type OrderAction = (typeof ORDER_ACTIONS)[number];
 
 /** What an `awaiting-user` order is waiting for: a person to click a card in a session of their own, or an answer to a question. `answer` is only for the second. */
@@ -331,7 +331,7 @@ export interface RunRouting {
 export interface Decision {
   seq: number;
   at: string;
-  kind: 'queue' | 'cancel' | 'hold' | 'release' | 'approve' | 'rework' | 'answer' | 'monitor' | 'message' | 'merged-elsewhere' | 'done-by-lead';
+  kind: 'queue' | 'cancel' | 'hold' | 'release' | 'approve' | 'rework' | 'answer' | 'monitor' | 'message' | 'accept-split' | 'merged-elsewhere' | 'done-by-lead';
   note?: string;
   commit?: string;
   /** For an `answer` that picked option N of the waiting report. */
@@ -389,7 +389,10 @@ export interface AttentionState {
   unread?: boolean;
 }
 
+export interface ChildSummary { tag: string; stage: Stage; title: string; worker?: string; model?: string }
 export interface OrderSummary extends AttentionState {
+  parent?: string;
+  children?: ChildSummary[];
   phase?: { id: string; index: number; count: number };
   liveness?: Liveness;
   waitingQuestion?: { text: string; options?: QuestionOption[] };
@@ -619,7 +622,7 @@ export interface OrderSkills {
 /** `GET /api/orders/:tag` */
 export interface OrderPhase {
   id: string;
-  mode: 'read-only' | 'write';
+  mode: 'read-only' | 'split' | 'write';
   role?: string;
   state: 'done' | 'current' | 'next';
   runs: { id: string; worker: string; model?: string }[];
@@ -629,6 +632,9 @@ export interface OrderPhase {
 }
 
 export interface OrderDetail extends AttentionState {
+  parent?: string;
+  children?: ChildSummary[];
+  split?: { report: number; subtasks: import('../orders/subtasks.ts').Subtask[]; pending: boolean; decision?: Decision & { automatic?: true; report?: number; children?: string[]; author?: string; selection?: { key: string; tag: string; title: string; kind: string }[] } };
   phases?: OrderPhase[];
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };
@@ -1007,6 +1013,9 @@ export interface NewOrderResult {
 
 /** `POST /api/orders/:tag/actions` */
 export interface ActionRequest {
+  confirm?: boolean;
+  report?: number;
+  edits?: { key: string; title?: string; kind?: string }[];
   phase?: string;
   project?: string;
   action: OrderAction;

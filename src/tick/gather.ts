@@ -2,6 +2,7 @@ import { rolePolicy } from '../routing/choose.ts';
 import { machineProblems, machinesView, refreshMachines } from '../machines/probe.ts';
 import { loadMachines } from '../machines/config.ts';
 import { validatePhaseWorkers } from '../orders/phase-config.ts';
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { workerPinProblem } from '../routing/route.ts';
 import { roleResults } from '../roles/statistics.ts';
@@ -499,7 +500,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
       ...(gaps.length ? { foundations: gaps.map(g => ({ set: g.name, mode: g.mode, missing: missingText(g) })) } : {}),
       ...(orderPreflight ? { preflight: orderPreflight } : {}),
       ...(preflightWaiting ? { preflightWaiting: true } : {}),
-      role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { role: phase?.role ?? o.role, kind: effectiveKind }), phase?.mode === 'read-only'),
+      role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { role: phase?.role ?? o.role, kind: effectiveKind }), isReadOnlyPhase(phase)),
       tag: o.tag, stage: open ? 'running' : stage, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind, kindTags: routing.tags, heavy: heavyOf(project, d), workerText: phase?.role ? undefined : o.worker, pinnedWorker: pinProblem ? undefined : o.next_worker,
       ...(o.mandate?.spend_cap !== undefined ? { spendCapUsd: o.mandate.spend_cap, spentUsd: orderSpend(d, workersFile.workers, probes, false, project.state_dir).cost_usd ?? 0 } : {}),
       priority: o.priority,

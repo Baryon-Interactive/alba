@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { fixture, git } from './api-fixture.ts';
+import { alba } from './cli-helper.ts';
+
+test('a split card accepts retained children and exposes the family in the API and CLI', async () => {
+  const f = await fixture({ populate: false });
+  const ui = path.join(f.dir, 'no-ui');
+  mkdirSync(ui);
+  writeFileSync(path.join(ui, 'index.html'), '<main>Console</main>');
+  const deepLink = await fetch(f.base + '/p/demo/orders/CACHE.1');
+  assert.equal(deepLink.status, 200);
+  assert.equal(await deepLink.text(), '<main>Console</main>');
+  const base = git(f.root, 'rev-parse', 'main');
+  const tag = 'CACHE';
+  f.orders.add({ tag, title: 'Cache storage', kind: 'feature' });
+  f.orders.runStart(tag, { worker: 'reader', extra: { phase: 'divide', next_phase: 'assemble', split_kinds: ['task'] } });
+  f.orders.runEnd(tag);
+  const subtasks = ['read', 'write', 'verify'].map(key => ({ key, title: key, kind: 'task', body: '## Acceptance\n- Check the sample value.' }));
+  f.orders.report(tag, { status: 'ready', summary: 'Divide cache storage', subtasks, evidence: [], commits: [] });
+  const detail = async () => (await f.get('/api/orders/CACHE?project=demo')).body;
+  const pending = await detail();
+  assert.deepEqual(pending.split.subtasks, subtasks);
+  assert.ok(pending.split.pending);
+  const accepted = await f.write('/api/orders/CACHE/actions', { project: 'demo', action: 'accept-split', report: pending.split.report,
+    edits: [{ key: 'read', title: 'Read index' }, { key: 'write' }] });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  const parent = await detail();
+  assert.equal(parent.stage, 'waiting-children');
+  assert.equal(parent.split.decision.kind, 'accept-split');
+  assert.deepEqual(parent.split.decision.selection[0], { key: 'read', tag: 'CACHE.1', title: 'Read index', kind: 'task' });
+  assert.equal(parent.children[0].title, 'Read index');
+  assert.deepEqual(parent.children.map((c: { stage: string }) => c.stage), ['queued', 'queued']);
+  const list = (await f.get('/api/orders?project=demo')).body.items;
+  assert.equal(list.find((o: {tag: string}) => o.tag === 'CACHE.1').parent, tag);
+  assert.deepEqual(list.find((o: {tag: string}) => o.tag === tag).children, parent.children);
+  const file = path.join(f.dir, 'alba.yaml');
+  writeFileSync(file, 'id: demo\nname: Demo\nroot: game\nwork_orders: game/orders\nstate_dir: state\n');
+  const command = (...args: string[]) => {
+    const result = alba(file, ['orders', ...args]);
+    assert.equal(result.code, 0, result.err);
+    return result.out;
+  };
+  assert.match(command('list'), /CACHE\s+waiting-children[^\n]*\n\s+CACHE\.1/);
+  assert.match(command('show', 'CACHE'), /CACHE\.1 \(queued\)/);
+  assert.match(command('show', 'CACHE.1'), /Parent: CACHE/);
+  assert.equal(git(f.root, 'rev-parse', 'main'), base);
+});

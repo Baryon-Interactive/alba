@@ -1,8 +1,10 @@
+import { validateSubtasks, type Subtask } from './subtasks.ts';
 import { REPORT_STATUSES, STAGES, type MonitorCriterion, type MonitorSpec, type OrderDoc, type Run, type OptionInput, type ReportStatus, type Stage, type WaitingFor } from './model.ts';
 import { fail } from '../i18n.ts';
 
 /** The structured report a worker gives at the end of a round. */
 export interface ReportInput {
+  subtasks?: Subtask[];
   plan?: string;
   run?: string;
   design_changes?: string[];
@@ -61,7 +63,7 @@ export const REPORT_END = '--- end ---';
 export function validateReport(value: unknown): ReportInput {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) fail('A report must be a JSON object.');
   const v = value as Record<string, unknown>;
-  const known = ['plan', 'run', 'design_changes', 'status', 'summary', 'question', 'options', 'waiting_for', 'evidence', 'commits', 'skill_suggestions', 'monitor', 'scope', 'revision'];
+  const known = ['subtasks', 'plan', 'run', 'design_changes', 'status', 'summary', 'question', 'options', 'waiting_for', 'evidence', 'commits', 'skill_suggestions', 'monitor', 'scope', 'revision'];
   const extra = Object.keys(v).filter(k => !known.includes(k));
   if (extra.length) fail('Unknown report field(s): {fields}. Allowed: {allowed}.', { fields: extra.join(', '), allowed: known.join(', ') });
   if (typeof v.status !== 'string' || !(REPORT_STATUSES as readonly string[]).includes(v.status)) {
@@ -104,7 +106,7 @@ export function validateReport(value: unknown): ReportInput {
   else if (v.monitor !== undefined) fail('Report "monitor" only makes sense with status "monitoring", not "{status}".', { status });
   const evidence = list('evidence');
   const commits = list('commits');
-  return { status, ...(typeof v.plan === 'string' ? { plan: v.plan } : {}), ...(typeof v.run === 'string' ? { run: v.run.trim() } : {}), summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
+  return { status, ...(v.subtasks === undefined ? {} : { subtasks: validateSubtasks(v.subtasks) }), ...(typeof v.plan === 'string' ? { plan: v.plan } : {}), ...(typeof v.run === 'string' ? { run: v.run.trim() } : {}), summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
 }
 
 const CRITERIA = ['exit_code', 'file_exists', 'output_matches', 'order_stage', 'after'] as const;

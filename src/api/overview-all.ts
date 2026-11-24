@@ -83,7 +83,7 @@ export function overviewAll(snap: Snapshot, workersFile?: WorkersFile, extra: (p
         capacityOrders.push({ stage: capacityStage, kind: isGenericKind(o.kind) ? routingOf(view.config, doc, now.toISOString()).kind || o.kind : o.kind, heavy: o.heavy });
       }
       const latest = [...doc.reports].sort((a, b) => b.seq - a.seq)[0];
-      return summaryOf(view.config, doc, stage, env, rows.get(doc.order.tag), NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks(doc.order.tag));
+      return summaryOf(view.config, doc, stage, env, rows.get(doc.order.tag), NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks(doc.order.tag), view.orders);
     });
     const needs = items.filter(i => NEEDS_YOU.includes(i.stage));
     const running = items.filter(i => i.run);

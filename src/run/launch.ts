@@ -1,5 +1,7 @@
+import { childKinds } from '../orders/subtasks.ts';
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
-import { phasePrompt, worktreeFingerprint } from './phase.ts';
+import { childIntegrationPrompt, phasePrompt, worktreeFingerprint } from './phase.ts';
 import { readOnlyCommand } from '../review/independent.ts';
 import { ownerOf } from '../usage/spend.ts';
 import { foundationBlock } from '../foundations/foundations.ts';
@@ -243,7 +245,8 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   if (!worker) fail('Choose a worker with --worker <id>.');
   const phases = orderPhases(project, doc);
   const phase = phases?.current;
-  const readOnly = phase?.mode === 'read-only';
+  const readOnly = isReadOnlyPhase(phase);
+  if (phase?.mode === 'split' && doc.order.parent) fail('A child order cannot split.');
   const role = roleForOrder(project, doc, workers);
   if (!role.id) fail('no role for this order; configure a matching or default role.');
   const tools = readOnly ? { problems: [], tools: [] } : orderTools(project, doc, routingOf(project, doc).kind || doc.order.kind);
@@ -380,7 +383,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const activeSparse = worktreeSparseDirs(plan.path);
   const reportRun = `${doc.order.tag}/${runId}`;
   const consultPlan = !remote && !readOnly ? prepareConsultRun(ctx, doc, runWorker, runId, plan.path, runsDir, roleMount.warnings) : undefined;
-  const buildWrittenPrompt = (slot?: number, portBase?: number) => withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + `\nALBA_RUN=${reportRun}. Include this value in the report's JSON field "run".\n` + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + runSlotPrompt(slot, portBase) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (consultPlan ? consultPrompt(consultPlan.spec) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : '') + phasePrompt(phases), rules);
+  const buildWrittenPrompt = (slot?: number, portBase?: number) => withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + `\nALBA_RUN=${reportRun}. Include this value in the report's JSON field "run".\n` + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + runSlotPrompt(slot, portBase) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (consultPlan ? consultPrompt(consultPlan.spec) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : '') + phasePrompt(phases, phase?.mode === 'split' ? childKinds(project) : undefined) + childIntegrationPrompt(orders, doc), rules);
   const sessionId = resumeSession ?? randomUUID();
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = readOnly ? [] : launchArgs(worker.launch, values, resumeSession !== undefined);
@@ -414,6 +417,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // check fails.
   const remotePhaseCheck = readOnly && remote ? path.join(runsDir, `${doc.order.tag}-${runId}.worktree-check`) : undefined;
   const phaseFacts: Partial<Run> = phases && phase ? {
+    ...(phase.mode === 'split' ? { split_kinds: childKinds(project) } : {}),
     phase: phase.id, final_phase: !readOnly, next_phase: phases.list[phases.index + 1]?.id,
     phase_timeout_minutes: phase.timeout_minutes, plan_from: phases.previousPlan()?.run.id,
     ...(readOnly ? { worktree_fingerprint: worktreeFingerprint(plan.path), remote_phase_check: remotePhaseCheck,

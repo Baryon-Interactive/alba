@@ -1,3 +1,4 @@
+import { validateSubtasks } from './subtasks.ts';
 import { phasesOverride } from './phase-config.ts';
 import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
 import { ACTION_KINDS, RUN_OUTCOMES, nextSeq, normalizeSparseDirs } from './model.ts';
@@ -74,8 +75,14 @@ export class Orders {
     return new Set(docs.filter(d => inferStage(d.order, d.runs, d.reports, d.actions, none).stage === 'merged').map(d => d.order.tag));
   }
 
+  children(doc: OrderDoc): OrderDoc[] {
+    const decision = doc.actions.find(a => a.kind === 'accept-split');
+    return (decision?.children ?? []).map(tag => this.get(tag));
+  }
+
   stage(doc: OrderDoc, merged: ReadonlySet<string> = this.mergedSet()): StageResult {
-    const stage = inferStage(doc.order, doc.runs, doc.reports, doc.actions, merged);
+    const pending = this.children(doc).filter(child => !['merged', 'cancelled'].includes(inferStage(child.order, child.runs, child.reports, child.actions, merged).stage));
+    const stage = inferStage(doc.order, doc.runs, doc.reports, doc.actions, merged, pending.length);
     // Only a question waits on a person; a blocker or a note while the run goes on is shown, not a stage.
     const waiting = openQuestions(doc)[0];
     return waiting && stage.stage === 'running' ? { stage: 'awaiting-user', why: waiting.text, waitingFor: 'answer' } : stage;
@@ -127,7 +134,7 @@ export class Orders {
     }
   }
 
-  add(input: { phases?: 'none'; check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
+  add(input: { parent?: string; phases?: 'none'; check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -140,6 +147,8 @@ export class Orders {
       if (needs.some(n => n.toLowerCase() === input.tag.toLowerCase())) fail('An order cannot need itself.');
       const at = this.now();
       const order: Order = { tag: input.tag, title: input.title.trim(), kind: input.kind, needs, created: at, updated: at };
+      if (input.parent) order.parent = input.parent;
+      if (input.tag.includes('.') && (!input.parent || input.tag.slice(0, -2) !== input.parent)) fail('Numbered child tags are reserved for splits.');
       if (input.phases !== undefined) order.phases = phasesOverride(input.phases);
       if (input.check !== undefined) {
         if (!['independent', 'none'].includes(input.check)) fail('Check must be independent or none.');
@@ -224,7 +233,7 @@ export class Orders {
       if (doc.reroutes?.some(r => r.id === input.id)) return doc;
       validate(doc);
       const stage = this.stage(doc).stage;
-      if (['held', 'merged', 'cancelled'].includes(stage)) fail('Reroute refused: order is {stage}.', { stage });
+      if (['waiting-children', 'held', 'merged', 'cancelled'].includes(stage)) fail('Reroute refused: order is {stage}.', { stage });
       const seq = nextSeq(doc);
       doc.order.next_worker = input.to;
       (doc.reroutes ??= []).push({ ...input, by: this.actor, seq });
@@ -261,8 +270,32 @@ export class Orders {
     });
   }
 
+  recordSplit(tag: string, report: number, selection: NonNullable<Action['selection']>, branch: string, automatic: boolean): void {
+    const children = selection.map(item => item.tag);
+    const doc = this.get(tag);
+    doc.actions.push({ seq: nextSeq(doc), kind: 'accept-split', at: this.now(), author: this.actor, report, children, selection, branch, ...(automatic ? { automatic: true } : {}) });
+    this.save(doc, 'action-accept-split', { report, children, branch, automatic });
+  }
+
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { confirm?: boolean; phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
+    if (kind === 'accept-split') fail('Accept the split proposal through the split decision.');
+    if (kind === 'cancel') {
+      const doc = this.get(tag);
+      if (doc.actions.some(a => a.kind === 'accept-split')) {
+        if (!options.confirm) fail('Confirm cancellation of the parent and its open children with --confirm.');
+        return this.store.transaction(() => {
+          for (const child of this.children(this.get(tag))) {
+            if (!['merged', 'cancelled'].includes(this.stage(child).stage)) this.act(child.order.tag, 'cancel', options);
+          }
+          return this.applyAction(tag, kind, options);
+        });
+      }
+    }
+    return this.applyAction(tag, kind, options);
+  }
+
+  private applyAction(tag: string, kind: ActionKind, options: NonNullable<Parameters<Orders['act']>[2]>): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -281,6 +314,8 @@ export class Orders {
       const now = this.stage(doc);
       const stage = now.stage;
       const overrideStage = ['failed', 'blocked', 'idle'].includes(stage) || (stage === 'awaiting-user' && doc.reports.length > 0);
+      if (kind === 'approve' && doc.order.parent && !options.commit) fail('Split deliveries require branch approval.');
+      if (kind === 'approve' && doc.reports.at(-1)?.subtasks && now.waitingFor === 'card') fail('Decide the split before approving the parent.');
       if (kind === 'approve' && overrideStage && !options.override && !options.force) {
         fail('{tag} is {stage}; approving it needs --override and a note of at least 10 characters.', { tag: doc.order.tag, stage });
       }
@@ -322,7 +357,13 @@ export class Orders {
       if (options.author?.trim()) action.author = options.author.trim();
       if (options.requeuedFrom) action.requeued_from = options.requeuedFrom;
       if (options.commit?.trim()) action.commit = options.commit.trim();
-      if (kind === 'rework' && options.phase) action.phase = options.phase;
+      if (kind === 'rework') {
+        const proposal = doc.reports.at(-1);
+        const splitPhase = proposal?.subtasks && doc.runs.find(r => r.id === proposal.run)?.phase;
+        if (splitPhase && now.waitingFor === 'card') action.phase = splitPhase;
+        else if (options.phase) action.phase = options.phase;
+        if (doc.actions.some(a => a.kind === 'accept-split') && action.phase && doc.runs.some(r => r.split_kinds && r.phase === action.phase)) fail('An accepted split cannot be repeated.');
+      }
       if (options.choice !== undefined) action.choice = options.choice;
       if (options.imported) action.imported = true;
       if (options.override) action.override = true;
@@ -351,7 +392,8 @@ export class Orders {
         stage = this.stage(doc).stage;
         released = true;
       }
-      if (doc.order.planned || (['merged', 'cancelled', 'held'].includes(stage) && !imported)) fail('{tag} is {stage}; a run cannot start.', { tag: doc.order.tag, stage });
+      if (doc.order.planned || (['merged', 'cancelled', 'held', 'waiting-children'].includes(stage) && !imported)) fail('{tag} is {stage}; a run cannot start.', { tag: doc.order.tag, stage });
+      if (stage === 'awaiting-user' && doc.reports.at(-1)?.subtasks) fail('Decide the split before starting a run.');
       const open = doc.runs.find(r => r.ended === undefined);
       if (open) fail('{tag} already has an open run ({id}). End it first with run-end.', { tag: doc.order.tag, id: open.id });
       if (!input.worker.trim()) fail('A run needs a worker (--worker).');
@@ -400,8 +442,11 @@ export class Orders {
     return this.retry(() => {
       const doc = this.get(tag);
       const run = doc.runs.find(r => r.ended === undefined) ?? doc.runs[doc.runs.length - 1];
-      if (run?.next_phase && input.status === 'ready' && !input.plan?.trim()) fail('A ready planning report needs a nonempty plan.');
+      if (run?.split_kinds && input.status === 'ready') validateSubtasks(input.subtasks, run.split_kinds);
+      else if (input.subtasks) fail('Only a ready split phase may propose subtasks.');
+      if (!run?.split_kinds && run?.next_phase && input.status === 'ready' && !input.plan?.trim()) fail('A ready planning report needs a nonempty plan.');
       const report: Report = { seq: nextSeq(doc), at: this.now(), status: input.status as ReportStatus, summary: input.summary, evidence: input.evidence, commits: input.commits };
+      if (input.subtasks) report.subtasks = input.subtasks;
       if (input.plan !== undefined) {
         if (Buffer.byteLength(input.plan) > 24 * 1024) fail('Report plan must be Markdown text of at most 24 KiB.');
         report.plan = input.plan;
@@ -677,5 +722,5 @@ export function optionAnswer(option: OptionInput, n: number, note?: string): str
 }
 
 export const STAGE_PRIORITY: readonly Stage[] = [
-  'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped', 'running', 'queued', 'waiting-needs', 'idle', 'held', 'planned', 'draft', 'merged', 'cancelled',
+  'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped', 'running', 'queued', 'waiting-needs', 'waiting-children', 'idle', 'held', 'planned', 'draft', 'merged', 'cancelled',
 ];

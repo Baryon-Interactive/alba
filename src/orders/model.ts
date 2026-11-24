@@ -10,12 +10,12 @@ export const REPORT_STATUSES = ['progress', 'waiting', 'ready', 'blocked', 'fail
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
 /** `monitor` is written by the tick, never by a person: a monitor ended and the order is queued to continue (its note is the monitor's result). `message` is a note sent to a running order (`alba say --restart`). */
-export const ACTION_KINDS = ['queue', 'cancel', 'hold', 'release', 'approve', 'rework', 'answer', 'monitor', 'message', 'merged-elsewhere', 'done-by-lead'] as const;
+export const ACTION_KINDS = ['queue', 'cancel', 'hold', 'release', 'approve', 'rework', 'answer', 'monitor', 'message', 'accept-split', 'merged-elsewhere', 'done-by-lead'] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export const STAGES = [
   'cancelled', 'merged', 'held', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped',
-  'running', 'monitoring', 'idle', 'waiting-needs', 'planned', 'queued', 'draft',
+  'running', 'monitoring', 'idle', 'waiting-children', 'waiting-needs', 'planned', 'queued', 'draft',
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
@@ -54,6 +54,7 @@ export interface StoredRouting {
 }
 
 export interface Order {
+  parent?: string;
   phases?: 'none';
   /** Producer-selected worker; cleared when a person changes worker. */
   next_worker?: string;
@@ -90,6 +91,7 @@ export interface Order {
 export interface Run {
   phase?: string;
   final_phase?: boolean;
+  split_kinds?: string[];
   next_phase?: string;
   phase_timeout_minutes?: number;
   worktree_fingerprint?: string;
@@ -188,6 +190,7 @@ export interface MonitorState {
 }
 
 export interface Report {
+  subtasks?: import('./subtasks.ts').Subtask[];
   plan?: string;
   design_changes?: string[];
   revision?: string;
@@ -212,6 +215,11 @@ export interface Report {
 }
 
 export interface Action {
+  automatic?: true;
+  report?: number;
+  children?: string[];
+  selection?: { key: string; tag: string; title: string; kind: string }[];
+  branch?: string;
   phase?: string;
   queued?: boolean; // A message for the next run; does not reset the current stage.
   lint?: boolean;

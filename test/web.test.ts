@@ -114,7 +114,7 @@ test('order detail: definition, the matching row of the stage table, runs with l
   b.orders.patchRun('R1', run.id, { log: 'x.log' });
   const { status, text } = await b.get('/o/demo/R1');
   assert.equal(status, 200);
-  assert.match(text, /Row 5 of 15: awaiting-review/);
+  assert.match(text, /Row 5 of 16: awaiting-review/);
   assert.match(text, /<tr class="on"><td>5<\/td><td>awaiting-review<\/td>/);
   assert.match(text, /Runs <span class="n">1<\/span>/);
   assert.ok(text.includes('line &lt;two&gt;'));

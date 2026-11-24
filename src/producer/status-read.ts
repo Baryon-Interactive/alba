@@ -62,7 +62,7 @@ export function readProducerStatus(project: ProjectConfig, orders: Orders, args:
     return hold && now.getTime() - Date.parse(hold.at) > 3 * 86400000 ? [`${short(doc.order.tag, 48)} held ${Math.floor(Number(minutes(hold.at)) / 1440)} days`] : [];
   });
   const orderLines: string[] = [];
-  for (const stage of ['running', 'monitoring', 'queued', 'waiting-needs', 'held', 'failed', 'awaiting-review', 'awaiting-user', 'blocked', 'dropped', 'idle', 'draft']) {
+  for (const stage of ['running', 'monitoring', 'queued', 'waiting-needs', 'waiting-children', 'held', 'failed', 'awaiting-review', 'awaiting-user', 'blocked', 'dropped', 'idle', 'draft']) {
     const group = rows.filter(r => r.stage === stage);
     if (!group.length) continue;
     for (const { doc, kind } of group) {

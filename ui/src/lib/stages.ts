@@ -16,6 +16,7 @@ export const stageLabel = (s: Stage, wf?: WaitingFor): string => {
     case 'running': return t('Running');
     case 'monitoring': return t('Monitoring');
     case 'idle': return t('Idle');
+    case 'waiting-children': return t('Waiting for child orders');
     case 'waiting-needs': return t('Waiting for other orders');
     case 'planned': return t('Planned');
     case 'queued': return t('Queued');
@@ -25,7 +26,7 @@ export const stageLabel = (s: Stage, wf?: WaitingFor): string => {
 
 export const stageTone: Record<Stage, Tone> = {
   cancelled: 'neutral', merged: 'success', held: 'warning', 'awaiting-user': 'primary', 'awaiting-review': 'primary', blocked: 'danger',
-  failed: 'danger', dropped: 'danger', running: 'success', monitoring: 'primary', idle: 'neutral', 'waiting-needs': 'neutral', planned: 'outline', queued: 'neutral', draft: 'outline',
+  failed: 'danger', dropped: 'danger', running: 'success', monitoring: 'primary', idle: 'neutral', 'waiting-children': 'neutral', 'waiting-needs': 'neutral', planned: 'outline', queued: 'neutral', draft: 'outline',
 };
 
 /** Who is being waited for (document 002). */
@@ -41,6 +42,7 @@ export const waitingFor = (s: Stage, wf?: WaitingFor): string => {
     case 'draft': return t('waiting for you to queue it');
     case 'running': return t('the worker is on it');
     case 'monitoring': return t('the monitor is watching its long job');
+    case 'waiting-children': return t('Waiting for child orders');
     case 'waiting-needs': return t('waiting for other orders');
     case 'queued': return t('waiting for a worker slot');
     case 'idle': return t('nobody in particular');
@@ -51,6 +53,7 @@ export const waitingFor = (s: Stage, wf?: WaitingFor): string => {
 
 export const actionLabel = (a: OrderAction): string => {
   switch (a) {
+    case 'accept-split': return t('Accept split');
     case 'queue': return t('Queue');
     case 'hold': return t('Hold');
     case 'release': return t('Release');
@@ -66,6 +69,7 @@ export const actionLabel = (a: OrderAction): string => {
 
 export const actionExplain = (a: OrderAction): string => {
   switch (a) {
+    case 'accept-split': return t('Accept split');
     case 'queue': return t('The order becomes queued; the next tick may start it.');
     case 'hold': return t('The order is paused until you release it.');
     case 'release': return t('The order leaves the held state.');
@@ -93,6 +97,7 @@ const STAGE_BUTTONS: Record<Stage, OrderAction[]> = {
   dropped: ['queue', 'close', 'cancel'],
   idle: ['queue', 'hold', 'close', 'cancel'],
   queued: ['run', 'hold', 'cancel'],
+  'waiting-children': ['hold', 'cancel'],
   'waiting-needs': ['hold', 'cancel'],
   held: ['run', 'release', 'cancel'],
   planned: ['cancel'],
@@ -111,7 +116,7 @@ export const NEEDS_YOU_STAGES: Stage[] = ['awaiting-user', 'awaiting-review', 'b
 export const BOARD_COLUMNS: { id: string; title: () => string; stages: Stage[] }[] = [
   { id: 'planned', title: () => t('Planned'), stages: ['planned'] },
   { id: 'plan', title: () => t('Draft and held'), stages: ['draft', 'held'] },
-  { id: 'queue', title: () => t('Queued'), stages: ['queued', 'waiting-needs'] },
+  { id: 'queue', title: () => t('Queued'), stages: ['queued', 'waiting-needs', 'waiting-children'] },
   { id: 'run', title: () => t('Running'), stages: ['running', 'idle'] },
   { id: 'monitor', title: () => t('Monitoring'), stages: ['monitoring'] },
   { id: 'you', title: () => t('Needs you'), stages: ['awaiting-user', 'blocked', 'failed', 'dropped'] },

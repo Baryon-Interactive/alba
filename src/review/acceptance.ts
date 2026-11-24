@@ -14,6 +14,7 @@ import { matchCaptureRecipe } from '../capture/config.ts';
 import { formatCaptureRun, runCapture } from '../capture/run.ts';
 import type { CaptureSummary } from '../capture/types.ts';
 export type { CaptureSummary } from '../capture/types.ts';
+import { orderBaseRef } from './readiness.ts';
 import { baseRefOf } from '../run/worktree.ts';
 import { withGitLockRetrySync } from '../sync/git.ts';
 import { globToRegExp, type CheckItem } from '../check/general.ts';
@@ -205,7 +206,7 @@ function inputs(project: ProjectConfig, orders: Orders, tag: string, override = 
   const stage = orders.stage(doc).stage;
   if (!report || !((stage === 'awaiting-review' && report.status === 'ready') || (override && ['failed', 'awaiting-user'].includes(stage)))) throw new Error('Acceptance requires a ready delivery awaiting review, or an explicit override for a failed or awaiting-user delivery with a report.');
   if (!doc.order.branch) throw new Error('Acceptance requires a recorded branch.');
-  const base = git(project.root, 'rev-parse', '--verify', `${baseRefOf(project)}^{commit}`);
+  const base = git(project.root, 'rev-parse', '--verify', (doc.order.parent ? orderBaseRef(project, doc.order) : baseRefOf(project)) + '^{commit}');
   const branch = git(project.root, 'rev-parse', '--verify', `refs/heads/${doc.order.branch}^{commit}`);
   const ancestor = git(project.root, 'merge-base', base, branch);
   const changed = git(project.root, 'diff', '--name-only', '--no-renames', '-z', ancestor, branch).split('\0').filter(Boolean);
@@ -504,6 +505,8 @@ function requireCleanBase(project: ProjectConfig): string {
 
 /** The approval boundary: retry stale inputs, then merge only the exact commits that passed. */
 export function mergeAcceptance(project: ProjectConfig, orders: Orders, tag: string, findings = '', reviewer = orders.actor, override = false): { acceptFile: string; merge: string; accept: string } {
+  const target = orders.get(tag);
+  if (target.order.parent || target.actions.some(a => a.kind === 'accept-split')) throw new Error('Split orders use parent integration and manual base merging.');
   if (override && findings.trim().length < 10) throw new Error('An override approval needs a note of at least 10 characters.');
   const release = lock(project, 'merge');
   if (!release) throw new Error('Another acceptance merge is running.');

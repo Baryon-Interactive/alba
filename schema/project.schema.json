@@ -19,6 +19,10 @@
       },
       "additionalProperties": false
     },
+    "split": {
+      "type": "object", "required": ["approve"], "additionalProperties": false,
+      "properties": { "approve": { "oneOf": [{ "enum": ["auto", "manual"] }, { "type": "object", "additionalProperties": { "enum": ["auto", "manual"] } }] } }
+    },
     "phases": {
       "description": "Order kinds mapped to one or more read-only phases followed by one final write phase. Phase ids are unique within each kind.",
       "type": "object",
@@ -29,7 +33,7 @@
           "type": "object", "required": ["id", "mode"], "additionalProperties": false,
           "properties": {
             "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-            "mode": { "enum": ["read-only", "write"] },
+            "mode": { "enum": ["read-only", "split", "write"] },
             "role": { "type": "string", "minLength": 1 },
             "timeout_minutes": { "type": "number", "exclusiveMinimum": 0 }
           }

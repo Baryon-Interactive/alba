@@ -1,3 +1,4 @@
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import type { Route, Routing } from '../api/types.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
@@ -28,7 +29,7 @@ export function workerPinProblem(project: ProjectConfig, doc: OrderDoc, file: Wo
   if (!pin) return;
   const worker = file.workers.find(w => w.id === pin);
   if (!worker) return t('Worker pin {worker} dropped: unknown worker.', { worker: pin });
-  if (orderPhases(project, doc)?.current.mode === 'read-only' && !supportsReadOnly(worker)) return t('The worker cannot enforce a read-only phase.');
+  if (isReadOnlyPhase(orderPhases(project, doc)?.current) && !supportsReadOnly(worker)) return t('The worker cannot enforce a read-only phase.');
   if (!worker.enabled) return t('Worker pin {worker} dropped: disabled worker.', { worker: pin });
   const role = roleForOrder(project, doc, file);
   if (!role.definition) return t('Worker pin {worker} dropped: order has no role.', { worker: pin });
@@ -42,7 +43,7 @@ export function routeFor(project: ProjectConfig, doc: OrderDoc, workers: readonl
   const kind = isGenericKind(doc.order.kind) ? routing.kind : doc.order.kind;
   const role = roleForOrder(project, doc, file);
   const phase = orderPhases(project, doc, kind)?.current;
-  const choice = chooseWorker({ kind, tags: routing.tags, workerText: phase?.role ? undefined : doc.order.worker, pinnedWorker: doc.order.next_worker, role: rolePolicy(role, phase?.mode === 'read-only') }, workers);
+  const choice = chooseWorker({ kind, tags: routing.tags, workerText: phase?.role ? undefined : doc.order.worker, pinnedWorker: doc.order.next_worker, role: rolePolicy(role, isReadOnlyPhase(phase)) }, workers);
   return {
     project: project.id, tag: doc.order.tag, routing: toRouting({ ...routing, kind: kind || routing.kind }),
     ...(choice.named ? { named: choice.named } : {}), outcome: choice.outcome, ...(choice.chosen ? { chosen: choice.chosen } : {}), ...(choice.ideal ? { ideal: choice.ideal } : {}),

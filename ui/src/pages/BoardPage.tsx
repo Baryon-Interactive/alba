@@ -1,3 +1,4 @@
+import { ChildList } from '@/components/SplitOrders';
 import { PhaseBadge } from '@/components/OrderPhases';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -85,6 +86,10 @@ export function BoardCard({ project, o, overlapTags }: { project: string; o: Ord
       {o.monitor && <div className="mt-1 truncate text-xs text-muted-foreground">{monitorResultLabel(o.monitor.lastResult)}{o.monitor.lastCheckAt ? ` · ${t('last {when}', { when: ago(o.monitor.lastCheckAt) })}` : ''}</div>}
       {o.uses && o.uses.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{o.uses.map(u => <Badge key={u} tone="outline" className="font-mono text-[10px]">{u}</Badge>)}</div>}
       {o.openCommand && <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">$ {o.openCommand}</div>}
+      {!!o.children?.length && <details className="relative mt-2 rounded border p-2">
+        <summary className="cursor-pointer text-sm">{t('Child orders')} ({o.children.filter(c => c.stage === 'merged' || c.stage === 'cancelled').length}/{o.children.length})</summary>
+        <ChildList project={project} children={o.children} />
+      </details>}
       <OrderQuestion project={project} o={o} />
       {(o.run || o.stage === 'monitoring') && <RunPeek project={project} tag={o.tag} />}
     </article>
@@ -110,6 +115,8 @@ export function BoardPage() {
       && (!filters.text || `${o.tag} ${o.title}`.toLowerCase().includes(filters.text))),
     [items, unreadOnly, filters.stage, filters.kind, filters.heavy, filters.worker, filters.text],
   );
+  const visibleTags = new Set(filtered.map(o => o.tag));
+  const grouped = filtered.filter(o => !o.parent || !visibleTags.has(o.parent));
   const active = !!(unreadOnly || filters.stage || filters.kind || filters.heavy || filters.worker || filters.text);
   const hideEmpty = get('empty') === 'hide';
 
@@ -141,8 +148,8 @@ export function BoardPage() {
         {active && <button onClick={() => setParams({}, { replace: true })} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><X className="size-3" />{t('Clear filters')}</button>}
       </div>
       <div className="stagger flex min-h-[60vh] items-start gap-3 overflow-x-auto pb-4">
-        {BOARD_COLUMNS.filter(col => !hideEmpty || filtered.some(o => col.stages.includes(o.stage))).map(col => {
-          const all = filtered.filter(o => col.stages.includes(o.stage));
+        {BOARD_COLUMNS.filter(col => !hideEmpty || grouped.some(o => col.stages.includes(o.stage))).map(col => {
+          const all = grouped.filter(o => col.stages.includes(o.stage));
           const rows = col.id === 'done' && !showAllDone ? [...all].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, DONE_LIMIT) : all;
           if (col.id === 'plan' && !showPlan && !filters.stage) return <button key={col.id} onClick={() => setShowPlan(true)} aria-expanded={false} className="flex w-32 shrink-0 items-center gap-2 rounded-lg border bg-muted/50 p-3 text-left text-xs text-muted-foreground"><ChevronRight className="size-4 shrink-0" /><span>{col.title()}<strong className="mt-1 block text-lg tabular-nums">{all.length}</strong></span></button>;
           return (

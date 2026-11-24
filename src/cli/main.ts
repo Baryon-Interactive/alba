@@ -1,4 +1,7 @@
-import { phasePrompt, readOnlyChange } from '../run/phase.ts';
+import { childIntegrationPrompt, phasePrompt, readOnlyChange } from '../run/phase.ts';
+import { childKinds } from '../orders/subtasks.ts';
+import { autoAcceptSplit } from '../service/split.ts';
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { phasesOverride } from '../orders/phase-config.ts';
 import { loadMachines } from '../machines/config.ts';
@@ -121,7 +124,7 @@ const options = {
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
   page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' }, channel: { type: 'string' },
   'merged-elsewhere': { type: 'string' }, 'done-by-lead': { type: 'boolean' }, commit: { type: 'string' },
-  force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' }, 'include-ignored': { type: 'boolean' },
+  confirm: { type: 'boolean' }, force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' }, 'include-ignored': { type: 'boolean' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -295,8 +298,12 @@ function list(orders: Orders, values: { stage?: string; all?: boolean; json?: bo
   const shown = rows.filter(r => values.stage ? r.stage === values.stage : values.all || !['merged', 'cancelled'].includes(r.stage))
     .sort((a, b) => STAGE_PRIORITY.indexOf(a.stage) - STAGE_PRIORITY.indexOf(b.stage)
       || (a.d.order.source?.row ?? Infinity) - (b.d.order.source?.row ?? Infinity) || b.d.order.updated.localeCompare(a.d.order.updated));
-  if (values.json) return JSON.stringify(shown.map(r => ({ tag: r.d.order.tag, stage: r.stage, worker: r.d.order.worker ?? null, current_worker: currentWorker(r.d) || null, kind: r.d.order.kind, review: r.d.order.review ?? cfg?.review ?? 'auto', needs: r.d.order.needs, updated: r.d.order.updated })), null, 2);
-  const body = table(['TAG', 'STAGE', 'WORKER', 'KIND', 'REVIEW', 'NEEDS', 'UPDATED'], shown.map(r => [r.d.order.tag, r.stage, currentWorker(r.d), r.d.order.kind, r.d.order.review ?? cfg?.review ?? 'auto', r.d.order.needs.join(','), ago(r.d.order.updated)]));
+  const tags = new Set(shown.map(r => r.d.order.tag));
+  const grouped = shown.filter(r => !r.d.order.parent || !tags.has(r.d.order.parent)).flatMap(r => [
+    r, ...orders.children(r.d).flatMap(child => shown.filter(row => row.d.order.tag === child.order.tag)),
+  ]);
+  if (values.json) return JSON.stringify(grouped.map(r => ({ parent: r.d.order.parent, tag: r.d.order.tag, stage: r.stage, worker: r.d.order.worker ?? null, current_worker: currentWorker(r.d) || null, kind: r.d.order.kind, review: r.d.order.review ?? cfg?.review ?? 'auto', needs: r.d.order.needs, updated: r.d.order.updated })), null, 2);
+  const body = table(['TAG', 'STAGE', 'WORKER', 'KIND', 'REVIEW', 'NEEDS', 'UPDATED'], grouped.map(r => [(r.d.order.parent && tags.has(r.d.order.parent) ? '  ' : '') + r.d.order.tag, r.stage, currentWorker(r.d), r.d.order.kind, r.d.order.review ?? cfg?.review ?? 'auto', r.d.order.needs.join(','), ago(r.d.order.updated)]));
   const hidden = rows.length - shown.length;
   return `${body}\n${t('{shown} shown{hidden}', { shown: shown.length, hidden: hidden ? t(', {n} merged/cancelled hidden (use --all)', { n: hidden }) : '' })}`;
 }
@@ -307,6 +314,11 @@ function show(orders: Orders, tag: string, project?: ProjectConfig): string {
   const { stage, why } = orders.stage(doc);
   const out: string[] = [`${o.tag}  ${o.title}`, `${t('stage')}: ${stage}  (${why})`];
   const field = (label: string, value: string | undefined) => { if (value) out.push(`${label}: ${value}`); };
+  field(t('Parent'), o.parent);
+  field(t('Children'), orders.children(doc).map(c => c.order.tag + ' (' + orders.stage(c).stage + ')').join(', '));
+  if (orders.stage(doc).waitingFor === 'card') for (const task of doc.reports.at(-1)?.subtasks ?? []) {
+    out.push(task.key + '  ' + task.title + ' (' + task.kind + ')' + (task.needs?.length ? '  ' + t('needs') + ': ' + task.needs.join(', ') : ''));
+  }
   const phases = project && orderPhases(project, doc);
   if (phases) field(t('Order phases'), phases.list.map((p, i) => {
     const last = phases.runsOf(p).at(-1);
@@ -809,7 +821,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         need(1, 'alba orders edit-plan <TAG>');
         return tagLine(editPlan(orders, rest[0], { ...(values.title !== undefined ? { title: values.title } : {}), ...(values.kind !== undefined ? { kind: values.kind } : {}), ...(values.intent !== undefined ? { intent: values.intent } : {}), ...(values.role !== undefined ? { role: values.role } : {}), ...(values.needs !== undefined ? { needs: values.needs.split(',').filter(Boolean) } : {}) }));
       }
-      case 'cancel': need(1, 'alba orders cancel <TAG>'); return tagLine(orders.act(rest[0], 'cancel'));
+      case 'cancel': need(1, 'alba orders cancel <TAG>'); return tagLine(orders.act(rest[0], 'cancel', { confirm: values.confirm === true }));
       case 'close': {
         const usage = 'alba orders close <TAG> (--merged-elsewhere <commit-or-ref> | --done-by-lead) [--commit <sha>] [--note text]';
         need(1, usage);
@@ -847,7 +859,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
       case 'act': {
         need(2, `alba orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b]`);
         if (!isHumanAction(rest[1])) fail('Unknown action "{kind}". Allowed: {allowed}.', { kind: rest[1], allowed: HUMAN_ACTIONS.join(', ') });
-        humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true, values.phase);
+        humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true, values.phase, values.confirm === true);
         return tagLine(orders.get(rest[0]));
       }
       case 'preflight': {
@@ -900,7 +912,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         need(1, 'alba orders run-start <TAG> --worker <worker>');
         if (!values.worker) fail('run-start needs --worker.');
         const phase = orderPhases(cfg, orders.get(rest[0]))?.current;
-        if (phase?.mode === 'read-only') fail('Use alba run for a read-only phase so the engine enforces its restrictions.');
+        if (isReadOnlyPhase(phase)) fail('Use alba run for a read-only phase so the engine enforces its restrictions.');
         const { doc, run: r } = orders.runStart(rest[0], { worker: values.worker, session: values.session,
           ...(phase ? { extra: { phase: phase.id, final_phase: true, role: phase.role ?? orders.get(rest[0]).order.role, phase_timeout_minutes: phase.timeout_minutes } } : {}) });
         return `${tagLine(doc)} (${r.id}${r.note ? t(', with rework note: {note}', { note: r.note }) : ''})`;
@@ -925,6 +937,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         if (stale) orders.record(rest[0], 'stale-report', stale);
         if (found && !stale) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
+          autoAcceptSplit(cfg, orders, rest[0]);
           requeueUndeliveredInbox(orders, rest[0], closed);
           if (found.report.status === 'ready' && !closed.next_phase) {
             const { mergeBaseBeforeReview } = await import('../check/base-merge.ts');
@@ -933,6 +946,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
           if (!closed.next_phase) lintDelivery(cfg, orders, rest[0]);
           return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
         }
+        autoAcceptSplit(cfg, orders, rest[0]);
         requeueUndeliveredInbox(orders, rest[0], closed);
         // A person who ends a run as cancelled does not want the next tick to start it again at once (on whatever worker routing picks).
         if (outcome !== 'cancelled' || orders.stage(ended).stage !== 'queued' && orders.stage(ended).stage !== 'waiting-needs') return tagLine(ended);
@@ -953,6 +967,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
           return t('stale report');
         }
         orders.report(rest[0], { ...parsed, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: readFileSync(file, 'utf8') } : {}) }, path.basename(file));
+        autoAcceptSplit(cfg, orders, rest[0]);
         if (!doc.runs.at(-1)?.next_phase) lintDelivery(cfg, orders, rest[0]);
         return tagLine(orders.get(rest[0]));
       }
@@ -1035,7 +1050,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
     try { promptWorkers = workersOf(values.workers, cfg); } catch { promptWorkers = undefined; }
     const phases = orderPhases(cfg, doc);
     const role = resolveRole(effectiveRoles(cfg, promptWorkers), { role: phases?.current.role ?? doc.order.role, kind: routingOf(cfg, doc).kind || doc.order.kind });
-    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines) + phasePrompt(phases), roleRules(role));
+    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines) + phasePrompt(phases, phases?.current.mode === 'split' ? childKinds(cfg) : undefined) + childIntegrationPrompt(orders, doc), roleRules(role));
     if (values.out) { writeFileSync(values.out, text, 'utf8'); return t('Wrote {file}', { file: values.out }); }
     return text.trimEnd();
   }
@@ -1152,7 +1167,7 @@ ${t('Stopped run {run}. The order is held: start it on a worker with "alba run {
     const action = rest[0];
     if (action === 'approve') {
       const r = approve(cfg, orders, command!, values.note, values.branch, values.override === true); // same step as humanAction(..., 'approve')
-      return t('{tag}: merged. Wrote {file} (branch {branch} is in the base branch; accept: {accept})', { tag: command!, file: r.acceptFile, branch: r.merge, accept: r.accept });
+      return r.parent ? t('Merged into {parent} at {commit}.', { parent: r.parent, commit: r.merge }) : t('{tag}: merged. Wrote {file} (branch {branch} is in the base branch; accept: {accept})', { tag: command!, file: r.acceptFile, branch: r.merge, accept: r.accept });
     }
     if (action === 'rework') { rework(orders, command!, values.note, { max: cfg.dispatch.max_reworks, override: values.override === true }); return tagLine(orders.get(command!)); }
     if (action === 'sheet') {

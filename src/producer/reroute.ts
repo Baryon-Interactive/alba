@@ -1,6 +1,7 @@
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
+import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { supportsReadOnly } from '../routing/choose.ts';
 import { roleForOrder } from '../routing/route.ts';
@@ -15,11 +16,11 @@ export function rerouteRefusal(project: ProjectConfig, orders: Orders, doc: Orde
   if (!worker || !note?.trim() || note.length > 2000) return refuse('target, worker and a non-empty note of at most 2000 characters are required.');
   const target = env.workers.workers.find(w => w.id === worker);
   if (!target) return refuse(`unknown worker ${worker}.`);
-  if (orderPhases(project, doc)?.current.mode === 'read-only' && !supportsReadOnly(target)) return refuse('worker cannot enforce a read-only phase.');
+  if (isReadOnlyPhase(orderPhases(project, doc)?.current) && !supportsReadOnly(target)) return refuse('worker cannot enforce a read-only phase.');
   if (!target.enabled) return refuse(`worker ${worker} is disabled.`);
   if (!project.producer.escalate_to?.includes(worker)) return refuse('worker is not in producer.escalate_to (the default list is empty).');
   const stage = orders.stage(doc).stage;
-  if (['held', 'merged', 'cancelled'].includes(stage)) return refuse(`order is ${stage}.`);
+  if (['waiting-children', 'held', 'merged', 'cancelled'].includes(stage)) return refuse(`order is ${stage}.`);
   const current = doc.order.next_worker ?? ownerOf(env.workers.workers, doc.order.worker)?.id ?? doc.runs.at(-1)?.worker;
   if (worker === current) return refuse('same as the current worker.');
   const role = roleForOrder(project, doc, env.workers);

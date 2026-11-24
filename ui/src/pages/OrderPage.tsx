@@ -2,6 +2,7 @@ import { DraftPanel } from '@/components/DraftPanel';
 import { AcceptanceCard } from '@/components/AcceptanceCard';
 import { OrderAccounting } from '@/components/Usage';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { SplitOrders } from '@/components/SplitOrders';
 import { PhaseStrip } from '@/components/OrderPhases';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router';
 import { ArrowRight, CircleDot, FileText, Pencil, Play } from 'lucide-react';
@@ -342,11 +343,12 @@ export function OrderPage() {
         </div>
       </div>
 
+      <SplitOrders project={project} detail={d} />
       {d.phases && <PhaseStrip phases={d.phases} />}
       {(closing || (wanted === 'close' && d.actions.includes('close'))) && (
         <CloseOrderDialog project={project} tag={tag} open onOpenChange={o => { if (!o) { setClosing(false); if (wanted === 'close') closeAsk(); } }} />
       )}
-      {wanted && wanted !== 'close' && d.actions.includes(wanted) && (
+      {wanted && wanted !== 'close' && wanted !== 'accept-split' && d.actions.includes(wanted) && (
         <ActionDialog project={project} tag={tag} phases={d.phases} action={wanted} open onOpenChange={o => !o && closeAsk()} context={wanted === 'answer' ? [...d.reports].reverse().find(r => r.question)?.question : undefined} noBranch={!d.order.branch} />
       )}
       {d.stage === 'awaiting-review' && <SectionBoundary title={t('Review')}><MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} /></SectionBoundary>}
