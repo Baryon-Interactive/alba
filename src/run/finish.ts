@@ -13,7 +13,7 @@ import { parseReportBlock, parseReportFile, staleReport, REPORT_BEGIN, REPORT_EN
 import { REPORT_STATUSES } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
 import { startedAtForCheck, type Probes } from '../tick/gather.ts';
-import { trailingTransientFailures } from './launch.ts';
+import { engineSession, trailingTransientFailures } from './launch.ts';
 import { parseStreamLog, workerAdapter } from '../workers/adapters/index.ts';
 import { parseUsage, type RunUsage } from '../usage/usage.ts';
 import { MAX_RESUMES, isLimitError, isLostSessionError, isTransientError } from './transient.ts';
@@ -117,8 +117,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     }
     if (!run?.pid || run.imported || stillOurs(run, probes)) continue;
     const stale: NonNullable<Finish['stale']> = [];
-    const accepts = (candidate: ReportInput, source: string, time?: string) => {
-      const rejected = staleReport(doc, run, candidate, source, time);
+    const accepts = (candidate: Pick<ReportInput, 'run'>, source: string, time?: string) => {
+      const rejected = staleReport(doc, run, candidate, source, time, prior => engineSession(prior, probes));
       if (rejected && !stale.some(r => r.file === source && r.namedRun === rejected.namedRun)) stale.push(rejected);
       return !rejected;
     };
@@ -181,7 +181,7 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
           break;
         }
       } catch (e) {
-        if (time && Date.parse(time) >= Date.parse(run.started) && e instanceof UserError && !/No report block found/.test(e.message)) broken = e.message;
+        if (e instanceof UserError && accepts({}, file, time) && !/No report block found/.test(e.message)) broken = e.message;
       }
     }
     if (!report && stream.finalText.trim() && run.last_file) {

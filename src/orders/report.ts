@@ -27,14 +27,17 @@ export interface ReportInput {
 }
 
 /** A pre-launch file can only be inherited from the immediately preceding, continued run. */
-export function staleReport(doc: OrderDoc, current: Pick<Run, 'id' | 'started' | 'session' | 'continuation' | 'rotated'>, report: ReportInput, file: string, modified?: string) {
+export function staleReport(
+  doc: OrderDoc, current: Pick<Run, 'id' | 'started'> & Partial<Pick<Run, 'worker' | 'session' | 'continuation' | 'rotated'>>,
+  report: Pick<ReportInput, 'run'>, file: string, modified?: string, sessionOf: (run: Run) => string | undefined = r => r.session,
+) {
   const matches = (id: string) => !report.run || report.run === id || report.run === `${doc.order.tag}/${id}`;
   if (modified !== undefined && Date.parse(modified) < Date.parse(current.started)) {
     const index = doc.runs.findIndex(r => r.id === current.id);
     const prior = doc.runs[index - 1];
-    const resumed = prior && (current.rotated?.from === prior.worker || (current.continuation && current.session && current.session === prior.session));
+    const resumed = prior && (current.rotated?.from === prior.worker || (current.continuation && current.worker === prior.worker && current.session && current.session === sessionOf(prior)));
     if (resumed && matches(prior.id) && Date.parse(modified) >= Date.parse(prior.started)
-      && (report.run || prior.last_file === file)) return undefined;
+      && (report.run || prior.last_file?.replaceAll('\\', '/') === file.replaceAll('\\', '/'))) return undefined;
   } else if (matches(current.id)) return undefined;
   return { run: current.id, namedRun: report.run ?? null, file, ...(modified ? { modified } : {}) };
 }

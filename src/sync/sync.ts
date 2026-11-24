@@ -7,7 +7,8 @@ import { UserError, t } from '../i18n.ts';
 import type { OrderDoc, Stage } from '../orders/model.ts';
 import { parseReportBlock, staleReport, type ReportInput } from '../orders/report.ts';
 import { Orders } from '../orders/service.ts';
-import { findWorktree } from '../tick/gather.ts';
+import { engineSession } from '../run/launch.ts';
+import { findWorktree, systemProbes } from '../tick/gather.ts';
 import { baseRefOf, planWorktree } from '../run/worktree.ts';
 import { systemGit, type GitProbe } from './git.ts';
 
@@ -126,7 +127,7 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
         const { report, why } = readDelivery(text);
         const open = doc.runs.find(r => r.ended === undefined);
         const target = open ?? { id: `r${doc.runs.length + 1}`, started: doc.runs.at(-1)?.started ?? lastTime };
-        const rejected = staleReport(doc, target, report, path.join(dir, file).replace(/\\/g, '/'), lastTime);
+        const rejected = staleReport(doc, target, report, path.join(dir, file).replace(/\\/g, '/'), lastTime, prior => engineSession(prior, systemProbes));
         if (rejected) {
           skip(file, t('stale report'));
           if (!options.dryRun && !orders.store.events({ tag }).some(e => e.type === 'stale-report' && e.data?.file === rejected.file && e.data?.modified === lastTime && e.data?.run === target.id && e.data?.namedRun === rejected.namedRun)) {
@@ -140,7 +141,7 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
           change(t('delivered at {time}: {status} ({how}) {summary}', { time: lastTime, status: report.status, how: report.source === 'inferred' ? t('inferred from the first line') : t('report block'), summary: report.summary }));
           delivered = report.status;
           if (!options.dryRun) {
-            const when = at(lastTime);
+            const when = at(open && open.started > lastTime ? open.started : lastTime);
             const lastFile = path.join(dir, file).replace(/\\/g, '/');
             if (!open) when.runStart(tag, { worker: doc.order.worker?.trim() || 'unknown', extra: { last_file: lastFile } }, true);
             else when.patchRun(tag, open.id, { last_file: lastFile });

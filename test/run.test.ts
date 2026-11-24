@@ -97,6 +97,22 @@ test('finish binds reports to the current run and only inherits files from a res
   }
 });
 
+test('finish recognises the resumed session id from the previous engine log', () => {
+  const { orders, project } = fixture();
+  const file = 'T1.last.txt';
+  const previous = orders.runStart('T1', { worker: 'demo', extra: { log: 'prior.log', last_file: file } }).run;
+  orders.runEnd('T1', 'capacity');
+  const session = 'ae9a1111-1111-4111-8111-111111111111';
+  orders.runStart('T1', { worker: 'demo', session, extra: { pid: 42, continuation: true, last_file: file } });
+  const block = '--- alba-report ---\n{"run":"r1","status":"ready","summary":"Done"}\n--- end ---';
+  const finish = findFinishes(project, orders, probes({
+    fileTime: p => p === file ? previous.started : undefined,
+    readText: p => p === file ? block : p === 'prior.log' ? `session id: ${session}` : undefined,
+  }))[0];
+  assert.equal(finish.report?.status, 'ready');
+  assert.equal(finish.stale, undefined);
+});
+
 test('a finish collected before the next run cannot close that run or attach its delivery', () => {
   const { orders, project } = fixture();
   orders.runStart('T1', { worker: 'demo', extra: { pid: 42, log: 'r1.log' } });

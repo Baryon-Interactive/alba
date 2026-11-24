@@ -41,7 +41,7 @@ import { addWorker, editWorker, parseSetArgs, recordWorkerEdit, workerYaml } fro
 import { formatReport } from '../tick/plan.ts';
 import { prewarmEndpointProbes, systemProbes, tick } from '../tick/gather.ts';
 import { executeTick } from '../tick/execute.ts';
-import { startRun } from '../run/launch.ts';
+import { engineSession, startRun } from '../run/launch.ts';
 import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { lessonRunFor, selectLessons } from '../lessons/select.ts';
 import { promptFor } from '../run/prompt.ts';
@@ -913,7 +913,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
         const parsed = parseReportFile(file, readFileSync(file, 'utf8'));
         const doc = orders.get(rest[0]);
         const current = doc.runs.at(-1) ?? { id: '', started: orders.now() };
-        const stale = (doc.runs.length || parsed.run) && staleReport(doc, current, parsed, file, statSync(file).mtime.toISOString());
+        const stale = (doc.runs.length || parsed.run) && staleReport(doc, current, parsed, file, statSync(file).mtime.toISOString(), prior => engineSession(prior, systemProbes));
         if (stale) {
           orders.record(rest[0], 'stale-report', stale);
           return t('stale report');
