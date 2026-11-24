@@ -91,6 +91,7 @@ import { createIntake, runDesignDocs, runIntake } from './intake.ts';
 import { listNamedLocks, runNamedLock, usage as lockUsage } from '../run/named-lock.mjs';
 import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance, regionError, type PixelRegion } from '../verify/png.ts';
 import { runNotifyCli } from './notify.ts';
+import { runSchedulesCli } from './schedules.ts';
 
 /** What a person needs to open the console: the sign-in link (it carries this start's key) and the file programs read the key from. */
 const signInLines = (port: number, key: string): string => t('Sign in: {url}\nKey file (for programs of this account): {file}', { url: `http://127.0.0.1:${port}/login?key=${key}`, file: keyFile(port) });
@@ -126,6 +127,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   foundations [--json]                       the documents each kind of work needs before its content orders (foundations: in alba.yaml), their state, and the orders held back or warned about; exit 1 when one is not ready
   intake [--docs id,id] [--tag T] | intake check [<TAG>] [--dir .alba] [--json] | intake review <TAG> [--accept SYS,..] [--reject SYS --note text] [--drop SYS --note text]
   gates run [--now] [--gate name] | status | cancel   run, inspect or cancel waiting nightly gates
+  schedules [list] [--json] | run <id> | pause <id> [--note text] | resume <id>   inspect, run, pause or resume recurring order schedules
 
   orders list [--stage s] [--all] [--json]   orders, people-first; merged/cancelled hidden unless --all or --stage
   orders show <TAG>                          definition, runs, latest report, notes still waiting, why it is in this stage, recent events
@@ -298,6 +300,7 @@ function show(orders: Orders, tag: string): string {
   const out: string[] = [`${o.tag}  ${o.title}`, `${t('stage')}: ${stage}  (${why})`];
   const field = (label: string, value: string | undefined) => { if (value) out.push(`${label}: ${value}`); };
   field(t('kind'), o.kind); field(t('heavy'), o.heavy); field(t('worker'), o.worker); field(t('model'), o.model); field(t('needs'), o.needs.join(', ')); field(t('condition'), o.condition);
+  field(t('source'), o.scheduled?.source); field(t('planned'), o.scheduled?.planned_at);
   field(t('branch'), o.branch); field(t('starts from'), o.base_ref); field(t('worktree'), o.worktree); field(t('uses'), o.uses?.join(', ')); field(t('tools'), o.tools?.join(', '));
   if (o.mandate) {
     out.push(t('mandate:'));
@@ -676,6 +679,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
     if (command !== 'run' || rest.length) fail('Usage: alba gates run [--now] [--gate name] | status | cancel');
     return runNightlyGates(cfg, orders, { force: values.now, gate: values.gate }).then(result => { if (['failed', 'error'].includes(result.status)) exitCode = 1; return JSON.stringify(result, null, 2); });
   }
+  if (group === 'schedules') return runSchedulesCli(cfg, orders, command, rest, { json: values.json, note: values.note });
   if (group === 'design' && command === 'measure') {
     const workersPath = values.workers ?? process.env.ALBA_WORKERS ?? cfg.workers;
     const workers = workersPath ? loadWorkers(workersPath) : undefined;

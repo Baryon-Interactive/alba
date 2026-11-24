@@ -51,7 +51,7 @@ export function invalidationsFor(name: StreamEventName, data: unknown, fallbackP
     case 'quota':
       return [keys.workers(project), keys.quota(project), ...overview, ['route', project] as const];
     case 'tick.done':
-      return [...lists, ['machines', project], ['order', project], ['route', project] as const, keys.skills(project), keys.workers(project), keys.session];
+      return [...lists, ['machines', project], ['order', project], ['route', project] as const, keys.skills(project), keys.workers(project), keys.session, keys.schedules(project)];
     case 'serve.notice':
     case 'resync':
       return everything;
@@ -68,7 +68,7 @@ export const everything: QueryKey[] = [
   ['project-overview'],
   ['overview'], ['orders'], ['order'], ['diff'], ['workers'], ['machines'], ['quota'], ['projects'], ['session'],
   ['runs'], ['decisions'], ['evidence'], ['clean'], ['clean-events'], ['credits'], ['lessons'],
-  ['route'], ['skills'], ['order-skills'], ['producer'], ['resources'], ['picks'], ['art'], ['spend'], ['usage'], ['readiness'],
+  ['route'], ['skills'], ['order-skills'], ['producer'], ['resources'], ['picks'], ['art'], ['spend'], ['usage'], ['readiness'], ['schedules'],
 ];
 
 export const STREAM_EVENT_NAMES: StreamEventName[] = [

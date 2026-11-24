@@ -102,8 +102,8 @@ export interface RunEnd {
 /** Every error answer: HTTP status 400, 403, 404, 409, 413 or 500 with this body. */
 export interface ApiError {
   error: {
-    /** bad_request | forbidden | not_found | conflict | too_large | internal */
-    code: 'bad_request' | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'too_large' | 'internal';
+    /** bad_request | forbidden | not_found | conflict | too_large | internal | request_mismatch | request_in_progress */
+    code: 'bad_request' | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'too_large' | 'internal' | 'request_mismatch' | 'request_in_progress';
     message: string;
     /** For a refused edit: what is wrong, by field (`launch.env.KEY`, `capabilities`, ...), so a form can show it next to the field. */
     details?: { field?: string; message: string }[];
@@ -421,6 +421,10 @@ export interface OrderDefinition {
   branch?: string;
   base_ref?: string;
   worktree?: string;
+  /** Origin of a scheduled order (`schedule:<id>`). */
+  source?: string;
+  /** Scheduled planned time in ISO 8601 UTC. */
+  planned_at?: string;
   created: string;
   updated: string;
 }
@@ -1282,20 +1286,26 @@ export interface LessonList { project: string; count: number; items: Lesson[] }
 
 /**
  * One condition of a monitor: exactly one key. `exit_code`: the check command exits with this code; `file_exists`: this file exists
- * (relative to the check's folder); `output_matches`: this regular expression matches the output of the check.
+ * (relative to the check's folder); `output_matches`: this regular expression matches the output of the check;
+ * `order_stage`: another order of the same project is in one of the listed stages; `after`: the clock has passed this ISO time.
  */
-export type MonitorCriterion = { exit_code: number } | { file_exists: string } | { output_matches: string };
+export type MonitorCriterion =
+  | { exit_code: number }
+  | { file_exists: string }
+  | { output_matches: string }
+  | { order_stage: { tag: string; stage: Stage[] } }
+  | { after: string };
 
 /**
  * What a worker hands over by ending its round with `{"status":"monitoring","monitor":{...}}`: a long job (a build, a package step, a
- * remote run) that is already running on its own, and a cheap read-only command that tells whether it is over. The order's stage is
- * `monitoring`: it holds no worker slot and costs no quota window. Each tick runs `check` (with a timeout, in `cwd`, which must be the
- * order's worktree or a folder the project allows). When `done_when` or `fail_when` is met, or `deadline_minutes` have passed, the order
- * is queued again and the same worker continues the same session; its prompt says what the monitor found, the end of the output
- * and `note`. A continuation goes before new orders.
+ * remote run) that is already running on its own, and a cheap read-only command that tells whether it is over (optional when only
+ * `order_stage` or `after` conditions are used). The order's stage is `monitoring`: it holds no worker slot and costs no quota window.
+ * Each tick runs `check` (with a timeout, in `cwd`, which must be the order's worktree or a folder the project allows). When `done_when`
+ * or `fail_when` is met, or `deadline_minutes` have passed, the order is queued again and the same worker continues the same session; its
+ * prompt says what the monitor found, the end of the output and `note`. A continuation goes before new orders.
  */
 export interface MonitorSpec {
-  check: string[];
+  check?: string[];
   cwd?: string;
   done_when: MonitorCriterion;
   fail_when?: MonitorCriterion;
@@ -1737,4 +1747,63 @@ export interface ServeReloadRequest {
 export interface ServeReloadResult {
   from: number;
   state: 'starting';
+}
+
+// ---------------------------------------------------------------------------------------------------------------- schedules
+
+export interface ScheduleFireView {
+  plannedAt: string;
+  firedAt: string;
+  status: 'created' | 'skipped';
+  orderTag?: string;
+  reason?: string;
+  manual?: boolean;
+}
+
+export interface ScheduleView {
+  id: string;
+  order: string;
+  tag: string;
+  cadence: string;
+  catchUp: 'latest' | 'none';
+  maxOpen: number;
+  openCount: number;
+  enabled: boolean;
+  paused: boolean;
+  autoPaused: boolean;
+  pausedAt?: string;
+  pausedReason?: string;
+  state: 'active' | 'paused' | 'disabled';
+  nextAt?: string;
+  lastFire?: ScheduleFireView;
+  firesToday: number;
+  kind?: string;
+  worker?: string;
+  priority?: number;
+  needs?: string[];
+}
+
+/** `GET /api/schedules?project=` */
+export interface ScheduleList {
+  project: string;
+  at: string;
+  schedules: ScheduleView[];
+}
+
+/** `POST /api/schedules/:id/run` */
+export interface ScheduleRunResult {
+  ok: true;
+  id: string;
+  status: 'created' | 'skipped' | 'duplicate' | 'paused';
+  plannedAt: string;
+  orderTag?: string;
+  reason?: string;
+  schedule: ScheduleView;
+}
+
+/** `POST /api/schedules/:id/pause` and `POST /api/schedules/:id/resume` */
+export interface ScheduleStateResult {
+  ok: true;
+  id: string;
+  schedule: ScheduleView;
 }

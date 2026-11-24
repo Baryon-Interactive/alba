@@ -1136,6 +1136,30 @@ export const zh: Record<string, string> = {
   'Run {key} has no transcript.': '派工 {key} 没有过程记录。',
   '"after" must be a whole number >= 0.': '"after" 必须是大于等于 0 的整数。',
   '"limit" must be a positive number.': '"limit" 必须是正数。',
+  // schedules
+  'source': '来源',
+  'planned': '计划时间',
+  'This project has no schedules ("schedules:" in the project file).': '这个项目没有配置定时工单（项目文件里的 "schedules:"）。',
+  'No schedule "{id}".': '没有定时任务“{id}”。',
+  'Schedule {id}: created order {tag} (planned {at}).': '定时任务 {id}：已创建工单 {tag}（计划 {at}）。',
+  'Schedule {id}: already ran for {at} (order {tag}).': '定时任务 {id}：在 {at} 已经运行过（工单 {tag}）。',
+  'Schedule {id}: already ran for {at}.': '定时任务 {id}：在 {at} 已经运行过。',
+  'Schedule {id}: skipped ({reason}).': '定时任务 {id}：已跳过（{reason}）。',
+  'Schedule {id} paused.': '定时任务 {id} 已暂停。',
+  'Schedule {id} resumed.': '定时任务 {id} 已恢复。',
+  'schedule {id} created order {tag} (planned {at})': '定时任务 {id} 创建了工单 {tag}（计划 {at}）',
+  'schedule {id} skipped ({reason})': '定时任务 {id} 已跳过（{reason}）',
+  'schedule {id} paused automatically: {reason}': '定时任务 {id} 已自动暂停：{reason}',
+  'last {n} orders ended failed or dropped ({tags})': '最近 {n} 个工单以失败或放弃结束（{tags}）',
+  'daily fire limit ({max}) reached': '已达每日触发上限（{max} 次）',
+  'max_open reached ({open}/{max})': '未结束工单已达上限（{open}/{max}）',
+  'order tag "{tag}" already exists': '工单编号“{tag}”已存在',
+  'work-order file for "{tag}" already exists ({file})': '工单“{tag}”的文件已存在（{file}）',
+  'paused by {actor}': '由 {actor} 暂停',
+  // idempotency
+  'Idempotency-Key must be 1 to 100 characters of letters, digits, "-" and "_".': 'Idempotency-Key 必须为 1 到 100 个字母、数字、“-”或“_”。',
+  'Idempotency-Key "{key}" was already used with a different request.': 'Idempotency-Key “{key}” 已用于另一个不同的请求。',
+  'A request with Idempotency-Key "{key}" is still in progress.': '带有 Idempotency-Key “{key}” 的请求仍在进行中。',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

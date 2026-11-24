@@ -56,8 +56,45 @@ const qs = (params: Record<string, string | number | undefined>) => {
   return s ? `?${s}` : '';
 };
 
-async function write<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
-  return request<T>(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+export interface WriteOptions {
+  idempotencyKey?: string;
+  retries?: number;
+  retryDelayMs?: number;
+}
+
+let keyCounter = 0;
+export function newIdempotencyKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return `ui-${globalThis.crypto.randomUUID().replace(/-/g, '')}`;
+  }
+  keyCounter += 1;
+  return `ui-${Date.now().toString(36)}-${keyCounter}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+let defaultRetryDelayMs = 250;
+export function setWriteRetryDelayMs(ms: number): void {
+  defaultRetryDelayMs = ms;
+}
+
+async function write<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body: unknown, opts: WriteOptions = {}): Promise<T> {
+  const idempotencyKey = opts.idempotencyKey ?? newIdempotencyKey();
+  const maxRetries = opts.retries ?? 2;
+  const retryDelayMs = opts.retryDelayMs ?? defaultRetryDelayMs;
+  const payload = JSON.stringify(body);
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request<T>(path, {
+        method,
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': idempotencyKey },
+        body: payload,
+      });
+    } catch (e) {
+      const retryable = e instanceof ApiFailure && (e.code === 'network' || e.status >= 500);
+      if (!retryable || attempt >= maxRetries) throw e;
+      if (retryDelayMs > 0) await new Promise(resolve => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+    }
+  }
 }
 
 export interface MachineGuide { project: string; registry: string | null; sshConfig: string; publicKeys: { file: string; key: string }[]; platform: string }
@@ -199,6 +236,11 @@ export const api = {
   // : first-pass review
   reviewStats: (project: string, days = 30) => request<import('@api').FirstPassStats>(`/api/review/stats${qs({ project, days })}`),
   firstPassWrong: (project: string, tag: string, note: string) => post<import('@api').FirstPassDisputeResult>(`/api/orders/${enc(tag)}/first-pass-wrong`, { project, note }),
+  // : schedules
+  schedules: (project: string) => request<import('@api').ScheduleList>(`/api/schedules${qs({ project })}`),
+  scheduleRun: (project: string, id: string) => post<import('@api').ScheduleRunResult>(`/api/schedules/${enc(id)}/run`, { project }),
+  schedulePause: (project: string, id: string, reason?: string) => post<import('@api').ScheduleStateResult>(`/api/schedules/${enc(id)}/pause`, { project, ...(reason ? { reason } : {}) }),
+  scheduleResume: (project: string, id: string) => post<import('@api').ScheduleStateResult>(`/api/schedules/${enc(id)}/resume`, { project }),
 };
 
 /** Which file a configuration edit goes to: the project's own file or the shared workers file. */

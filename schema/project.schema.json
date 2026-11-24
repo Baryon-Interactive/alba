@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Alba project configuration",
+  "type": "object",
+  "required": ["id", "name", "root", "work_orders", "state_dir"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "root": { "type": "string", "minLength": 1 },
+    "work_orders": { "type": "string", "minLength": 1 },
+    "state_dir": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "object",
+      "properties": {
+        "backend": { "type": "string", "enum": ["sqlite", "files"] }
+      },
+      "additionalProperties": false
+    },
+    "schedules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "order", "tag"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "order": { "type": "string", "minLength": 1 },
+          "tag": { "type": "string", "minLength": 1 },
+          "every_minutes": { "type": "integer", "minimum": 15 },
+          "daily_at": {
+            "type": "string",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "cron": { "type": "string", "minLength": 9 },
+          "catch_up": {
+            "type": "string",
+            "enum": ["latest", "none"],
+            "default": "latest"
+          },
+          "max_open": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "worker": { "type": "string", "minLength": 1 },
+          "priority": {
+            "type": "integer",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "needs": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        },
+        "oneOf": [
+          { "required": ["every_minutes"] },
+          { "required": ["daily_at"] },
+          { "required": ["cron"] }
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

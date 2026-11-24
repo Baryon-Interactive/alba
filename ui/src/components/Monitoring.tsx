@@ -17,7 +17,7 @@ export function MonitorPanel({ m }: { m: MonitorView }) {
     <Section title={<><Eye className="size-4 text-primary" />{t('Monitor')}</>} actions={<Badge tone={monitorResultTone(m.lastResult)}>{monitorResultLabel(m.lastResult)}</Badge>}>
       <Card><CardContent>
         <dl className="grid gap-y-1 text-sm">
-          <Row label={t('Check')}><span className="font-mono text-xs break-all">{checkLine(m.spec)}</span></Row>
+          {m.spec.check && m.spec.check.length > 0 && <Row label={t('Check')}><span className="font-mono text-xs break-all">{checkLine(m.spec)}</span></Row>}
           {m.spec.cwd && <Row label={t('Folder')}><span className="font-mono text-xs break-all">{m.spec.cwd}</span></Row>}
           <Row label={t('Done when')}>{criterionText(m.spec.done_when)}</Row>
           {m.spec.fail_when && <Row label={t('Failed when')}>{criterionText(m.spec.fail_when)}</Row>}

@@ -59,8 +59,11 @@ A build, a package step or a batch on another machine can take an hour or more. 
 --- end ---
 ```
 
-- `check` is a program and its arguments (no shell). It must be **cheap and read-only**: it prints a status, looks at a log, a file or an exit code, and returns in seconds. It never starts, stops or changes anything. The tool runs it once every pass, in `cwd` (your worktree unless you say otherwise; only your worktree and the folders the project allows are accepted).
-- `done_when` (and optionally `fail_when`) is exactly one of `{"exit_code": 0}`, `{"file_exists": "path"}` or `{"output_matches": "regular expression"}`. `deadline_minutes` is when you want to be called back whatever happens: about one and a half times what the job should take.
+- `check` is a program and its arguments (no shell). It must be **cheap and read-only**: it prints a status, looks at a log, a file or an exit code, and returns in seconds. It never starts, stops or changes anything. The tool runs it once every pass, in `cwd` (your worktree unless you say otherwise; only your worktree and the folders the project allows are accepted). `check` may be omitted when `done_when` (and `fail_when`, if given) only use `order_stage` or `after`.
+- `done_when` (and optionally `fail_when`) is exactly one of `{"exit_code": 0}`, `{"file_exists": "path"}`, `{"output_matches": "regular expression"}`, `{"order_stage": {"tag": "T2", "stage": ["merged", "awaiting-review"]}}` (true when that order in this project reaches one of those stages) or `{"after": "2026-11-25T02:00:00Z"}` (true once the clock passes that ISO time). Examples without `check`:
+  - Wait for another order: `{"done_when":{"order_stage":{"tag":"T2","stage":["merged","awaiting-review"]}},"fail_when":{"order_stage":{"tag":"T2","stage":["failed","cancelled"]}},"deadline_minutes":240,"note":"T2 is ready; rebase and finish."}`
+  - Wait until a time: `{"done_when":{"after":"2026-11-25T02:00:00Z"},"deadline_minutes":480,"note":"Window is open; run the verification pass."}`
+- `deadline_minutes` is when you want to be called back whatever happens: about one and a half times what the job should take.
 - Commit and leave the tree clean first. Then do nothing else: do not keep working on the job's inputs.
 - When the job is over, failed, or the deadline passes, you are continued in the **same session**, first, ahead of new work. The first thing you read is the result and the end of the check's output, with your own `note`. Use the note to leave yourself the next step.
 - Do not use `monitoring` for something a person must decide (that is `waiting`), or for a command that is quick (just wait for it), or for a job that dies when you stop.

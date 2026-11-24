@@ -1,4 +1,4 @@
-import { REPORT_STATUSES, type MonitorCriterion, type MonitorSpec, type OptionInput, type ReportStatus, type WaitingFor } from './model.ts';
+import { REPORT_STATUSES, STAGES, type MonitorCriterion, type MonitorSpec, type OptionInput, type ReportStatus, type Stage, type WaitingFor } from './model.ts';
 import { fail } from '../i18n.ts';
 
 /** The structured report a worker gives at the end of a round. */
@@ -87,9 +87,11 @@ export function validateReport(value: unknown): ReportInput {
   return { status, summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
 }
 
-const CRITERIA = ['exit_code', 'file_exists', 'output_matches'] as const;
+const CRITERIA = ['exit_code', 'file_exists', 'output_matches', 'order_stage', 'after'] as const;
 
-/** One condition of a monitor: an object with exactly one of exit_code (a whole number), file_exists (a path) or output_matches (a regular expression). */
+const criterionNeedsCheck = (c: MonitorCriterion): boolean => 'exit_code' in c || 'file_exists' in c || 'output_matches' in c;
+
+/** One condition of a monitor: an object with exactly one of exit_code, file_exists, output_matches, order_stage or after. */
 export function validateCriterion(value: unknown, at: string): MonitorCriterion {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) fail('Report "{at}" must be an object with one of: {keys}.', { at, keys: CRITERIA.join(', ') });
   const entries = Object.entries(value as Record<string, unknown>);
@@ -98,6 +100,23 @@ export function validateCriterion(value: unknown, at: string): MonitorCriterion 
   if (key === 'exit_code') {
     if (typeof v !== 'number' || !Number.isInteger(v)) fail('Report "{at}.exit_code" must be a whole number.', { at });
     return { exit_code: v };
+  }
+  if (key === 'order_stage') {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) fail('Report "{at}.order_stage" must be an object with "tag" and "stage".', { at });
+    const os = v as Record<string, unknown>;
+    const extra = Object.keys(os).filter(k => k !== 'tag' && k !== 'stage');
+    if (extra.length) fail('Report "{at}.order_stage" has unknown field(s): {fields}.', { at, fields: extra.join(', ') });
+    if (typeof os.tag !== 'string' || !os.tag.trim()) fail('Report "{at}.order_stage.tag" must be a non-empty order tag.', { at });
+    if (!Array.isArray(os.stage) || !os.stage.length || os.stage.some(s => typeof s !== 'string' || !(STAGES as readonly string[]).includes(s))) {
+      fail('Report "{at}.order_stage.stage" must be a non-empty list of stages ({stages}).', { at, stages: STAGES.join(', ') });
+    }
+    return { order_stage: { tag: os.tag.trim(), stage: [...new Set(os.stage as Stage[])] } };
+  }
+  if (key === 'after') {
+    if (typeof v !== 'string' || !v.trim() || !/^\d{4}-\d{2}-\d{2}T/.test(v.trim()) || !Number.isFinite(Date.parse(v.trim()))) {
+      fail('Report "{at}.after" must be an ISO 8601 timestamp.', { at });
+    }
+    return { after: v.trim() };
   }
   if (typeof v !== 'string' || !v.trim()) fail('Report "{at}.{key}" must be a non-empty string.', { at, key });
   if (key === 'output_matches') { try { new RegExp(v, 'u'); } catch (e) { fail('Report "{at}.output_matches" is not a valid regular expression: {error}', { at, error: (e as Error).message }); } return { output_matches: v }; }
@@ -111,15 +130,27 @@ export function validateMonitor(value: unknown): MonitorSpec {
   const known = ['check', 'cwd', 'done_when', 'fail_when', 'deadline_minutes', 'note', 'pid'];
   const extra = Object.keys(m).filter(k => !known.includes(k));
   if (extra.length) fail('Unknown monitor field(s): {fields}. Allowed: {allowed}.', { fields: extra.join(', '), allowed: known.join(', ') });
-  if (!Array.isArray(m.check) || !m.check.length || m.check.some(x => typeof x !== 'string' || !x)) fail('Report "monitor.check" must be a list: the program, then its arguments (no shell is used).');
   if (m.cwd !== undefined && (typeof m.cwd !== 'string' || !m.cwd.trim())) fail('Report "monitor.cwd" must be a folder.');
   if (typeof m.deadline_minutes !== 'number' || !Number.isFinite(m.deadline_minutes) || m.deadline_minutes < 1 || m.deadline_minutes > 10080) fail('Report "monitor.deadline_minutes" must be a number from 1 to 10080 (a week).');
   if (m.note !== undefined && typeof m.note !== 'string') fail('Report "monitor.note" must be text.');
   if (m.pid !== undefined && (!Number.isInteger(m.pid) || Number(m.pid) <= 0)) fail('Report "monitor.pid" must be a positive integer.');
   if (m.done_when === undefined) fail('Report "monitor.done_when" is required: when is the job over?');
+  const done_when = validateCriterion(m.done_when, 'monitor.done_when');
+  const fail_when = m.fail_when !== undefined ? validateCriterion(m.fail_when, 'monitor.fail_when') : undefined;
+  const requiresCheck = criterionNeedsCheck(done_when) || (fail_when !== undefined && criterionNeedsCheck(fail_when));
+  if (m.check !== undefined || requiresCheck) {
+    if (!Array.isArray(m.check) || !m.check.length || m.check.some(x => typeof x !== 'string' || !x)) {
+      fail('Report "monitor.check" must be a list: the program, then its arguments (no shell is used).');
+    }
+  }
   return {
-    check: m.check as string[], ...(m.pid !== undefined ? { pid: Number(m.pid) } : {}), ...(typeof m.cwd === 'string' ? { cwd: m.cwd.trim() } : {}), done_when: validateCriterion(m.done_when, 'monitor.done_when'),
-    ...(m.fail_when !== undefined ? { fail_when: validateCriterion(m.fail_when, 'monitor.fail_when') } : {}), deadline_minutes: m.deadline_minutes, ...(typeof m.note === 'string' && m.note.trim() ? { note: m.note.trim() } : {}),
+    ...(m.check !== undefined ? { check: m.check as string[] } : {}),
+    ...(m.pid !== undefined ? { pid: Number(m.pid) } : {}),
+    ...(typeof m.cwd === 'string' ? { cwd: m.cwd.trim() } : {}),
+    done_when,
+    ...(fail_when !== undefined ? { fail_when } : {}),
+    deadline_minutes: m.deadline_minutes,
+    ...(typeof m.note === 'string' && m.note.trim() ? { note: m.note.trim() } : {}),
   };
 }
 

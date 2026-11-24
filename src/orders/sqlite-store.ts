@@ -9,10 +9,43 @@ import type { QuotaReading } from '../workers/quota.ts';
 const HAS_BALANCE = "json_extract(reading, '$.ok') = 1 AND json_extract(reading, '$.balance.amount') IS NOT NULL";
 export interface QuotaHistoryOptions { source?: string; limit?: number }
 
+export interface ScheduleFireRow {
+  schedule_id: string;
+  planned_at: string;
+  fired_at: string;
+  status: 'created' | 'skipped';
+  order_tag?: string;
+  reason?: string;
+  manual: boolean;
+}
+
+export interface ScheduleStateRow {
+  schedule_id: string;
+  paused: boolean;
+  paused_at?: string;
+  paused_reason?: string;
+  auto_paused: boolean;
+  resumed_at?: string;
+  updated_at: string;
+}
+
+export interface IdempotencyReceiptRow {
+  idempotency_key: string;
+  method: string;
+  route: string;
+  body_hash: string;
+  status: 'in_progress' | 'completed';
+  status_code?: number;
+  response_body?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** SQLite keeps the schema version independent from the optimistic document version. */
 export class SqliteStore implements OrderStore {
   readonly db: DatabaseSync;
   private depth = 0;
+  private schedulesReady = false;
   constructor(dir: string) {
     mkdirSync(dir, { recursive: true });
     this.db = new DatabaseSync(path.join(dir, 'state.sqlite'));
@@ -21,13 +54,13 @@ export class SqliteStore implements OrderStore {
     if (this.db.prepare('PRAGMA journal_mode').get()?.journal_mode !== 'wal') this.db.exec('PRAGMA journal_mode=WAL');
     const schema = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get();
     const version = schema ? this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version as number | null : undefined;
-    if (version && version > 7) { this.db.close(); throw new Error(t('State schema {version} is newer than this program supports.', { version })); }
-    if (version === 6 || version === 7) return;
+    if (version && version > 8) { this.db.close(); throw new Error(t('State schema {version} is newer than this program supports.', { version })); }
+    if (version !== undefined && version !== null && version >= 6 && version <= 8) return;
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
       const current = this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version as number | null;
-      if (current && current > 7) throw new Error(t('State schema {version} is newer than this program supports.', { version: current }));
+      if (current && current > 8) throw new Error(t('State schema {version} is newer than this program supports.', { version: current }));
       if (!current) {
         this.db.exec(`
           CREATE TABLE orders (tag TEXT PRIMARY KEY, document TEXT NOT NULL, updated TEXT NOT NULL, version INTEGER NOT NULL);
@@ -86,16 +119,185 @@ export class SqliteStore implements OrderStore {
 
   /** Document intake is an optional module. Existing projects keep schema 6 until it is first used. */
   ensureDesignDocsSchema(): void {
-    const current = Number(this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version ?? 0);
-    if (current >= 7) return;
+    if (this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'design_docs'").get()) return;
     this.transaction(() => {
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS design_docs (id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('file','db')), path TEXT, doc_order INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('approved','draft','retired')));
         CREATE TABLE IF NOT EXISTS design_doc_versions (doc_id TEXT NOT NULL REFERENCES design_docs(id) ON DELETE CASCADE, version INTEGER NOT NULL, body TEXT NOT NULL, blocks TEXT NOT NULL CHECK(json_valid(blocks)), hash TEXT NOT NULL, created TEXT NOT NULL, author TEXT NOT NULL, PRIMARY KEY(doc_id, version));
         CREATE UNIQUE INDEX IF NOT EXISTS design_doc_versions_hash ON design_doc_versions(doc_id, hash);
-        CREATE INDEX IF NOT EXISTS design_docs_order ON design_docs(doc_order, id);
-        INSERT INTO schema_version VALUES (7)`);
+        CREATE INDEX IF NOT EXISTS design_docs_order ON design_docs(doc_order, id);`);
+      const current = Number(this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version ?? 0);
+      if (current < 7) this.db.exec('INSERT INTO schema_version VALUES (7)');
     });
+  }
+
+  private hasSchedulesTables(): boolean {
+    if (this.schedulesReady) return true;
+    const found = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schedule_fires'").get();
+    if (found) this.schedulesReady = true;
+    return this.schedulesReady;
+  }
+
+  /** Schedules and API idempotency receipts share schema version 8; created lazily on first write so reads stay read-only. */
+  ensureSchedulesSchema(): void {
+    if (this.hasSchedulesTables()) return;
+    this.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS schedule_fires (
+          schedule_id TEXT NOT NULL,
+          planned_at TEXT NOT NULL,
+          fired_at TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('created','skipped')),
+          order_tag TEXT,
+          reason TEXT,
+          manual INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(schedule_id, planned_at)
+        );
+        CREATE INDEX IF NOT EXISTS schedule_fires_schedule_at ON schedule_fires(schedule_id, planned_at DESC);
+        CREATE TABLE IF NOT EXISTS schedule_state (
+          schedule_id TEXT PRIMARY KEY,
+          paused INTEGER NOT NULL DEFAULT 0,
+          paused_at TEXT,
+          paused_reason TEXT,
+          auto_paused INTEGER NOT NULL DEFAULT 0,
+          resumed_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS idempotency_receipts (
+          idempotency_key TEXT PRIMARY KEY,
+          method TEXT NOT NULL,
+          route TEXT NOT NULL,
+          body_hash TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('in_progress','completed')),
+          status_code INTEGER,
+          response_body TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idempotency_receipts_created ON idempotency_receipts(created_at);`);
+      const current = Number(this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version ?? 0);
+      if (current < 8) this.db.exec('INSERT INTO schema_version VALUES (8)');
+    });
+    this.schedulesReady = true;
+  }
+
+  private toScheduleFire(row: Record<string, unknown>): ScheduleFireRow {
+    return {
+      schedule_id: row.schedule_id as string,
+      planned_at: row.planned_at as string,
+      fired_at: row.fired_at as string,
+      status: row.status as 'created' | 'skipped',
+      ...(row.order_tag !== null ? { order_tag: row.order_tag as string } : {}),
+      ...(row.reason !== null ? { reason: row.reason as string } : {}),
+      manual: Number(row.manual) === 1,
+    };
+  }
+
+  getScheduleFire(scheduleId: string, plannedAt: string): ScheduleFireRow | undefined {
+    if (!this.hasSchedulesTables()) return undefined;
+    const row = this.db.prepare('SELECT * FROM schedule_fires WHERE schedule_id = ? AND planned_at = ?').get(scheduleId, plannedAt);
+    return row ? this.toScheduleFire(row) : undefined;
+  }
+
+  listScheduleFires(scheduleId?: string): ScheduleFireRow[] {
+    if (!this.hasSchedulesTables()) return [];
+    const rows = scheduleId !== undefined
+      ? this.db.prepare('SELECT * FROM schedule_fires WHERE schedule_id = ? ORDER BY planned_at ASC, fired_at ASC').all(scheduleId)
+      : this.db.prepare('SELECT * FROM schedule_fires ORDER BY planned_at ASC, fired_at ASC').all();
+    return rows.map(r => this.toScheduleFire(r));
+  }
+
+  insertScheduleFire(fire: ScheduleFireRow): boolean {
+    this.ensureSchedulesSchema();
+    const res = this.db.prepare(
+      'INSERT OR IGNORE INTO schedule_fires(schedule_id, planned_at, fired_at, status, order_tag, reason, manual) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(fire.schedule_id, fire.planned_at, fire.fired_at, fire.status, fire.order_tag ?? null, fire.reason ?? null, fire.manual ? 1 : 0);
+    return Number(res.changes) > 0;
+  }
+
+  private toScheduleState(row: Record<string, unknown>): ScheduleStateRow {
+    return {
+      schedule_id: row.schedule_id as string,
+      paused: Number(row.paused) === 1,
+      ...(row.paused_at !== null ? { paused_at: row.paused_at as string } : {}),
+      ...(row.paused_reason !== null ? { paused_reason: row.paused_reason as string } : {}),
+      auto_paused: Number(row.auto_paused) === 1,
+      ...(row.resumed_at !== null ? { resumed_at: row.resumed_at as string } : {}),
+      updated_at: row.updated_at as string,
+    };
+  }
+
+  getScheduleState(scheduleId: string): ScheduleStateRow | undefined {
+    if (!this.hasSchedulesTables()) return undefined;
+    const row = this.db.prepare('SELECT * FROM schedule_state WHERE schedule_id = ?').get(scheduleId);
+    return row ? this.toScheduleState(row) : undefined;
+  }
+
+  allScheduleStates(): ScheduleStateRow[] {
+    if (!this.hasSchedulesTables()) return [];
+    return this.db.prepare('SELECT * FROM schedule_state ORDER BY schedule_id ASC').all().map(r => this.toScheduleState(r));
+  }
+
+  setScheduleState(state: ScheduleStateRow): void {
+    this.ensureSchedulesSchema();
+    this.db.prepare(
+      `INSERT INTO schedule_state(schedule_id, paused, paused_at, paused_reason, auto_paused, resumed_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(schedule_id) DO UPDATE SET
+         paused = excluded.paused,
+         paused_at = excluded.paused_at,
+         paused_reason = excluded.paused_reason,
+         auto_paused = excluded.auto_paused,
+         resumed_at = excluded.resumed_at,
+         updated_at = excluded.updated_at`
+    ).run(state.schedule_id, state.paused ? 1 : 0, state.paused_at ?? null, state.paused_reason ?? null, state.auto_paused ? 1 : 0, state.resumed_at ?? null, state.updated_at);
+  }
+
+  private toIdempotencyReceipt(row: Record<string, unknown>): IdempotencyReceiptRow {
+    return {
+      idempotency_key: row.idempotency_key as string,
+      method: row.method as string,
+      route: row.route as string,
+      body_hash: row.body_hash as string,
+      status: row.status as 'in_progress' | 'completed',
+      ...(row.status_code !== null ? { status_code: Number(row.status_code) } : {}),
+      ...(row.response_body !== null ? { response_body: row.response_body as string } : {}),
+      created_at: row.created_at as string,
+      updated_at: row.updated_at as string,
+    };
+  }
+
+  getIdempotencyReceipt(key: string): IdempotencyReceiptRow | undefined {
+    if (!this.hasSchedulesTables()) return undefined;
+    const row = this.db.prepare('SELECT * FROM idempotency_receipts WHERE idempotency_key = ?').get(key);
+    return row ? this.toIdempotencyReceipt(row) : undefined;
+  }
+
+  purgeExpiredIdempotencyReceipts(cutoffIso: string): number {
+    if (!this.hasSchedulesTables()) return 0;
+    const res = this.db.prepare('DELETE FROM idempotency_receipts WHERE created_at < ?').run(cutoffIso);
+    return Number(res.changes);
+  }
+
+  insertIdempotencyReceipt(receipt: IdempotencyReceiptRow): boolean {
+    this.ensureSchedulesSchema();
+    const res = this.db.prepare(
+      `INSERT OR IGNORE INTO idempotency_receipts(idempotency_key, method, route, body_hash, status, status_code, response_body, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(receipt.idempotency_key, receipt.method, receipt.route, receipt.body_hash, receipt.status, receipt.status_code ?? null, receipt.response_body ?? null, receipt.created_at, receipt.updated_at);
+    return Number(res.changes) > 0;
+  }
+
+  completeIdempotencyReceipt(key: string, statusCode: number, responseBody: string, updatedAt: string): void {
+    this.ensureSchedulesSchema();
+    this.db.prepare(
+      `UPDATE idempotency_receipts SET status = 'completed', status_code = ?, response_body = ?, updated_at = ? WHERE idempotency_key = ?`
+    ).run(statusCode, responseBody, updatedAt, key);
+  }
+
+  deleteIdempotencyReceipt(key: string): void {
+    if (!this.hasSchedulesTables()) return;
+    this.db.prepare('DELETE FROM idempotency_receipts WHERE idempotency_key = ?').run(key);
   }
 
   counts(): { orders: number; events: number; meta: number; 'quota-history': number } {

@@ -11,6 +11,7 @@ import { ErrorBox, PageHeader, Section, TagLink } from '@/components/common';
 import { errorText, useProjectId, useSession, useTick } from '@/lib/queries';
 import { ago, dateTime } from '@/lib/format';
 import { ConfigPanel, DispatchSettings, configKey, useEditToggle } from '@/components/ConfigSections';
+import { SchedulesSection } from '@/components/SchedulesSection';
 import { t } from '@/i18n';
 
 const MODE = (m: string) => (m === 'card' ? t('offer a card to start') : m === 'resume' ? t('resume') : t('start'));
@@ -99,6 +100,10 @@ export function TickPage() {
           <label className="flex items-start gap-2 text-sm"><Checkbox checked={real} onCheckedChange={v => setReal(v === true)} className="mt-0.5" /><span>{t('really run it (start and resume workers); unchecked it only shows what it would do')}</span></label>
           <Button className="mt-3" variant={real ? 'default' : 'outline'} disabled={!real || tick.isPending} onClick={() => setConfirm(true)}><Play />{t('Tick once now')}</Button>
         </CardContent></Card>
+      </div>
+
+      <div className="mb-5">
+        <SchedulesSection project={project} />
       </div>
 
       {tick.isError && <ErrorBox error={errorText(tick.error)} />}
