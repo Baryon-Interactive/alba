@@ -973,6 +973,12 @@ export interface ActionResult {
 
 /** `POST /api/orders/:tag/say`: a message for a running order. Without `restart` it is left in the worktree inbox. With `restart` the run's own process is stopped and a new run carries the message. */
 export interface SayRequest { project?: string; text: string; restart?: boolean; reply?: string }
+export interface GroupSayResult {
+  group: string;
+  dryRun: boolean;
+  results: { tag: string; delivery?: 'live' | 'steer' | 'file' | 'queued'; error?: string }[];
+}
+
 export interface SayResult {
   ok: true;
   tag: string;

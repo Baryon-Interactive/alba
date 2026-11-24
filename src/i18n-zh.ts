@@ -4,6 +4,11 @@
 // A text with no entry here comes back in English.
 
 export const zh: Record<string, string> = {
+  '--restart cannot be used with a group.': '群发消息时不能使用 --restart。',
+  '--reply needs a single order.': '--reply 只能用于单个工单。',
+  '--dry-run needs a message group.': '--dry-run 需要指定工单组。',
+  'Unknown message group "{group}".': '未知的消息组“{group}”。',
+  'No matching orders.': '没有匹配的工单。',
   'stale report': '报告属于先前的运行',
   'Report "run" must be a non-empty run id.': '报告的 run 字段必须为非空运行编号。',
   '{file}: "{at}.precheck" must be a command or a program and arguments.': '{file}：{at}.precheck 必须是命令或程序及其参数。',

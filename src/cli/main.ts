@@ -53,7 +53,7 @@ import { approve, rework } from '../run/review.ts';
 import { startServer } from '../web/server.ts';
 import { keyFile, newKey, writeKeyFile } from '../web/auth.ts';
 import { answerOrder } from '../run/answer.ts';
-import { sayToOrder } from '../run/say.ts';
+import { sayToGroup, sayToOrder } from '../run/say.ts';
 import { readInbox } from '../run/inbox.ts';
 import { requeueUndeliveredInbox } from '../run/messages.ts';
 import { formatStatus, recentEndedStatusRows, statusRows, unreachableStatusLines, watchOrder } from './live.ts';
@@ -185,6 +185,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
                                              hand a running alba serve over to new code on the same port without stopping open runs (exit 0 on done, 1 on refusal or timeout)
   answer <TAG> (--text <answer> | --choice N [--text note]) [--worker id]
                                              answer the question an order waits on (--choice picks option N of its options): the worker's own session continues when its engine can, else a new run carries the answer
+  say <group> [--text <message>] [--dry-run]    message @running, @monitoring, @waiting, @worker:<id> or @all
   say <TAG> --text <message> [--reply id] [--restart]    leave a message or answer for a running order. --restart stops its process and starts again
   web [--port 4790] [--allow-origin url]... [--sign-in] --project f.yaml...
                                              the board: a server-rendered page on 127.0.0.1 (several --project allowed)
@@ -1060,12 +1061,21 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
   }
 
   if (group === 'say') {
-    need0(command, 'alba say <TAG> --text <message> [--restart]');
-    if (!values.text?.trim()) fail('A message needs its text (--text).');
+    need0(command, 'alba say <TAG | group> --text <message> [--restart | --dry-run]');
+    const isGroup = command!.startsWith('@');
+    if (!isGroup && values['dry-run']) fail('--dry-run needs a message group.');
+    if (!isGroup && !values.text?.trim()) fail('A message needs its text (--text).');
     let workers = { file: '', workers: [] as ReturnType<typeof workersOf>['workers'], quota_sources: {} };
-    if (values.restart) workers = workersOf(values.workers, cfg);
+    if (values.restart && !isGroup) workers = workersOf(values.workers, cfg);
     else { try { workers = workersOf(values.workers, cfg); } catch { /* projects without a workers file fall back to run.engine */ } }
-    return sayToOrder({ project: cfg, orders, workers, probes: systemProbes }, command!, values.text, { restart: values.restart, reply: values.reply }).message;
+    const ctx = { project: cfg, orders, workers, probes: systemProbes };
+    if (isGroup) {
+      const result = sayToGroup(ctx, command!, values.text ?? '', { dryRun: values['dry-run'], restart: values.restart, reply: values.reply });
+      if (result.results.some(row => row.error)) exitCode = 1;
+      if (values.json) return JSON.stringify(result, null, 2);
+      return result.results.map(r => [r.tag, r.delivery ?? r.error].filter(Boolean).join('  ')).join('\n') || t('No matching orders.');
+    }
+    return sayToOrder(ctx, command!, values.text, { restart: values.restart, reply: values.reply }).message;
   }
 
   if (group === 'answer') {

@@ -9,7 +9,11 @@ import { pickupOutbox, threadOf, unanswered } from '../src/run/messages.ts';
 import { answerOrder } from '../src/run/answer.ts';
 import { nudgeSentence } from '../src/run/nudge.ts';
 import { pendingNotes, promptFor } from '../src/run/prompt.ts';
-import { sayToOrder } from '../src/run/say.ts';
+import type { GroupSayResult } from '../src/api/types.ts';
+import { startServer } from '../src/web/server.ts';
+import { stateStore } from '../src/orders/backend.ts';
+import { Orders } from '../src/orders/service.ts';
+import { sayToGroup, sayToOrder } from '../src/run/say.ts';
 import { startRun } from '../src/run/launch.ts';
 import type { Probes } from '../src/tick/gather.ts';
 import { tick } from '../src/tick/gather.ts';
@@ -23,6 +27,55 @@ const WORKERS = {
     { id: 'coder', engine: 'x', on_limit: 'rotate', concurrency: 1, launch: { template: 'c1', program: 'coder', args: ['run', '{session_args}', '{prompt_file}'], session: { new: ['-s', '{session_id}'], resume: ['-r', '{session_id}'] } } },
   ],
 };
+
+test('group messages resolve open runs, monitoring and waiting, then isolate each delivery', () => {
+  const f = fixture(), ctx = { ...f, workers: validateWorkers(WORKERS, 'w.yaml'), probes: probes() };
+  const { orders } = f;
+  for (const tag of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) orders.add({ tag, title: 'Demo', kind: 'task' });
+  orders.runStart('A', { worker: 'demo' }); // no worktree: delivery must fail without stopping B
+  writeFileSync(path.join(f.project.work_orders, 'B-demo.md'), '# Demo');
+  orders.act('B', 'queue');
+  startRun(ctx, 'B', 'coder');
+  orders.report('C', { ...ready, status: 'monitoring', monitor: { done_when: { after: '2026-02-01T00:00:00Z' }, deadline_minutes: 30 } });
+  orders.report('D', { ...ready, status: 'waiting', question: 'Which build?' });
+  orders.report('E', { ...ready, status: 'blocked' });
+  orders.report('F', ready);
+  const targets = (group: string) => sayToGroup(ctx, group, '', { dryRun: true }).results;
+  for (const [group, tags] of Object.entries({
+    '@running': ['A', 'B'], '@worker:coder': ['B'], '@worker:demo': ['A'],
+    '@monitoring': ['C'], '@waiting': ['D', 'E'], '@all': ['A', 'B', 'C', 'D', 'E'],
+  })) assert.deepEqual(targets(group), tags.map(tag => ({ tag })));
+  assert.throws(() => sayToGroup(ctx, '@all', 'Again', { restart: true }), /restart/);
+  assert.deepEqual(readInbox(orders.get('B').order.worktree!), []);
+  assert.equal(pendingNotes(orders.get('C')).length, 0);
+  const sent = sayToGroup(ctx, '@all', 'Check the demo');
+  assert.match(sent.results[0].error!, /no worktree/);
+  assert.deepEqual(sent.results.slice(1).map(r => r.delivery), ['file', 'queued', 'queued', 'queued']);
+  assert.equal(readInbox(orders.get('B').order.worktree!)[0].text, 'Check the demo');
+  assert.equal(pendingNotes(orders.get('E'))[0].text, 'Check the demo');
+});
+
+test('POST /api/say previews, refuses restart, and queues a waiting order', async () => {
+  const { project } = fixture();
+  const orders = new Orders(stateStore(project));
+  orders.add({ tag: 'T1', title: 'Demo', kind: 'task' });
+  orders.report('T1', { ...ready, status: 'blocked' });
+  const server = startServer({ projects: [project], port: 0, background: false, probes: probes() });
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  try {
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/say`;
+    const send = (extra: object) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project: project.id, group: '@waiting', text: 'Check again', ...extra }) });
+    const preview = await send({ dryRun: true });
+    assert.equal(preview.status, 200);
+    assert.deepEqual((await preview.json() as GroupSayResult).results, [{ tag: 'T1' }]);
+    assert.equal((await send({ restart: true })).status, 400);
+    assert.equal(pendingNotes(orders.get('T1')).length, 0);
+    const sent = await send({});
+    assert.equal(sent.status, 200);
+    assert.deepEqual((await sent.json() as GroupSayResult).results, [{ tag: 'T1', delivery: 'queued' }]);
+    assert.equal(pendingNotes(orders.get('T1')).length, 1);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
 
 test('a message without an open run waits in notes and the next prompt, without resetting review or monitoring', () => {
   const f = fixture(), workers = validateWorkers(WORKERS, 'w.yaml');

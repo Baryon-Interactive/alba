@@ -33,7 +33,7 @@ import { UserError, defaultLang, t, withLang, type Lang } from '../i18n.ts';
 import { answerOrder } from '../run/answer.ts';
 import { readInbox } from '../run/inbox.ts';
 import { liveActivityTimes } from '../run/messages.ts';
-import { sayToOrder } from '../run/say.ts';
+import { sayToGroup, sayToOrder } from '../run/say.ts';
 import { ownerOf } from '../usage/spend.ts';
 import { sayDeliveryMode } from '../workers/config.ts';
 import { startRun, type RunContext } from '../run/launch.ts';
@@ -1248,6 +1248,15 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       }
       const after = view.orders.stage(view.orders.get(tag));
       return done<A.ActionResult>(200, { ok: true, tag, stage: after.stage, why: after.why, ...(message ? { message } : {}), ...(run ? { run } : {}) });
+    }
+
+    if (parts[0] === 'say' && parts.length === 1) {
+      if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') throw new ApiFailure(400, 'bad_request', '"dryRun" must be true or false.');
+      if (body.restart !== undefined) throw new ApiFailure(400, 'bad_request', 'Group messages do not support restart.');
+      const group = str(body, 'group', true)!;
+      const text = str(body, 'text', !body.dryRun) ?? '';
+      const sayCtx = { project: view.config, orders: view.orders, workers: ctx.workers ?? { file: '', workers: [], quota_sources: {} }, probes: ctx.probes };
+      return done<A.GroupSayResult>(200, sayToGroup(sayCtx, group, text, { dryRun: body.dryRun === true }));
     }
 
     if (parts[0] === 'orders' && parts[2] === 'say' && parts.length === 3) {
