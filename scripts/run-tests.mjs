@@ -7,10 +7,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 /** Start real serves, processes or probes and measure time: never run them next to other files. */
-const SERIAL = ['serve-reload', 'serve-isolation', 'serve-events', 'machines', 'nightly-gates'];
+const SERIAL = ['serve-reload', 'serve-isolation', 'serve-events', 'machines', 'nightly-gates', 'nightly-gates-scheduling'];
 /** Slow integration files that `test:fast` leaves out (`pnpm test` runs them). */
 const SLOW = [...SERIAL, 'acceptance', 'design-integration', 'evidence-gates-real', 'editors', 'remote-workers'];
-/** Bound each file, including multi-minute subprocess integration suites on loaded hosts. */
+/** Keep the Node runner's ten-minute test timeout. Subprocess integration files can take several minutes. */
 const TIMEOUT_MS = 10 * 60_000;
 
 const mode = process.argv[2] ?? 'full';
@@ -18,7 +18,7 @@ const extra = process.argv.slice(3);
 const all = readdirSync('test').filter(f => f.endsWith('.test.ts')).sort();
 const pick = (names) => all.filter(f => names.includes(f.slice(0, -'.test.ts'.length))).map(f => `test/${f}`);
 const omit = (names) => all.filter(f => !names.includes(f.slice(0, -'.test.ts'.length))).map(f => `test/${f}`);
-const timingDir = mode === 'full' ? mkdtempSync(path.join(tmpdir(), 'alba-test-times-')) : undefined;
+const timingDir = mode === 'fast' || mode === 'serial' ? undefined : mkdtempSync(path.join(tmpdir(), 'alba-test-times-'));
 const timings = [];
 function reporters(concurrency) {
   if (!timingDir) return [];
