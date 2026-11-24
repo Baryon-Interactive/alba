@@ -128,7 +128,7 @@ export class Orders {
     }
   }
 
-  add(input: { phases?: 'none'; check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
+  add(input: { parent?: string; phases?: 'none'; check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -141,6 +141,8 @@ export class Orders {
       if (needs.some(n => n.toLowerCase() === input.tag.toLowerCase())) fail('An order cannot need itself.');
       const at = this.now();
       const order: Order = { tag: input.tag, title: input.title.trim(), kind: input.kind, needs, created: at, updated: at };
+      if (input.parent) order.parent = input.parent;
+      if (input.tag.includes('.') && (!input.parent || input.tag.slice(0, -2) !== input.parent)) fail('Numbered child tags are reserved for splits.');
       if (input.phases !== undefined) order.phases = phasesOverride(input.phases);
       if (input.check !== undefined) {
         if (!['independent', 'none'].includes(input.check)) fail('Check must be independent or none.');
@@ -262,8 +264,15 @@ export class Orders {
     });
   }
 
+  recordSplit(tag: string, report: number, children: string[], branch: string): void {
+    const doc = this.get(tag);
+    doc.actions.push({ seq: nextSeq(doc), kind: 'accept-split', at: this.now(), author: this.actor, report, children, branch });
+    this.save(doc, 'action-accept-split', { report, children, branch });
+  }
+
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
   act(tag: string, kind: ActionKind, options: { phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
+    if (kind === 'accept-split') fail('Accept the split proposal through the split decision.');
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -323,7 +332,13 @@ export class Orders {
       if (options.author?.trim()) action.author = options.author.trim();
       if (options.requeuedFrom) action.requeued_from = options.requeuedFrom;
       if (options.commit?.trim()) action.commit = options.commit.trim();
-      if (kind === 'rework' && options.phase) action.phase = options.phase;
+      if (kind === 'rework') {
+        const proposal = doc.reports.at(-1);
+        const splitPhase = proposal?.subtasks && doc.runs.find(r => r.id === proposal.run)?.phase;
+        if (splitPhase && now.waitingFor === 'card') action.phase = splitPhase;
+        else if (options.phase) action.phase = options.phase;
+        if (doc.actions.some(a => a.kind === 'accept-split') && action.phase && doc.runs.some(r => r.split_kinds && r.phase === action.phase)) fail('An accepted split cannot be repeated.');
+      }
       if (options.choice !== undefined) action.choice = options.choice;
       if (options.imported) action.imported = true;
       if (options.override) action.override = true;
@@ -353,6 +368,7 @@ export class Orders {
         released = true;
       }
       if (doc.order.planned || (['merged', 'cancelled', 'held'].includes(stage) && !imported)) fail('{tag} is {stage}; a run cannot start.', { tag: doc.order.tag, stage });
+      if (stage === 'awaiting-user' && doc.reports.at(-1)?.subtasks) fail('Decide the split before starting a run.');
       const open = doc.runs.find(r => r.ended === undefined);
       if (open) fail('{tag} already has an open run ({id}). End it first with run-end.', { tag: doc.order.tag, id: open.id });
       if (!input.worker.trim()) fail('A run needs a worker (--worker).');

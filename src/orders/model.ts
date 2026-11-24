@@ -217,6 +217,7 @@ export interface Report {
 export interface Action {
   report?: number;
   children?: string[];
+  branch?: string;
   phase?: string;
   queued?: boolean; // A message for the next run; does not reset the current stage.
   lint?: boolean;

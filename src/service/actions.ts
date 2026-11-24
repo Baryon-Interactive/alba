@@ -1,3 +1,4 @@
+import { acceptSplit } from './split.ts';
 import { orderPhases } from '../orders/phases.ts';
 import type { ProjectConfig } from '../config.ts';
 import { fail, t } from '../i18n.ts';
@@ -6,7 +7,7 @@ import type { Orders } from '../orders/service.ts';
 import { approve, rework } from '../run/review.ts';
 
 /** The decisions a person can make about an order. The command line and the web board both go through `humanAction`. */
-export const HUMAN_ACTIONS = ['queue', 'cancel', 'hold', 'stop', 'release', 'approve', 'rework', 'review-manual', 'review-auto', 'check-independent', 'check-none'] as const;
+export const HUMAN_ACTIONS = ['accept-split', 'queue', 'cancel', 'hold', 'stop', 'release', 'approve', 'rework', 'review-manual', 'review-auto', 'check-independent', 'check-none'] as const;
 export type HumanAction = (typeof HUMAN_ACTIONS)[number];
 
 export function isHumanAction(value: string): value is HumanAction {
@@ -40,6 +41,7 @@ export function humanAction(project: ProjectConfig, orders: Orders, tag: string,
   switch (action) {
     case 'check-independent': case 'check-none': orders.update(tag, { check: action === 'check-independent' ? 'independent' : 'none' }); break;
     case 'review-manual': case 'review-auto': orders.update(tag, { review: action === 'review-manual' ? 'manual' : 'auto' }); break;
+    case 'accept-split': acceptSplit(project, orders, tag); break;
     case 'approve': approve(project, orders, tag, note, branch, override); break;
     case 'rework': rework(orders, tag, note, { max: project.dispatch.max_reworks, override, phase }); break;
     case 'queue': {

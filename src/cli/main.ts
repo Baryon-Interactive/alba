@@ -1,4 +1,5 @@
 import { phasePrompt, readOnlyChange } from '../run/phase.ts';
+import { autoAcceptSplit } from '../service/split.ts';
 import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { phasesOverride } from '../orders/phase-config.ts';
@@ -926,6 +927,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         if (stale) orders.record(rest[0], 'stale-report', stale);
         if (found && !stale) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
+          autoAcceptSplit(cfg, orders, rest[0]);
           requeueUndeliveredInbox(orders, rest[0], closed);
           if (found.report.status === 'ready' && !closed.next_phase) {
             const { mergeBaseBeforeReview } = await import('../check/base-merge.ts');
@@ -954,6 +956,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
           return t('stale report');
         }
         orders.report(rest[0], { ...parsed, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: readFileSync(file, 'utf8') } : {}) }, path.basename(file));
+        autoAcceptSplit(cfg, orders, rest[0]);
         if (!doc.runs.at(-1)?.next_phase) lintDelivery(cfg, orders, rest[0]);
         return tagLine(orders.get(rest[0]));
       }

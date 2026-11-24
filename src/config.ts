@@ -263,6 +263,7 @@ export interface FirstPassConfig {
 }
 
 export interface ProjectConfig {
+  split?: { approve: Record<string, 'auto' | 'manual'> };
   phases?: Phases;
   /** Per-kind order templates and preflight rules (`orders:` in alba.yaml). */
   orders?: OrdersConfig;
@@ -634,6 +635,11 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.classifier !== undefined) cfg.classifier = validateClassifier(raw.classifier, file);
   if (raw.skills !== undefined) cfg.skills = validateProjectSkills(raw.skills, file, base);
   Object.assign(cfg, routingOf(raw, file));
+  if (raw.split !== undefined) {
+    if (!isRecord(raw.split) || Object.keys(raw.split).some(k => k !== 'approve') || !isRecord(raw.split.approve)
+      || Object.values(raw.split.approve).some(v => v !== 'auto' && v !== 'manual')) fail('split.approve must map order kinds to manual or auto.');
+    cfg.split = { approve: raw.split.approve as Record<string, 'manual' | 'auto'> };
+  }
   if (raw.phases !== undefined) {
     cfg.phases = parsePhases(raw.phases);
     const workersFile = process.env.ALBA_WORKERS || cfg.workers;
@@ -657,7 +663,7 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.orders !== undefined) cfg.orders = validateOrdersConfig(raw.orders, file, base);
   if (raw.schedules !== undefined) cfg.schedules = validateSchedules(raw.schedules, file, base);
   if (raw.consult !== undefined) cfg.consult = validateConsult(raw.consult, file);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders', 'schedules', 'consult', 'phases'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders', 'schedules', 'consult', 'phases', 'split'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }

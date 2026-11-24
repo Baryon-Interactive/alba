@@ -14,6 +14,7 @@ import type { Run } from '../src/orders/model.ts';
 import { baseRefOf, branchIsMerged, planWorktree } from '../src/run/worktree.ts';
 import { tick, type Probes } from '../src/tick/gather.ts';
 import { startIndependentCheck } from '../src/review/independent.ts';
+import { acceptSplit } from '../src/service/split.ts';
 import { humanAction } from '../src/service/actions.ts';
 import { planTick, type TickInput, type TickOrder } from '../src/tick/plan.ts';
 import { validateWorkers } from '../src/workers/config.ts';
@@ -117,6 +118,50 @@ test('phase routing, guarded plans, rotation and rework follow the run history',
   assert.equal(orders.stage(orders.get('T1')).stage, 'failed');
   assert.equal(orders.get('T1').runs.at(-1)?.outcome, 'failed');
   assert.match(orders.get('T1').reports.at(-1)!.summary, /worktree changed/);
+});
+
+function splitFixture(auto = false) {
+  const { project, orders, root } = fixture();
+  const workers = workersFile(), fake = probes();
+  project.phases = { sim: [{ id: 'divide', mode: 'split' }, { id: 'assemble', mode: 'write' }] };
+  if (auto) project.split = { approve: { sim: 'auto' } };
+  const base = git(root, 'rev-parse', 'main').trim();
+  const start = (tag: string) => {
+    startRun({ project, orders, workers, probes: fake }, tag, 'coder');
+    return orders.get(tag).runs.at(-1)!;
+  };
+  const finish = (run: Run, fields: object = {}) => {
+    const block = ['--- alba-report ---', JSON.stringify({ status: 'ready', run: run.id, summary: 'Prepared', ...fields }), '--- end ---'].join('\n');
+    const p = probes({ fileTime: file => file === run.last_file ? run.started : undefined, readText: file => file === run.last_file ? block : undefined });
+    applyFinish(orders, findFinishes(project, orders, p, workers)[0], project);
+  };
+  const subtasks = ['data', 'view', 'test'].map(key => ({ key, title: key, kind: 'task', body: '## Acceptance\n- Render the sample.', ...(key === 'test' ? { needs: ['data'] } : {}) }));
+  const lead = start('T1');
+  assert.ok(fake.spawned.at(-1)?.args.includes('read-only'));
+  finish(lead, { subtasks });
+  return { project, orders, root, base, start, finish };
+}
+
+test('split approval supports edits, auto approval and returning a proposal to the lead', () => {
+  for (const auto of [false, true]) {
+    const { project, orders, root, base } = splitFixture(auto);
+    if (!auto) {
+      assert.equal(orders.stage(orders.get('T1')).waitingFor, 'card');
+      assert.throws(() => acceptSplit(project, orders, 'T1', [{ key: 'data', kind: 'sim' }, { key: 'view' }]), /nested split/);
+      acceptSplit(project, orders, 'T1', [{ key: 'view', title: 'Display' }, { key: 'test' }]);
+      assert.equal(orders.get('T1.1').order.title, 'Display');
+      assert.deepEqual(orders.get('T1.2').order.needs, []);
+    } else assert.deepEqual(orders.get('T1.3').order.needs, ['T1.1']);
+    assert.equal(orders.get('T1.1').order.parent, 'T1');
+    assert.equal(orders.get('T1.1').order.base_ref, orders.get('T1').order.branch);
+    assert.equal(orders.get('T1').actions.at(-1)?.kind, 'accept-split');
+    assert.equal(git(root, 'rev-parse', 'main').trim(), base);
+  }
+  const { project, orders, root, base } = splitFixture();
+  humanAction(project, orders, 'T1', 'rework', 'Separate the renderer.');
+  assert.equal(orders.get('T1').actions.at(-1)?.phase, 'divide');
+  assert.equal(orders.stage(orders.get('T1')).stage, 'queued');
+  assert.equal(git(root, 'rev-parse', 'main').trim(), base);
 });
 
 test('opted-out orders and unconfigured kinds keep the ordinary stage sequence', () => {

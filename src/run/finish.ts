@@ -1,3 +1,4 @@
+import { autoAcceptSplit } from '../service/split.ts';
 import { validateSubtasks } from '../orders/subtasks.ts';
 import { readOnlyChange } from './phase.ts';
 import { runProcessMatches } from './kill-tree.ts';
@@ -319,6 +320,7 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
       orders.report(f.tag, report, f.from ?? 'tick');
       if (report.status === 'ready' && current.order.next_worker === storedRun.worker) orders.clearWorkerPin(f.tag, t('Read-only phase completed.'));
     });
+    if (report.subtasks && project) autoAcceptSplit(project, orders, f.tag);
     requeueUndeliveredInbox(orders, f.tag, storedRun);
     return;
   }
