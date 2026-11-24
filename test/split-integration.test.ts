@@ -114,6 +114,19 @@ test('dependent children integrate on the parent and the final phase reviews the
   assert.equal(git(root, 'rev-parse', 'main').trim(), base);
 });
 
+test('approval requires the recorded parent branch even when its checkout was removed', () => {
+  const { project, orders, root, base, start, finish } = splitFixture(true);
+  const child = start('T1.1');
+  finish(child);
+  const parent = orders.get('T1').order;
+  git(root, 'worktree', 'remove', '--force', parent.worktree!);
+  git(root, 'branch', '-D', parent.branch!);
+  assert.throws(() => approve(project, orders, 'T1.1'), /rev-parse/);
+  assert.equal(orders.stage(orders.get('T1.1')).stage, 'awaiting-review');
+  assert.throws(() => git(root, 'show-ref', '--verify', 'refs/heads/' + parent.branch));
+  assert.equal(git(root, 'rev-parse', 'main').trim(), base);
+});
+
 test('a conflicting child receives rework and parent cancellation uses the child stop path', () => {
   const { project, orders, root, base, start, finish } = splitFixture(true);
   const branch = orders.get('T1').order.branch!;

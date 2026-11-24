@@ -6,6 +6,7 @@ import { fail, t } from '../i18n.ts';
 import type { Orders } from '../orders/service.ts';
 import { revisionOf } from '../orders/store.ts';
 import { baseRefOf, commonGitDir, ensureWorktree, git, planWorktree, worktreeGitDir } from '../run/worktree.ts';
+import { orderBaseRef } from './readiness.ts';
 import { trialAcceptance } from './acceptance.ts';
 
 /** Run the trial and prepare the merge off branch. Hold the state lock only to publish a decision on those exact inputs. */
@@ -15,13 +16,13 @@ export function mergeChild(project: ProjectConfig, orders: Orders, tag: string, 
   const decision = parent.actions.find(a => a.kind === 'accept-split');
   const plan = planWorktree(project, parent.order);
   const parentRef = 'refs/heads/' + plan.branch;
-  if (!decision?.children?.includes(child.order.tag) || decision.branch !== plan.branch || child.order.base_ref !== plan.branch
+  if (!decision?.children?.includes(child.order.tag) || decision.branch !== plan.branch || orderBaseRef(project, child.order) !== parentRef
     || branch === plan.branch || parentRef.toLowerCase() === baseRefOf(project).toLowerCase()) fail('The recorded parent integration branch does not match.');
   if (parent.runs.some(r => !r.ended) || child.runs.some(r => !r.ended) || orders.stage(parent).stage === 'cancelled') fail('Cannot integrate while a run is open or the parent is cancelled.');
   if (child.order.branch !== branch) fail('The child branch changed before integration.');
-  ensureWorktree(project, plan);
   const sha = (ref: string) => git(project.root, ['rev-parse', '--verify', ref + '^{commit}']).trim();
   const childRef = 'refs/heads/' + branch, before = sha(parentRef), tip = sha(childRef);
+  ensureWorktree(project, plan);
   const unchanged = () => {
     if (revisionOf(orders.get(tag)) !== revisionOf(child) || revisionOf(orders.get(parent.order.tag)) !== revisionOf(parent)
       || sha(parentRef) !== before || sha(childRef) !== tip) fail('Integration inputs changed. Retry approval.');
