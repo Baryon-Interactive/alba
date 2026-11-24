@@ -179,8 +179,8 @@ test('isLostSessionError recognizes wider Claude Code and API lost-session patte
     'API Error: 400 {"error":{"message":"message at position 7 content must not be empty"}}',
     'No conversation found with session ID: 00000000-0000-4000-8000-000000000001',
     '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["No conversation found with session ID: 00000000-0000-4000-8000-000000000001"]}',
-    'Error: session transcript file not found at /tmp/sess.jsonl',
-    'Error: ENOENT: no such file or directory, open "/tmp/sessions/transcript.jsonl"',
+    'Error: session transcript file not found at sess.jsonl',
+    'Error: ENOENT: no such file or directory, open "sessions/transcript.jsonl"',
     'Error: missing transcript file for session abc-123',
   ];
   for (const sample of lostCases) {
@@ -190,7 +190,7 @@ test('isLostSessionError recognizes wider Claude Code and API lost-session patte
 
   const unrelatedCases = [
     'conversation state is available',
-    'Error: ENOENT: no such file or directory, open "/work/src/index.ts"',
+    'Error: ENOENT: no such file or directory, open "src/index.ts"',
     'API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: must be greater than 0"}}',
     'ValidationError: title field must not be empty',
     'TypeError: Cannot read properties of undefined (reading "messages")',

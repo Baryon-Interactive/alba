@@ -101,7 +101,24 @@ workers:
 
 The events file of a worker run (`codex exec --json`) holds no rate limits in the Codex versions Alba has seen, but the same run writes them into its session file, which is what this source reads. The newest observation is as fresh as the last Codex turn on that account, from any program that uses it (a person's own Codex too).
 
-**Claude subscriptions.** Claude Code's `stream-json` output, what a Claude worker's events file holds, carries no usage-limit information (no window, percent or reset time; checked on Claude Code 2.1), so Alba has no built-in Claude reader. Use a `command-json` source that runs a program of your own which prints the windows, for example `[{ "windows": [{ "name": "5 hours", "used": 42, "resetsAt": "2026-11-13T15:00:00Z" }] }]`, from wherever you keep them. The program must not start a Claude conversation to find out (that spends the quota it measures). Or write a `static` source with `windows:` and update it by hand. Without a quota source a Claude worker is limited by its own `daily_runs` and by the capacity endings of its runs (document 014).
+- **`claude-stream`**: the windows of a Claude subscription, read from `rate_limit_event` lines in the `stream-json` run logs (`events_file` / `log`) of `claude-cli` runs whose worker names this source in the current project's state. Alba reads only the tail of the newest logs and takes the newest observation within `max_age_hours` (optional positive number, default `168`); it calls nothing and spends no quota. Top-level fields (`rateLimitType`, `utilization`, `resetsAt`, `status`) are merged with `unifiedWindows` (the top-level `status` applies only to `rateLimitType`). Known window types are named `5 hours` (`five_hour`), `7 days` (`seven_day`), `7 days opus` (`seven_day_opus`) and `7 days sonnet` (`seven_day_sonnet`); unknown types are kept with their own name. `utilization` (0–1 fraction) becomes a percentage, `rejected` without `utilization` counts as 100%, and a window whose reset time has passed reads as 0%. Broken JSON lines are skipped. API-key sign-ins never emit `rate_limit_event`; when no event falls within `max_age_hours`, Alba returns an `ok` reading with no windows and a note rather than failing the worker.
+
+```yaml
+quota_sources:
+  claude-plan:
+    type: claude-stream
+    max_age_hours: 168    # optional, default 168 (7 days)
+workers:
+  - id: claude-a
+    engine: claude-cli
+    quota: claude-plan
+    cost: included
+    disabled_when:
+      - { window_full: "5 hours" }
+      - { window_full: "7 days", at: 95 }
+```
+
+**Claude subscriptions.** Subscription runs (signed in with `CLAUDE_CODE_OAUTH_TOKEN`) emit `rate_limit_event` in `stream-json`, which `claude-stream` reads without calling any external service. For API-key sign-ins or custom accounts where `rate_limit_event` is absent, use a `command-json` source (never starting a Claude conversation to measure it) or a `static` source, or rely on `daily_runs` and capacity endings (document 014).
 
 Paths look like `a.b[0].c`.
 
