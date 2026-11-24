@@ -233,7 +233,7 @@ export class Orders {
       if (doc.reroutes?.some(r => r.id === input.id)) return doc;
       validate(doc);
       const stage = this.stage(doc).stage;
-      if (['held', 'merged', 'cancelled'].includes(stage)) fail('Reroute refused: order is {stage}.', { stage });
+      if (['waiting-children', 'held', 'merged', 'cancelled'].includes(stage)) fail('Reroute refused: order is {stage}.', { stage });
       const seq = nextSeq(doc);
       doc.order.next_worker = input.to;
       (doc.reroutes ??= []).push({ ...input, by: this.actor, seq });

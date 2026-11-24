@@ -137,13 +137,21 @@ function phaseSummary(project: ProjectConfig, doc: OrderDoc) {
   return phases ? { phase: { id: phases.current.id, index: phases.index + 1, count: phases.list.length } } : {};
 }
 
-export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: Parameters<typeof attentionState>[1]): A.OrderSummary {
+function family(doc: OrderDoc, orders?: View['orders']) {
+  const children = orders?.children(doc).map(child => {
+    const run = child.runs.at(-1), o = child.order;
+    return { tag: o.tag, title: o.title, stage: orders.stage(child).stage, worker: run?.worker ?? o.worker, model: run?.model ?? o.model };
+  });
+  return { ...(doc.order.parent ? { parent: doc.order.parent } : {}), ...(children?.length ? { children } : {}) };
+}
+
+export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: Parameters<typeof attentionState>[1], orders?: View['orders']): A.OrderSummary {
   const open = doc.runs.find(r => r.ended === undefined);
   const observation = observeRun(open, env, activity);
   const spend = spendOf(doc, env, project.state_dir);
   const o = doc.order;
   return {
-    ...phaseSummary(project, doc), ...attentionState(doc, mark),
+    ...family(doc, orders), ...phaseSummary(project, doc), ...attentionState(doc, mark),
     ...(open && liveRuns.peek(open) ? { live: liveRuns.peek(open) } : {}), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}),
     ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
     ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}),
@@ -172,7 +180,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
       const observation = observeRun(open, env, row?.activity);
       const waitingQuestion = (stage.stage === 'awaiting-user' || stage.stage === 'blocked') && stage.waitingFor !== 'card' && latest?.question
         ? { text: latest.question, options: latest.options && toOptions(latest.options) } : undefined;
-      return { ...phaseSummary(view.config, doc), ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      return { ...family(doc, view.orders), ...phaseSummary(view.config, doc), ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
         quietMinutes: observation.quietMinutes, liveness: observation.liveness, ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
@@ -181,7 +189,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
         ...(open && row?.activity?.progress ? { progress: row.activity.progress } : {}),
         ...(monitor ? { monitor: { started: monitor.started, deadline: monitor.deadline, checks: monitor.checks, lastCheckAt: monitor.lastCheckAt, lastResult: monitor.lastResult } } : {}), actions: actionsFor(stage.stage, env, stage.waitingFor).allowed };
     }
-    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks(doc.order.tag));
+    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks(doc.order.tag), view.orders);
   }).sort((a, b) => (a.tag < b.tag ? -1 : 1));
 }
 
@@ -351,7 +359,12 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const nudge = open ? readNudges(view.config)[nudgeKey(o.tag, open.id)] : undefined;
   const firstPass = currentFirstPass(view.orders, doc);
   const phases = orderPhases(view.config, doc);
+  const proposal = doc.reports.findLast(r => r.subtasks);
+  const splitDecision = proposal && doc.actions.find(a => a.seq > proposal.seq && (a.kind === 'rework' || a.kind === 'accept-split'));
+  const pending = !!proposal && proposal === doc.reports.at(-1) && stage.waitingFor === 'card' && !splitDecision;
   return {
+    ...family(doc, view.orders),
+    ...(proposal?.subtasks ? { split: { report: proposal.seq, subtasks: proposal.subtasks, pending, decision: splitDecision } } : {}),
     ...attentionState(doc, attentionFor(view.orders.store)(o.tag)),
     ...(phases ? { phases: phases.list.map((p, i): A.OrderPhase => {
       const latest = phases.runsOf(p).at(-1);
@@ -373,7 +386,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     },
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
     needsStatus: o.needs.map(n => { try { return { tag: n, stage: view.orders.stage(view.orders.get(n), merged).stage }; } catch { return { tag: n }; } }),
-    actions: actions.allowed, unavailable: actions.unavailable,
+    actions: pending ? [...actions.allowed, 'accept-split'] : actions.allowed, unavailable: actions.unavailable,
     runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch, view.config.state_dir)), reports: doc.reports.map(r => ({ ...toReport(r), ...(r.plan ? { plan: r.plan } : {}) })),
     referencedDecisions: referencedDecisions(view.config, doc, file?.markdown), questions: (doc.questions ?? []).map(toQuestion), quotes: (doc.quotes ?? []).map(q => toQuote(view.config.id, o.tag, q)), lessons: lessonsForOrder(view.config, doc),
     decisions: doc.actions.map(a => ({ seq: a.seq, at: a.at, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.imported ? { imported: true } : {}), ...(a.override ? { override: true } : {}) })),

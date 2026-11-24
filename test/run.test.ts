@@ -153,6 +153,11 @@ test('split approval supports edits, auto approval and returning a proposal to t
       assert.deepEqual(orders.get('T1.2').order.needs, []);
     } else assert.deepEqual(orders.get('T1.3').order.needs, ['T1.1']);
     assert.equal(orders.get('T1.1').order.parent, 'T1');
+    if (auto) {
+      project.phases!.task = project.phases!.sim;
+      assert.throws(() => startRun({ project, orders, workers: workersFile(), probes: probes() }, 'T1.1', 'coder'), /child order cannot split/);
+      delete project.phases!.task;
+    }
     assert.equal(orders.get('T1.1').order.base_ref, orders.get('T1').order.branch);
     assert.equal(orders.get('T1').actions.at(-1)?.kind, 'accept-split');
     assert.equal(git(root, 'rev-parse', 'main').trim(), base);

@@ -287,7 +287,7 @@ export function intakeProducer(project: ProjectConfig, orders: Orders, options: 
   const loopCases = new Map<string, CaseInput[]>();
   for (const doc of docs) {
     const stage = orders.stage(doc).stage;
-    if (['merged', 'cancelled', 'held', 'dropped', 'planned', 'draft', 'queued', 'waiting-needs'].includes(stage)) continue;
+    if (['merged', 'cancelled', 'held', 'dropped', 'planned', 'draft', 'queued', 'waiting-needs', 'waiting-children'].includes(stage)) continue;
     const r = doc.runs.at(-1);
     const file = r && (r.events_file && existsSync(r.events_file) ? r.events_file : r.log);
     if (!r || !file || !existsSync(file)) continue;
@@ -313,7 +313,7 @@ export function intakeProducer(project: ProjectConfig, orders: Orders, options: 
     const run = [...doc.runs].reverse().find(r => r.ended);
     // A running order, or one a person has settled (merged, held, queued again…), has no open failure, loop or error case.
     const active = doc.runs.some(r => !r.ended);
-    const settled = ['merged', 'cancelled', 'held', 'dropped', 'planned', 'draft', 'queued', 'waiting-needs'].includes(stage);
+    const settled = ['merged', 'cancelled', 'held', 'dropped', 'planned', 'draft', 'queued', 'waiting-needs', 'waiting-children'].includes(stage);
     const attempts = attemptFacts(doc);
     if (!active && !settled && stage !== 'monitoring' && !(stage === 'awaiting-review' && latest?.status === 'ready') && (attempts.consecutive_failures >= 3 || attempts.reworks >= 3 || attempts.same_gate_failing.length)) add({ key: `repeated-failure/${doc.order.tag}`, project: project.id, trigger: 'repeated-failure', order: doc.order.tag, facts: { run: doc.runs.at(-1)?.id, report: latest?.seq }, card: card('repeated-failure', doc, summaryFor(doc, latest), [`order:${doc.order.tag}`], undefined, stage) });
     const independent = currentIndependentCheck(project, orders, doc.order.tag);

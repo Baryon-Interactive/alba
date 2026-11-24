@@ -297,8 +297,12 @@ function list(orders: Orders, values: { stage?: string; all?: boolean; json?: bo
   const shown = rows.filter(r => values.stage ? r.stage === values.stage : values.all || !['merged', 'cancelled'].includes(r.stage))
     .sort((a, b) => STAGE_PRIORITY.indexOf(a.stage) - STAGE_PRIORITY.indexOf(b.stage)
       || (a.d.order.source?.row ?? Infinity) - (b.d.order.source?.row ?? Infinity) || b.d.order.updated.localeCompare(a.d.order.updated));
-  if (values.json) return JSON.stringify(shown.map(r => ({ tag: r.d.order.tag, stage: r.stage, worker: r.d.order.worker ?? null, current_worker: currentWorker(r.d) || null, kind: r.d.order.kind, review: r.d.order.review ?? cfg?.review ?? 'auto', needs: r.d.order.needs, updated: r.d.order.updated })), null, 2);
-  const body = table(['TAG', 'STAGE', 'WORKER', 'KIND', 'REVIEW', 'NEEDS', 'UPDATED'], shown.map(r => [r.d.order.tag, r.stage, currentWorker(r.d), r.d.order.kind, r.d.order.review ?? cfg?.review ?? 'auto', r.d.order.needs.join(','), ago(r.d.order.updated)]));
+  const tags = new Set(shown.map(r => r.d.order.tag));
+  const grouped = shown.filter(r => !r.d.order.parent || !tags.has(r.d.order.parent)).flatMap(r => [
+    r, ...orders.children(r.d).flatMap(child => shown.filter(row => row.d.order.tag === child.order.tag)),
+  ]);
+  if (values.json) return JSON.stringify(grouped.map(r => ({ parent: r.d.order.parent, tag: r.d.order.tag, stage: r.stage, worker: r.d.order.worker ?? null, current_worker: currentWorker(r.d) || null, kind: r.d.order.kind, review: r.d.order.review ?? cfg?.review ?? 'auto', needs: r.d.order.needs, updated: r.d.order.updated })), null, 2);
+  const body = table(['TAG', 'STAGE', 'WORKER', 'KIND', 'REVIEW', 'NEEDS', 'UPDATED'], grouped.map(r => [(r.d.order.parent && tags.has(r.d.order.parent) ? '  ' : '') + r.d.order.tag, r.stage, currentWorker(r.d), r.d.order.kind, r.d.order.review ?? cfg?.review ?? 'auto', r.d.order.needs.join(','), ago(r.d.order.updated)]));
   const hidden = rows.length - shown.length;
   return `${body}\n${t('{shown} shown{hidden}', { shown: shown.length, hidden: hidden ? t(', {n} merged/cancelled hidden (use --all)', { n: hidden }) : '' })}`;
 }
@@ -309,6 +313,11 @@ function show(orders: Orders, tag: string, project?: ProjectConfig): string {
   const { stage, why } = orders.stage(doc);
   const out: string[] = [`${o.tag}  ${o.title}`, `${t('stage')}: ${stage}  (${why})`];
   const field = (label: string, value: string | undefined) => { if (value) out.push(`${label}: ${value}`); };
+  field(t('Parent'), o.parent);
+  field(t('Children'), orders.children(doc).map(c => c.order.tag + ' (' + orders.stage(c).stage + ')').join(', '));
+  if (orders.stage(doc).waitingFor === 'card') for (const task of doc.reports.at(-1)?.subtasks ?? []) {
+    out.push(task.key + '  ' + task.title + ' (' + task.kind + ')' + (task.needs?.length ? '  ' + t('needs') + ': ' + task.needs.join(', ') : ''));
+  }
   const phases = project && orderPhases(project, doc);
   if (phases) field(t('Order phases'), phases.list.map((p, i) => {
     const last = phases.runsOf(p).at(-1);
@@ -936,6 +945,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
           if (!closed.next_phase) lintDelivery(cfg, orders, rest[0]);
           return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
         }
+        autoAcceptSplit(cfg, orders, rest[0]);
         requeueUndeliveredInbox(orders, rest[0], closed);
         // A person who ends a run as cancelled does not want the next tick to start it again at once (on whatever worker routing picks).
         if (outcome !== 'cancelled' || orders.stage(ended).stage !== 'queued' && orders.stage(ended).stage !== 'waiting-needs') return tagLine(ended);

@@ -20,7 +20,7 @@ export function rerouteRefusal(project: ProjectConfig, orders: Orders, doc: Orde
   if (!target.enabled) return refuse(`worker ${worker} is disabled.`);
   if (!project.producer.escalate_to?.includes(worker)) return refuse('worker is not in producer.escalate_to (the default list is empty).');
   const stage = orders.stage(doc).stage;
-  if (['held', 'merged', 'cancelled'].includes(stage)) return refuse(`order is ${stage}.`);
+  if (['waiting-children', 'held', 'merged', 'cancelled'].includes(stage)) return refuse(`order is ${stage}.`);
   const current = doc.order.next_worker ?? ownerOf(env.workers.workers, doc.order.worker)?.id ?? doc.runs.at(-1)?.worker;
   if (worker === current) return refuse('same as the current worker.');
   const role = roleForOrder(project, doc, env.workers);

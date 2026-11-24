@@ -24,7 +24,7 @@ export type Stage = (typeof STAGES)[number];
  * What a person can do to an order. `answer`, `run` and `stop` are not stored as plain actions: `answer` continues the worker's session,
  * `run` starts it now (a held order on the worker named), `stop` ends the open run's whole process tree and holds the order.
  */
-export const ORDER_ACTIONS = ['queue', 'hold', 'release', 'cancel', 'approve', 'rework', 'answer', 'run', 'stop', 'close'] as const;
+export const ORDER_ACTIONS = ['queue', 'hold', 'release', 'cancel', 'approve', 'rework', 'answer', 'run', 'stop', 'close', 'accept-split'] as const;
 export type OrderAction = (typeof ORDER_ACTIONS)[number];
 
 /** What an `awaiting-user` order is waiting for: a person to click a card in a session of their own, or an answer to a question. `answer` is only for the second. */
@@ -389,7 +389,10 @@ export interface AttentionState {
   unread?: boolean;
 }
 
+export interface ChildSummary { tag: string; stage: Stage; title: string; worker?: string; model?: string }
 export interface OrderSummary extends AttentionState {
+  parent?: string;
+  children?: ChildSummary[];
   phase?: { id: string; index: number; count: number };
   liveness?: Liveness;
   waitingQuestion?: { text: string; options?: QuestionOption[] };
@@ -629,6 +632,9 @@ export interface OrderPhase {
 }
 
 export interface OrderDetail extends AttentionState {
+  parent?: string;
+  children?: ChildSummary[];
+  split?: { report: number; subtasks: import('../orders/subtasks.ts').Subtask[]; pending: boolean; decision?: Decision };
   phases?: OrderPhase[];
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };
@@ -1007,6 +1013,9 @@ export interface NewOrderResult {
 
 /** `POST /api/orders/:tag/actions` */
 export interface ActionRequest {
+  confirm?: boolean;
+  report?: number;
+  edits?: { key: string; title?: string; kind?: string }[];
   phase?: string;
   project?: string;
   action: OrderAction;

@@ -42,6 +42,7 @@ import { sayDeliveryMode } from '../workers/config.ts';
 import { startRun, type RunContext } from '../run/launch.ts';
 import { approve } from '../run/review.ts';
 import { planWorktree } from '../run/worktree.ts';
+import { acceptSplit } from '../service/split.ts';
 import { humanAction, stopRun } from '../service/actions.ts';
 import { createOrder } from '../service/new-order.ts';
 import { executeTick } from '../tick/execute.ts';
@@ -1114,7 +1115,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (fields.check !== undefined && fields.check !== 'independent' && fields.check !== 'none') throw new ApiFailure(400, 'bad_request', '"check" is independent or none.');
       if (fields.review !== undefined && fields.review !== 'manual' && fields.review !== 'auto') throw new ApiFailure(400, 'bad_request', '"review" is manual or auto.');
       const doc = editOrderFields(view.config, view.orders, ctx.workers, parts[1], fields as OrderFields);
-      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionFor(view.orders.store)(doc.order.tag)));
+      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionFor(view.orders.store)(doc.order.tag), view.orders));
     }
     if (parts[0] === 'orders' && parts[2] === 'body' && parts.length === 3) {
       const text = str(body, 'text', true)!;
@@ -1236,6 +1237,10 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       let message: string | undefined;
       let run: A.ActionResult['run'];
       switch (action as A.OrderAction) {
+        case 'accept-split':
+          if (body.report !== undefined && typeof body.report !== 'number') throw new ApiFailure(400, 'bad_request', 'Invalid split report number.');
+          acceptSplit(view.config, view.orders, tag, body.edits, body.report);
+          break;
         case 'approve': {
           const now = view.orders.stage(view.orders.get(tag)).stage;
           const override = body.override === true;
@@ -1246,6 +1251,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
           break;
         }
         case 'queue': case 'hold': case 'release': case 'cancel': case 'rework':
+          if (action === 'rework' && body.report !== undefined && view.orders.get(tag).reports.at(-1)?.seq !== body.report) throw new ApiFailure(409, 'conflict', 'The split report changed.');
           humanAction(view.config, view.orders, tag, action as 'queue', note, undefined, false, str(body, 'phase'), body.confirm === true);
           break;
         case 'stop':
