@@ -45,3 +45,5 @@ Follow the skill `alba-worker-rules` (listed below): its rules on committing, lo
 ## Where you work
 
 Your working folder is <worktree> (branch demo-t1). Run every command, build and commit there and only there. Never change, build in or commit to <root> or another worktree: that checkout belongs to the lead, and a run that changes it is stopped at review. Read files elsewhere when the order names them, but write only inside your folder.
+
+This run holds slot 0 (`ALBA_SLOT=0`).
