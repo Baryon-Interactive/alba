@@ -1,6 +1,13 @@
 // Chinese texts of the console. The words follow docs/glossary.md (工单, 派工, 报告, 授权, 打回返工, 一次巡检, 验收, 参照值 ...).
 // `node scripts/i18n-keys.mjs` checks that every t('...') text in src/ has a line here.
 export const zh: Record<string, string> = {
+  'Proposed child orders': '拟议的子工单',
+  'Accept split': '接受拆分',
+  'Child orders': '子工单',
+  'Parent order': '父工单',
+  'Waiting for child orders': '等待子工单',
+  'Cancel this parent and all open child orders?': '取消此父工单及其所有未完成的子工单？',
+  'Merge this child into {parent}.': '将此子工单合并到 {parent}。',
   'Worker default model': '执行器默认模型',
   'Awaiting worker assignment': '等待分配执行器',
   'Order phases': '工单执行阶段',

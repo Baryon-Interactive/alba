@@ -18,8 +18,8 @@ export const attentionLabel = (kind: string): string => ({
 
 export const STAGE_COLORS: Record<Stage, string> = {
   merged: '#22a58c', 'awaiting-review': '#9b85f8', running: '#549cf4', monitoring: '#60c1db', queued: '#f5bb57',
-  'waiting-needs': '#cf8c5e', held: '#a3a1af', planned: '#636674', draft: '#636674', 'awaiting-user': '#e9a33a', blocked: '#ed6b73',
+  'waiting-children': '#cf8c5e', 'waiting-needs': '#cf8c5e', held: '#a3a1af', planned: '#636674', draft: '#636674', 'awaiting-user': '#e9a33a', blocked: '#ed6b73',
   failed: '#c34d61', dropped: '#b57998', idle: '#868a97', cancelled: '#454854',
 };
-export const STAGE_ORDER: Stage[] = ['merged', 'awaiting-review', 'running', 'monitoring', 'queued', 'waiting-needs', 'awaiting-user', 'blocked', 'failed', 'dropped', 'held', 'planned', 'draft', 'idle', 'cancelled'];
+export const STAGE_ORDER: Stage[] = ['merged', 'awaiting-review', 'running', 'monitoring', 'queued', 'waiting-needs', 'waiting-children', 'awaiting-user', 'blocked', 'failed', 'dropped', 'held', 'planned', 'draft', 'idle', 'cancelled'];
 export const mergeTotal = (o: OverviewAll) => o.days.reduce((n, d) => n + Object.values(d.merges).reduce((a, b) => a + b, 0), 0);

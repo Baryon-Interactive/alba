@@ -41,7 +41,7 @@ const ACTIONS: Record<Stage, OrderAction[]> = {
   cancelled: [], merged: [], held: ['run', 'release', 'cancel'], 'awaiting-user': ['answer', 'cancel', 'hold'],
   'awaiting-review': ['approve', 'rework', 'cancel'], blocked: ['rework', 'queue', 'cancel'], failed: ['rework', 'queue', 'cancel'],
   dropped: ['queue', 'cancel'], running: ['stop', 'hold', 'cancel'], monitoring: ['hold', 'cancel'], idle: ['queue', 'hold', 'cancel'],
-  'waiting-needs': ['hold', 'cancel'], queued: ['run', 'hold', 'cancel'], planned: ['cancel'], draft: ['queue', 'cancel'],
+  'waiting-children': ['hold', 'cancel'], 'waiting-needs': ['hold', 'cancel'], queued: ['run', 'hold', 'cancel'], planned: ['cancel'], draft: ['queue', 'cancel'],
 };
 /** What the server allows: `answer` only when the order waits for an answer, not for a click on a card. */
 export const actionsFor = (s: Stage, waitingFor?: WaitingFor) => (s === 'awaiting-user' && waitingFor === 'card' ? ACTIONS[s].filter(a => a !== 'answer') : ACTIONS[s]);
@@ -50,7 +50,7 @@ const WHY: Record<Stage, string> = {
   cancelled: 'the last action is cancel', merged: 'approved and not sent back', held: 'hold without a later release',
   'awaiting-user': 'the current report is waiting and has a question', 'awaiting-review': 'the current report is ready',
   blocked: 'the current report is blocked', failed: 'the current report is failed', dropped: 'the current report is dropped',
-  running: 'a run is open', monitoring: 'the current report is monitoring and no run is open', idle: 'the last run ended and nothing is queued', 'waiting-needs': 'queued, but a needed order is not merged',
+  running: 'a run is open', monitoring: 'the current report is monitoring and no run is open', idle: 'the last run ended and nothing is queued', 'waiting-children': 'Waiting for child orders', 'waiting-needs': 'queued, but a needed order is not merged',
   queued: 'queued and ready', planned: 'waiting for producer drafting', draft: 'no action, run or report yet',
 };
 export const whyFor = (s: Stage) => WHY[s];

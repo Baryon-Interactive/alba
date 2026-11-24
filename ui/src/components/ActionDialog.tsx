@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } f
 import { Input, Textarea, Label, Select } from '@/components/ui/input';
 import { Tip } from '@/components/ui/misc';
 import { actionExplain, actionLabel } from '@/lib/stages';
-import { errorText, useAct, useWorkers } from '@/lib/queries';
+import { errorText, useAct, useWorkers, useOrder } from '@/lib/queries';
 import { t } from '@/i18n';
 import { ErrorBox } from './common';
 
@@ -18,6 +18,7 @@ export function ActionDialog({ project, tag, action, open, onOpenChange, initial
   project: string; tag: string; action: OrderAction; open: boolean; onOpenChange: (open: boolean) => void; initialText?: string; context?: string; branch?: string; noBranch?: boolean; onDone?: () => void;
 }) {
   const act = useAct(project);
+  const detail = useOrder(project, tag);
   const [text, setText] = useState(initialText);
   const [branchText, setBranchText] = useState(branch ?? '');
   const [phase, setPhase] = useState('');
@@ -28,7 +29,7 @@ export function ActionDialog({ project, tag, action, open, onOpenChange, initial
   useEffect(() => { if (open) { setText(initialText); setBranchText(branch ?? ''); setWorker(''); setPhase(''); act.reset(); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
-    const body = { tag, action, ...(action === 'rework' && phase ? { phase } : {}), ...(required === 'text' ? { text: text.trim() } : text.trim() ? { note: text.trim() } : {}), ...(askBranch && branchText.trim() ? { branch: branchText.trim() } : {}), ...(action === 'run' && worker ? { worker } : {}) };
+    const body = { tag, action, ...(action === 'cancel' && detail.data?.children?.length ? { confirm: true } : {}), ...(action === 'rework' && phase ? { phase } : {}), ...(required === 'text' ? { text: text.trim() } : text.trim() ? { note: text.trim() } : {}), ...(askBranch && branchText.trim() ? { branch: branchText.trim() } : {}), ...(action === 'run' && worker ? { worker } : {}) };
     act.mutate(body, { onSuccess: () => { onDone?.(); onOpenChange(false); } });
   };
   const blocked = (!!required && !text.trim()) || (askBranch && !branchText.trim());
@@ -37,7 +38,7 @@ export function ActionDialog({ project, tag, action, open, onOpenChange, initial
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogTitle>{t('{action}: {tag}?', { action: actionLabel(action), tag })}</DialogTitle>
-        <DialogDescription>{actionExplain(action)}</DialogDescription>
+        <DialogDescription>{action === 'cancel' && detail.data?.children?.length ? t('Cancel this parent and all open child orders?') : action === 'approve' && detail.data?.parent ? t('Merge this child into {parent}.', { parent: detail.data.parent }) : actionExplain(action)}</DialogDescription>
         {context && <div className="rounded-md border-l-2 border-primary bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{context}</div>}
         {askBranch && (
           <div className="grid gap-1.5">
