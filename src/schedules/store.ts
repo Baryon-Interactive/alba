@@ -17,7 +17,13 @@ export type ScheduleFireRow = Omit<BaseFire, 'status'> & FireDetails;
 function withDetails(store: SqliteStore, rows: BaseFire[], scheduleId?: string): ScheduleFireRow[] {
   if (!rows.length || !store.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'schedule_fire_details'").get()) return rows;
   const query = 'SELECT schedule_id, planned_at, details FROM schedule_fire_details';
-  const extra = scheduleId === undefined ? store.db.prepare(query).all() : store.db.prepare(query + ' WHERE schedule_id = ?').all(scheduleId);
+  let extra;
+  if (rows.length === 1) {
+    const [row] = rows;
+    extra = store.db.prepare(query + ' WHERE schedule_id = ? AND planned_at = ?').all(row.schedule_id, row.planned_at);
+  } else {
+    extra = scheduleId === undefined ? store.db.prepare(query).all() : store.db.prepare(query + ' WHERE schedule_id = ?').all(scheduleId);
+  }
   const details = new Map(extra.map(r => [`${r.schedule_id}/${r.planned_at}`, JSON.parse(String(r.details)) as FireDetails]));
   return rows.map(row => ({ ...row, ...details.get(`${row.schedule_id}/${row.planned_at}`) }));
 }

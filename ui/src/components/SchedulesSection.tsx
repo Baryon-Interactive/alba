@@ -53,7 +53,7 @@ export function SchedulesSection({ project }: { project: string }) {
                       '—'
                     ) : s.lastFire.status === 'created' ? (
                       <>
-                        {dateTime(s.lastFire.firedAt)}
+                        {dateTime(s.lastFire.firedAt)} ? {t('created')}
                         {s.lastFire.orderTag && <> · <TagLink project={project} tag={s.lastFire.orderTag} /></>}
                       </>
                     ) : (

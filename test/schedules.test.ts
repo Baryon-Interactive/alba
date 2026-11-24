@@ -259,6 +259,24 @@ for (const backend of ['files', 'sqlite'] as const) {
   });
 }
 
+test('configured prechecks run in the base checkout and distinguish exit from a launch error', () => {
+  const env = makeTempProject({ schedulesYaml: [
+    '  - id: probe', '    tag: T-{date}-{time}', '    order: templates/nightly.md', '    every_minutes: 15',
+    `    precheck: ${JSON.stringify([process.execPath, 'inspect.cjs'])}`,
+  ].join('\n') });
+  try {
+    writeFileSync(path.join(env.project.root, 'inspect.cjs'), "process.stdout.write('from base\\n'); process.stderr.write('last line\\n'); process.exitCode = 3;");
+    const now = new Date(2026, 4, 1, 12);
+    const orders = new Orders(stateStore(env.project), () => now.toISOString(), 'test');
+    assert.equal(runSchedules(env.project, orders, { now }).skipped[0].status, 'skipped-precheck');
+    assert.equal(scheduleViews(env.project, orders, now)[0].lastFire?.output, 'from base\nlast line');
+    env.project.schedules![0].precheck = [path.join(env.project.root, 'missing-command')];
+    now.setMinutes(15);
+    assert.equal(runSchedules(env.project, orders, { now }).skipped[0].status, 'precheck-failed');
+    assert.equal(orders.all().length, 0);
+  } finally { env.cleanup(); }
+});
+
 test('3-day gap: catch_up latest creates exactly one order and none creates none', () => {
   const env = makeTempProject({
     schedulesYaml: [

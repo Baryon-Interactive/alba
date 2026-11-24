@@ -34,7 +34,7 @@ export function runSchedulesCli(
         const lastText = !s.lastFire
           ? '-'
           : s.lastFire.status === 'created'
-            ? `${s.lastFire.firedAt} ${s.lastFire.orderTag ?? ''}`.trim()
+            ? `${s.lastFire.firedAt} created ${s.lastFire.orderTag ?? ''}`.trim()
             : `${s.lastFire.firedAt} ${s.lastFire.status} (${s.lastFire.reason ?? ''})`;
         return [
           s.id,

@@ -590,7 +590,7 @@ export function scheduleViews(project: ProjectConfig, orders: Orders, now: Date 
       const fire = fires[i];
       if (fire.manual || fire.status === 'missed') continue;
       if (fire.status !== 'skipped-precheck' && fire.status !== 'precheck-failed') break;
-      failingSince = fire.planned_at;
+      failingSince = fire.fired_at;
     }
     const healthReason = state === 'disabled' ? t('disabled') : autoPaused ? t('paused after 3 failures')
       : paused ? st?.paused_reason : openCount >= schedule.max_open ? t('max_open reached')
