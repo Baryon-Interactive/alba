@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 
 const processCommand = (pid: number): [string, string[]] => process.platform === 'win32'
   ? ['powershell', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`]]
@@ -73,11 +74,17 @@ export function parseProcessTable(text: string): Map<number, string> {
   return times;
 }
 
+async function readSystemTable(): Promise<string> {
+  // Creating the OS process can itself block on Windows. A cache lookup must return before launching it.
+  await nextTurn();
+  return new Promise((resolve, reject) => {
+    const [program, args] = tableCommand();
+    execFile(program, args, { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 30000, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, text) => (error ? reject(error) : resolve(text)));
+  });
+}
+
 /** Reads the whole process table again (one call in flight at a time). */
-export function refreshProcessTable(run: () => Promise<string> = () => new Promise((resolve, reject) => {
-  const [program, args] = tableCommand();
-  execFile(program, args, { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 30000, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, text) => (error ? reject(error) : resolve(text)));
-})): Promise<void> {
+export function refreshProcessTable(run: () => Promise<string> = readSystemTable): Promise<void> {
   refreshing ??= run().then(text => { table = { at: Date.now(), times: parseProcessTable(text) }; }, () => { table = { at: Date.now(), times: table?.times ?? new Map() }; })
     .finally(() => { refreshing = undefined; });
   return refreshing;
