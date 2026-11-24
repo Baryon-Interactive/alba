@@ -10,12 +10,11 @@ import { LivePanel } from '@/components/LivePanel';
 import { MessageBox } from '@/components/MessageBox';
 import { TranscriptView } from '@/components/TranscriptView';
 import { hasJsonStream, resolveRunTab } from '@/components/TranscriptLogic';
-import { Empty, ErrorBox, StageBadge, UsageText } from '@/components/common';
+import { Empty, ErrorBox, Section, SectionBoundary, StageBadge, UsageText } from '@/components/common';
 import { useOrder, useProjectId } from '@/lib/queries';
 import { dateTime, duration, tokens } from '@/lib/format';
 import { useSeenWhilePresent } from '@/components/OrderAttention';
 import { RunStatus } from '@/components/RunStatus';
-import { SectionBoundary } from '@/components/common';
 import { t } from '@/i18n';
 
 const SILENT_END_KINDS: ReadonlySet<EndKind> = new Set(['stream-cut-mid-turn', 'vanished', 'output-limit', 'context-limit']);
@@ -113,6 +112,43 @@ export function RunPage() {
         </div>
       )}
       <div className="my-3"><SectionBoundary title={t('Messages')}><MessageBox project={project} tag={tag} d={q.data} /></SectionBoundary></div>
+      {run.consults && run.consults.length > 0 && (
+        <div className="my-3">
+          <SectionBoundary title={t('Consults')}>
+            <Section title={t('Consults')} count={run.consults.length}>
+              <div className="grid gap-2">
+                {run.consults.map((c, idx) => (
+                  <Card key={`${c.at}-${idx}`} className="p-3.5 text-sm">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge tone={c.outcome === 'ok' ? 'success' : 'danger'}>{c.outcome}</Badge>
+                      <span className="font-medium text-foreground">{c.consultant}</span>
+                      {c.model && <span className="font-mono">{c.model}</span>}
+                      <span>{dateTime(c.at)}</span>
+                      <span className="tabular-nums">{c.seconds}s</span>
+                      {c.usage && c.usage.source !== 'unknown' && <UsageText usage={c.usage} />}
+                      {c.worktree_changed && <Badge tone="warning">{t('worktree modified')}</Badge>}
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-wrap font-medium">{c.question}</p>
+                    {c.files && c.files.length > 0 && (
+                      <div className="mt-1 font-mono text-xs text-muted-foreground">{c.files.join(', ')}</div>
+                    )}
+                    {(c.answer || c.reason) && (
+                      <details className="mt-2 rounded-md border bg-muted/30 px-3 py-2">
+                        <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+                          {c.answer ? t('Answer ({n} chars)', { n: c.answer_length }) : t('Details')}
+                        </summary>
+                        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+                          {c.answer ?? c.reason}
+                        </pre>
+                      </details>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            </Section>
+          </SectionBoundary>
+        </div>
+      )}
 
       {!run.hasLog && !run.live ? (
         <Empty>{t('No log: this run was not started by the tool.')}</Empty>

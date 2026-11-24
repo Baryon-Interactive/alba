@@ -1814,4 +1814,9 @@ export const zh: Record<string, string> = {
   'Schedule {id} resumed': '定时任务 {id} 已恢复',
   'order {tag} is {stages}': '工单 {tag} 处于 {stages}',
   'after {time}': '在 {time} 之后',
+  // consult
+  'Consults': '跨模型咨询',
+  'Consult': '跨模型咨询',
+  'worktree modified': '工作树被改动',
+  'Answer ({n} chars)': '回答（{n} 字符）',
 };
