@@ -7,6 +7,7 @@ import type { OrderSkill } from '../api/types.ts';
 import type { OrderDoc, Run } from '../orders/model.ts';
 import type { Probes } from '../tick/gather.ts';
 import { baseRefOf } from './worktree.ts';
+import { fenceUntrusted } from './fence.ts';
 import { findOrderFile, promptFor, type PromptLessons } from './prompt.ts';
 
 const slash = (p: string) => p.replace(/\\/g, '/');
@@ -56,19 +57,25 @@ export function writeHandoff(input: HandoffInput): string {
   const status = gitText(worktree, ['status', '--short']);
   out.push('## What the branch holds so far', '', '```', log || '(no commits on the branch yet)', '```', '', 'Uncommitted changes:', '', '```', status || '(none)', '```', '');
   const last = [...doc.reports].sort((a, b) => b.seq - a.seq)[0];
-  out.push('## The last report', '', last ? `- ${last.status}: ${last.summary}${last.question ? `\n- Question: ${last.question}` : ''}${last.commits.length ? `\n- Commits: ${last.commits.join(', ')}` : ''}` : '(the worker before you wrote none)', '');
+  const lastReportText = last
+    ? `- ${last.status}: ${last.summary}${last.question ? `\n- Question: ${last.question}` : ''}${last.commits.length ? `\n- Commits: ${last.commits.join(', ')}` : ''}`
+    : undefined;
+  out.push('## The last report', '', lastReportText ? fenceUntrusted('earlier run report', lastReportText) : '(the worker before you wrote none)', '');
   const asked = (doc.questions ?? []).filter(q => q.answered);
   const notes = doc.actions.filter(a => (a.kind === 'answer' || a.kind === 'rework' || a.kind === 'message' || a.kind === 'monitor') && a.note);
   if (asked.length || notes.length) {
     out.push('## Questions asked and answered, and what the reviewer said', '');
     for (const q of asked) out.push(`- Q: ${q.text} -> option ${q.answered!.choice.join(', ')}${q.answered!.note ? `: ${q.answered!.note}` : ''}`);
-    for (const a of notes) out.push(`- ${a.kind === 'answer' ? 'Answer' : a.kind === 'monitor' ? 'Monitor result' : a.kind === 'message' ? 'Message' : 'Rework note'}: ${a.note}`);
+    for (const a of notes) {
+      if (a.kind === 'monitor') out.push(`- Monitor result:\n${fenceUntrusted('monitor output', a.note!)}`);
+      else out.push(`- ${a.kind === 'answer' ? 'Answer' : a.kind === 'message' ? 'Message' : 'Rework note'}: ${a.note}`);
+    }
     out.push('');
   }
   const prev = input.from.run;
   if (prev?.log && existsSync(prev.log)) {
     const tail = input.probes.tail(prev.log, 6000).split(/\r?\n/).slice(-60).join('\n');
-    out.push('## The end of the last log', '', '```', tail.trim() || '(empty)', '```', '');
+    out.push('## The end of the last log', '', fenceUntrusted('previous run log tail', tail.trim() || '(empty)'), '');
   }
   out.push('## The usual instructions', '', promptFor(project.work_orders, doc, input.lessons, input.skills, project.lessons?.max_rule_lines).trim(), '');
   const dir = path.join(project.state_dir, 'runs');

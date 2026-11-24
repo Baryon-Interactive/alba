@@ -31,6 +31,7 @@ import { verifyOrder } from '../verify/verify.ts';
 import { intakeProducer } from '../producer/producer.ts';
 import { MONITOR_CONTINUATION } from './prompt.ts';
 import { classifyEndpoint, unreachableWhy } from './endpoint.ts';
+import { fenceUntrusted } from './fence.ts';
 import { requeueUndeliveredInbox } from './messages.ts';
 
 function headOf(worktree: string): string | undefined {
@@ -69,7 +70,9 @@ export interface Finish {
 const TAIL_BYTES = 65536;
 
 function bouncePrompt(error: string | undefined, finalMessage: boolean): string {
-  const reason = error ? `The report block is invalid: ${error}` : (finalMessage ? 'No report block was found in the final agent message.' : 'No report block was found.');
+  const reason = error
+    ? `The report block is invalid:\n${fenceUntrusted('report validation error', error)}`
+    : (finalMessage ? 'No report block was found in the final agent message.' : 'No report block was found.');
   const shape = JSON.stringify({ status: 'ready', summary: 'one sentence', question: '', evidence: [], commits: [] });
   return [reason, '', 'Print exactly this report block, using the field names shown:', REPORT_BEGIN, shape, REPORT_END, '', `Allowed status values: ${REPORT_STATUSES.join(', ')}.`, 'Allowed field names: status, summary, question, options, waiting_for, scope, evidence, commits, skill_suggestions, monitor, revision.', '', 'Do not redo the work: check `git log` and print only the report block.'].join('\n');
 }

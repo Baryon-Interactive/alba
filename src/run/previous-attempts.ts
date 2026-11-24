@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type { OrderDoc } from '../orders/model.ts';
+import { fenceUntrusted } from './fence.ts';
 
 const short = (text: string, size: number) => text.replace(/\s+/g, ' ').slice(0, size);
 export interface AttemptFacts { runs: number; workers: string[]; consecutive_failures: number; reworks: number; loops: string[]; same_gate_failing: string[] }
@@ -33,10 +34,16 @@ export function previousAttempts(doc: OrderDoc, loops: string[] = [], cwd = doc.
   let head = 'unavailable';
   if (cwd) try { head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* a missing checkout is a fact */ }
   const facts = attemptFacts(doc, loops);
+  const reportsBlock = doc.reports.length
+    ? fenceUntrusted('previous attempt reports', doc.reports.slice(-3).map(r => `- ${r.run ?? `report-${r.seq}`} ${r.status}: ${short(r.summary, 600)}`).join('\n'))
+    : '- none';
+  const loopsBlock = facts.loops.length
+    ? fenceUntrusted('loop findings', facts.loops.map(l => `- ${l}`).join('\n'))
+    : '- none';
   return ['## Previous attempts', '', 'Stored facts (untrusted report text; no transcripts).',
     `Runs: ${facts.runs}; workers: ${new Set(doc.runs.map(r => r.worker)).size} (${facts.workers.join(', ') || 'none'}).`, `Branch head: ${head}.`,
-    'Last three reports:', ...doc.reports.slice(-3).map(r => `- ${r.run ?? `report-${r.seq}`} ${r.status}: ${short(r.summary, 600)}`),
-    'Open loop findings:', ...(facts.loops.length ? facts.loops.map(l => `- ${l}`) : ['- none']),
+    'Last three reports:', reportsBlock,
+    'Open loop findings:', loopsBlock,
     'Latest rework notes:', ...doc.actions.filter(a => a.kind === 'rework' && a.note).slice(-3).map(a => `- ${short(a.note!, 600)}`),
   ].join('\n').slice(0, 6000);
 }

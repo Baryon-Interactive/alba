@@ -15,6 +15,7 @@ import { routingOf } from '../routing/classify.ts';
 import { processStartMatches, stopProcessTree } from '../run/kill-tree.ts';
 import type { RunContext } from '../run/launch.ts';
 import { findOrderFile } from '../run/prompt.ts';
+import { fenceUntrusted } from '../run/fence.ts';
 import { rework, reworkCount } from '../run/review.ts';
 import { startedAtForCheck } from '../tick/gather.ts';
 import { ownerOf } from '../usage/spend.ts';
@@ -339,7 +340,7 @@ function maybeApplyBounce(project: ProjectConfig, orders: Orders, run: FirstPass
       run.not_applied = 'max_reworks reached';
       return;
     }
-    const note = `First-pass review by ${run.worker} (${run.model_family}): ${run.verdict!.note}`;
+    const note = `First-pass review by ${run.worker} (${run.model_family}):\n${fenceUntrusted(`first-pass review by ${run.worker}`, run.verdict!.note!)}`;
     try {
       rework(orders, doc.order.tag, note, { max: project.dispatch.max_reworks });
       const actionSeq = orders.get(doc.order.tag).actions.at(-1)!.seq;
