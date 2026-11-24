@@ -10,8 +10,11 @@ const explicit = Object.fromEntries(Object.entries(spec.env).map(([key, value]) 
 const args = spec.args.map(fill);
 // PowerShell resolves npm .cmd launchers in the SSH login's PATH. Pass argv as data.
 function command(program, args) {
-  if (process.platform !== 'win32') return [program, args];
-  const data = Buffer.from(JSON.stringify({ program, args }), 'utf8').toString('base64');
+  if (process.platform !== 'win32' || (spec.read_only && /\.exe$/i.test(program))) return [program, args];
+  // Windows PowerShell 5.1 drops literal quotes when forwarding arguments to native CLIs.
+  // Preserve TOML server keys and the strict MCP JSON through npm's PowerShell shim.
+  const argv = spec.read_only ? args.map(arg => arg.replace(/(\\*)"/g, '$1$1\\"')) : args;
+  const data = Buffer.from(JSON.stringify({ program, args: argv }), 'utf8').toString('base64');
   const script = `$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding $false; $OutputEncoding=[Console]::OutputEncoding; $v=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json; $argv=@($v.args); & $v.program @argv; if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE`;
   return ['powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]];
 }

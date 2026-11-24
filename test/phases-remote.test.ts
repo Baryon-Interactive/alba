@@ -21,7 +21,7 @@ test('the SSH worker disables host MCP servers and returns a checkout check afte
   writeFileSync(fixture, [
     "const fs = require('node:fs');",
     "const args = process.argv.slice(2);",
-    "if (args.includes('mcp')) console.log(JSON.stringify([{ name: 'sample-server' }]));",
+    "if (args.includes('mcp')) console.log(JSON.stringify([{ name: 'sample.server' }]));",
     "else { fs.writeFileSync(process.env.ARGS_FILE, JSON.stringify(args)); if (process.env.MODIFY === 'yes') fs.writeFileSync('change.txt', 'changed'); }",
   ].join('\n'));
   const win = process.platform === 'win32';
@@ -36,7 +36,7 @@ test('the SSH worker disables host MCP servers and returns a checkout check afte
     execFileSync(process.execPath, [path.join(dir, 'worker.mjs')], { timeout: 120000, windowsHide: true });
     const args = JSON.parse(readFileSync(received, 'utf8')) as string[];
     assert.ok(args.includes('read-only'));
-    assert.ok(args.some(s => s.includes('sample-server') && s.endsWith('.enabled=false')));
+    assert.ok(args.includes('mcp_servers."sample.server".enabled=false'), JSON.stringify(args));
     assert.equal(readFileSync(path.join(dir, 'result/worktree-check'), 'utf8'), modify === 'yes' ? 'changed' : 'unchanged');
   }
 });
