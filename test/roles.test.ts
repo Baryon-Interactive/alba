@@ -156,7 +156,7 @@ description: Example
   assert.equal(selection.truncated, 2);
 });
 
-test('fake launches carry rules, MCP argv and redacted run-start metadata; no-role argv and prompt match legacy', async () => {
+test('fake launches carry rules, MCP argv and redacted run-start metadata; no-role launches retain their arguments and add the report run id', async () => {
   const { tempOrders } = await import('./helpers.ts');
   const { validateProject: projectConfig } = await import('./state-helper.ts');
   const { startRun } = await import('../src/run/launch.ts');
@@ -190,7 +190,8 @@ test('fake launches carry rules, MCP argv and redacted run-start metadata; no-ro
     orders.runEnd('A1'); orders.act('A1', 'queue', { force: true });
     cfg.roles = validateRoles({ default: {} }, 'fixture.yaml');
     const doc = orders.get('A1');
-    const expectedPrompt = promptFor(orderDir, doc, [], planSkills(cfg, workers, doc, workers.workers[0]).listed);
+    const expectedPrompt = promptFor(orderDir, doc, [], planSkills(cfg, workers, doc, workers.workers[0]).listed)
+      + '\nALBA_RUN=A1/r2. Include this value in the report\'s JSON field "run".\n';
     startRun({ project: cfg, orders, workers, probes }, 'A1', 'fake');
     const noRole = orders.get('A1').runs[1], pf = noRole.prompt_file!;
     if (engine === 'opencode') {

@@ -127,7 +127,7 @@ test('rotation keeps the resolved role capability and only filters before its pr
   assert.match(noTarget.heldBack[0].why, /resume 1 of 3 in 1 min/);
 });
 
-test('a handed-over order: the new worker starts a new session from a continuation file, and the prompt is only its path', () => {
+test('a handed-over order: the new worker starts a new session from a continuation file, and its prompt identifies the new run', () => {
   const f = fixture();
   const workers = validateWorkers(WORKERS, 'w.yaml');
   const p = probes({ tail: (file: string, n: number) => (existsSync(file) ? readFileSync(file, 'utf8').slice(-n) : '') });
@@ -150,11 +150,11 @@ test('a handed-over order: the new worker starts a new session from a continuati
   const run = f.orders.get('T1').runs[1];
   assert.deepEqual([run.worker, run.rotated?.from, run.attempt], ['spare', 'coder', 2]);
   assert.ok(run.handoff_file!.endsWith('T1-r2.handoff.md'));
-  // The path of the continuation file, then where the worker works and the assigned run slot.
+  // The continuation pointer, reporting identity, worktree and slot travel in the launch prompt.
   const prompt = readFileSync(run.prompt_file!, 'utf8');
-  assert.ok(prompt.startsWith(`Read the UTF-8 file ${run.handoff_file} in full and follow it exactly.\n\n## Where you work\n\nYour working folder is `), prompt);
+  assert.ok(prompt.startsWith(`Read the UTF-8 file ${run.handoff_file} in full and follow it exactly.\n\nALBA_RUN=T1/r2. Include this value in the report's JSON field "run".\n\n## Where you work\n\nYour working folder is `), prompt);
   assert.match(prompt, /\nThis run holds slot \d+ \(`ALBA_SLOT=\d+`\)\.\n$/);
-  assert.equal(prompt.split('\n').length, 8);
+  assert.equal(prompt.split('\n').length, 10);
   const handoff = readFileSync(run.handoff_file!, 'utf8');
   assert.match(handoff, /could not go on because the model service was at capacity/);
   assert.match(handoff, /T1: first half/);                                  // what the branch holds
