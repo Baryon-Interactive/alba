@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import type { OrderDetail, ScorecardRow, UsageDashboard, UsageReport, UsageTotal } from '@api';
-import { ErrorBox } from '@/components/common';
+import { UnknownTotal } from '@/components/common';
 import { getLang, t } from '@/i18n';
 import { SERIES_COLORS } from '@/lib/palette';
 import { useUsageScorecard } from '@/lib/queries';
@@ -112,7 +112,7 @@ export function ScorecardSection({ project }: { project: string }) {
         </div>
       </div>
       {q.isError ? (
-        <ErrorBox error={q.error} />
+        <UnknownTotal error={q.error} />
       ) : !q.data ? (
         <p className="text-sm text-muted-foreground">{t('Loading…')}</p>
       ) : !rows.length ? (

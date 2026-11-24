@@ -1,6 +1,7 @@
 import { attentionState } from './attention.ts';
 import { attentionMarks, type AttentionMark } from '../orders/attention-store.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
+import { computePortBase } from '../run/launch.ts';
 import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { producerNotes } from '../producer/notes.ts';
@@ -77,13 +78,14 @@ function observeRun(run: StoredRun | undefined, env: ViewEnv, activity?: OrderAc
   return { alive, quietMinutes, liveness: livenessOf(alive, quietMinutes) };
 }
 
-export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: OrderActivity): A.Run {
+export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: OrderActivity, dispatch?: ProjectConfig['dispatch']): A.Run {
+  const port = dispatch && run.slot !== undefined ? computePortBase(dispatch, run.slot) : undefined;
   const observation = observeRun(run, env, activity);
   return {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
     ...(run.ended ? { ended: run.ended } : {}), ...(run.outcome ? { outcome: run.outcome } : {}), ...(run.note ? { note: run.note } : {}),
-    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...observation, ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
+    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...observation, ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(port !== undefined ? { ports: { first: port, last: port + (dispatch?.port_block || 10) - 1 } } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
     hasLog: !!run.log && existsSync(run.log), usage: usageOf(run, env.workers?.workers ?? [], env.probes),
     ...(run.role ? { role: run.role, role_source: run.role_source, role_effort: run.role_effort, role_reasoning: run.role_reasoning, mcp_servers: run.mcp_servers, role_warnings: run.role_warnings } : {}),
     ...(run.routing ? { routing: run.routing } : {}), ...(run.skills ? { skills: run.skills } : {}),
@@ -192,7 +194,7 @@ export function runList(view: View, env: ViewEnv, query: { since?: string; worke
   }
   const page = rows.slice(from, from + query.limit);
   const last = page[page.length - 1];
-  const items = page.map(r => ({ ...toRun(r.run, r.doc.order.tag, env, view.rows?.find(row => row.tag === r.doc.order.tag)?.activity), project: view.config.id, tag: r.doc.order.tag, title: r.doc.order.title, stage: view.orders.stage(r.doc, merged).stage }));
+  const items = page.map(r => ({ ...toRun(r.run, r.doc.order.tag, env, view.rows?.find(row => row.tag === r.doc.order.tag)?.activity, view.config.dispatch), project: view.config.id, tag: r.doc.order.tag, title: r.doc.order.title, stage: view.orders.stage(r.doc, merged).stage }));
   return { project: view.config.id, count: items.length, items, ...(page.length === query.limit && from + query.limit < rows.length && last ? { next: `${last.started}|${last.key}` } : {}) };
 }
 
@@ -352,7 +354,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
     needsStatus: o.needs.map(n => { try { return { tag: n, stage: view.orders.stage(view.orders.get(n), merged).stage }; } catch { return { tag: n }; } }),
     actions: actions.allowed, unavailable: actions.unavailable,
-    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity)), reports: doc.reports.map(toReport),
+    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch)), reports: doc.reports.map(toReport),
     referencedDecisions: referencedDecisions(view.config, doc, file?.markdown), questions: (doc.questions ?? []).map(toQuestion), quotes: (doc.quotes ?? []).map(q => toQuote(view.config.id, o.tag, q)), lessons: lessonsForOrder(view.config, doc),
     decisions: doc.actions.map(a => ({ seq: a.seq, at: a.at, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.imported ? { imported: true } : {}), ...(a.override ? { override: true } : {}) })),
     ...(check ? { lastCheck: check } : {}), ...(deliveryLint ? { deliveryLint } : {}), ...(verify ? { verify } : {}), ...(spend ? { spend } : {}),

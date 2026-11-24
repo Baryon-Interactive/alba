@@ -87,3 +87,14 @@ test('attention routes validate batches before marking and acknowledge current p
   assert.equal(q.seen, q.attention.at);
   assert.equal(q.unread, false);
 });
+
+test('run detail and list expose the slot range computed for launch', async () => {
+  const f = await fixture({ project: () => ({ dispatch: { port_base: 8100, port_block: 5 } }) });
+  const doc = f.orders.get('W1');
+  doc.runs[0].slot = 2;
+  f.orders.store.write(doc);
+  const detail = (await f.get('/api/orders/W1')).body;
+  const list = (await f.get('/api/runs')).body;
+  assert.deepEqual(detail.runs[0].ports, { first: 8110, last: 8114 });
+  assert.deepEqual(list.items.find((run: { tag: string }) => run.tag === 'W1').ports, detail.runs[0].ports);
+});

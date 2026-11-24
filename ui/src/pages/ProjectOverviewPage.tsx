@@ -2,7 +2,7 @@ import { OrderQuestion } from '@/components/OrderQuestion';
 import { UnreadDot } from '@/components/OrderAttention';
 import { Link } from 'react-router';
 import type { ProjectOverview } from '@api';
-import { Empty, ErrorBox, StageBadge } from '@/components/common';
+import { Empty, StageBadge, UnknownTotal, SectionBoundary } from '@/components/common';
 import { ActionButtons } from '@/components/ActionDialog';
 import { CapacitySummary } from '@/components/CapacitySummary';
 import { ProducerOverviewCard } from '@/components/ProducerActivity';
@@ -106,11 +106,12 @@ function Dependencies({ o }: { o: ProjectOverview }) {
 
 export function ProjectOverviewPage() {
   const project = useProjectId(); const q = useProjectOverview(project);
-  if (q.isError) return <ErrorBox error={q.error} />;
+  if (q.isError) return <UnknownTotal error={q.error} />;
   if (!q.data) return <div className="grid gap-3"><Skeleton className="h-8 w-64" /><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
   const o = q.data;
-  return <div className="space-y-4"><Brief o={o} />
-    <Attention o={o} /><NightlyGatesCard gates={o.nightlyGates} project={project} /><ProducerOverviewCard project={project} /><Live o={o} /><CapacitySummary project={project} workers={o.workers.items} capacity={o.capacity} />
-    <details className={`${panel} text-sm`}><summary className="px-4 py-3 font-medium">{t('Planning, drafts and dependencies')} <span className="ml-2 text-xs text-muted-foreground">{t('{n} drafts or held', { n: (o.stages.draft ?? 0) + (o.stages.held ?? 0) })}</span></summary><div className="grid gap-3 border-t p-3 lg:grid-cols-3"><Stages o={o} /><NextUp o={o} /><Dependencies o={o} /></div></details>
+  if (o.error) return <UnknownTotal error={o.error} />;
+  return <div className="space-y-4"><SectionBoundary title={t('Overview')}><Brief o={o} /></SectionBoundary>
+    <SectionBoundary title={t('Needs you')}><Attention o={o} /></SectionBoundary><SectionBoundary title={t('Nightly gates')}><NightlyGatesCard gates={o.nightlyGates} project={project} /></SectionBoundary><SectionBoundary title={t('Producer')}><ProducerOverviewCard project={project} /></SectionBoundary><SectionBoundary title={t('Live work')}><Live o={o} /></SectionBoundary><SectionBoundary title={t('Console capacity')}><CapacitySummary project={project} workers={o.workers.items} capacity={o.capacity} /></SectionBoundary>
+    <details className={`${panel} text-sm`}><summary className="px-4 py-3 font-medium">{t('Planning, drafts and dependencies')} <span className="ml-2 text-xs text-muted-foreground">{t('{n} drafts or held', { n: (o.stages.draft ?? 0) + (o.stages.held ?? 0) })}</span></summary><div className="grid gap-3 border-t p-3 lg:grid-cols-3"><SectionBoundary title={t('Stages')}><Stages o={o} /></SectionBoundary><SectionBoundary title={t('Next up')}><NextUp o={o} /></SectionBoundary><SectionBoundary title={t('Dependencies')}><Dependencies o={o} /></SectionBoundary></div></details>
   </div>;
 }

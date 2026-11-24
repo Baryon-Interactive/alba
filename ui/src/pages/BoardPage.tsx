@@ -7,7 +7,7 @@ import { commitAgeClass, statusColor } from '@/components/StatusPalette';
 import { Badge } from '@/components/ui/badge';
 import { Input, Select } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/misc';
-import { ErrorBox, PageHeader, StageBadge } from '@/components/common';
+import { SectionBoundary, ErrorBox, PageHeader, StageBadge } from '@/components/common';
 import { OverlapWarning } from '@/components/ReadinessCard';
 import { api } from '@/lib/api';
 import { keys } from '@/lib/keys';
@@ -54,7 +54,7 @@ function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; o
   const quiet = o.quietMinutes;
   return (
     <article
-      className={`${o.stage === 'running' ? 'scanline live-glow ' : ''}relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]`}
+      className={`${o.stage === 'running' && o.liveness === 'active' ? 'scanline live-glow ' : ''}relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]`}
       style={{ '--stage': statusColor(o.stage) } as React.CSSProperties}
     >
       <div className="flex items-center justify-between gap-2">
@@ -84,7 +84,7 @@ function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; o
       {o.uses && o.uses.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{o.uses.map(u => <Badge key={u} tone="outline" className="font-mono text-[10px]">{u}</Badge>)}</div>}
       {o.openCommand && <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">$ {o.openCommand}</div>}
       <OrderQuestion project={project} o={o} />
-      {(o.stage === 'running' || o.stage === 'monitoring') && <RunPeek project={project} tag={o.tag} />}
+      {(o.run || o.stage === 'monitoring') && <RunPeek project={project} tag={o.tag} />}
     </article>
   );
 }
@@ -150,7 +150,7 @@ export function BoardPage() {
                 <span className="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">{all.length}</span>
               </div>
               <div className="grid min-w-0 content-start gap-2">
-                {rows.map(o => <Card key={o.tag} project={project} o={o} overlapTags={(o.stage === 'running' || o.stage === 'awaiting-review') ? overlapByTag.get(o.tag) : undefined} />)}
+                {rows.map(o => <SectionBoundary key={o.tag} title={o.tag}><Card project={project} o={o} overlapTags={(o.stage === 'running' || o.stage === 'awaiting-review') ? overlapByTag.get(o.tag) : undefined} /></SectionBoundary>)}
                 {all.length === 0 && <div className="px-2 py-2 text-xs text-muted-foreground">{t('Empty')}</div>}
                 {col.id === 'done' && all.length > DONE_LIMIT && (
                   <button onClick={() => setShowAllDone(s => !s)} className="py-1 text-xs text-primary hover:underline">

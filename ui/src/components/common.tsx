@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { Component, type ContextType, type ReactNode } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { AlertTriangle, Inbox } from 'lucide-react';
 import type { OrderSpend, OrderSummary, RunUsage, Stage, WaitingFor } from '@api';
@@ -61,6 +62,35 @@ export function EmptyState({ icon, title, children, action }: { icon?: ReactNode
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
+}
+
+export function UnknownTotal({ error }: { error: unknown }) {
+  return <div role="alert" className="grid gap-1"><strong>{t('Total')} · {t('unknown')}</strong><ErrorBox error={error} /></div>;
+}
+
+export class SectionBoundary extends Component<{ title: string; children: ReactNode }, { error?: Error; retrying: boolean }> {
+  static contextType = QueryClientContext;
+  declare context: ContextType<typeof QueryClientContext>;
+  state: { error?: Error; retrying: boolean } = { retrying: false };
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error : new Error(String(error)), retrying: false };
+  }
+  retry = async () => {
+    this.setState({ retrying: true });
+    try {
+      await this.context?.invalidateQueries();
+      this.setState({ error: undefined, retrying: false });
+    } catch (error) {
+      this.setState(SectionBoundary.getDerivedStateFromError(error));
+    }
+  };
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <section role="alert" className="rounded-lg border bg-card p-3">
+      <h2 className="mb-2 font-semibold">{this.props.title}</h2><ErrorBox error={this.state.error} />
+      <button className="mt-2 text-sm text-primary hover:underline" disabled={this.state.retrying} onClick={this.retry}>{t('Retry')}</button>
+    </section>;
+  }
 }
 
 export function ErrorBox({ error }: { error: unknown }) {

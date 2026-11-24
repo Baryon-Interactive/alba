@@ -245,6 +245,7 @@ export interface Report {
 export type Liveness = 'active' | 'quiet' | 'unverifiable' | 'gone';
 
 export interface Run {
+  ports?: { first: number; last: number };
   liveness?: Liveness;
   quietMinutes?: number;
   role?: string;

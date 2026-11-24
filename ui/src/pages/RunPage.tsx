@@ -15,6 +15,7 @@ import { useOrder, useProjectId } from '@/lib/queries';
 import { dateTime, duration, tokens } from '@/lib/format';
 import { useSeenWhilePresent } from '@/components/OrderAttention';
 import { RunStatus } from '@/components/RunStatus';
+import { SectionBoundary } from '@/components/common';
 import { t } from '@/i18n';
 
 const SILENT_END_KINDS: ReadonlySet<EndKind> = new Set(['stream-cut-mid-turn', 'vanished', 'output-limit', 'context-limit']);
@@ -81,6 +82,8 @@ export function RunPage() {
         </div>
       )}
       <Card className="mb-3 flex flex-wrap gap-x-6 gap-y-2.5 p-3.5">
+        {run.slot !== undefined && <Stat label={t('Slot')}>{run.slot}</Stat>}
+        {run.ports && <Stat label={t('Port range')}><a className="text-primary hover:underline" href={`http://localhost:${run.ports.first}`} target="_blank" rel="noreferrer">{run.ports.first}</a>–{run.ports.last}</Stat>}
         <Stat label={t('Worker')}>{run.worker}</Stat>
         <Stat label={t('Started')}>{dateTime(run.started)}</Stat>
         <Stat label={t('Duration')}>{duration(run.started, run.ended)}</Stat>
@@ -109,7 +112,7 @@ export function RunPage() {
           {run.note}
         </div>
       )}
-      <div className="my-3"><MessageBox project={project} tag={tag} d={q.data} /></div>
+      <div className="my-3"><SectionBoundary title={t('Messages')}><MessageBox project={project} tag={tag} d={q.data} /></SectionBoundary></div>
 
       {!run.hasLog && !run.live ? (
         <Empty>{t('No log: this run was not started by the tool.')}</Empty>
@@ -132,7 +135,7 @@ export function RunPage() {
             <TabsTrigger value="activity">{t('Activity')}</TabsTrigger>
             <TabsTrigger value="log">{t('Raw log')}</TabsTrigger>
           </TabsList>
-          <TabsContent value="transcript">
+          <TabsContent value="transcript"><SectionBoundary title={t('Transcript')}>
             {tab === 'transcript' &&
               (run.hasLog ? (
                 <TranscriptView
@@ -145,18 +148,18 @@ export function RunPage() {
               ) : (
                 <Empty>{t('No log: this run was not started by the tool.')}</Empty>
               ))}
-          </TabsContent>
-          <TabsContent value="activity">
+          </SectionBoundary></TabsContent>
+          <TabsContent value="activity"><SectionBoundary title={t('Activity')}>
             {run.live ? <LivePanel live={run.live} /> : <Empty>{t('No live activity recorded for this run.')}</Empty>}
-          </TabsContent>
-          <TabsContent value="log">
+          </SectionBoundary></TabsContent>
+          <TabsContent value="log"><SectionBoundary title={t('Raw log')}>
             {tab === 'log' &&
               (run.hasLog ? (
                 <LogViewer project={project} runKey={run.key} live={live} />
               ) : (
                 <Empty>{t('No log: this run was not started by the tool.')}</Empty>
               ))}
-          </TabsContent>
+          </SectionBoundary></TabsContent>
         </Tabs>
       )}
     </div>

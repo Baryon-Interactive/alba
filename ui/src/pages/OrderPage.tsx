@@ -28,6 +28,7 @@ import { actionExplain, actionLabel, stageLabel, visibleActions, waitingFor } fr
 import { ago, dateTime, duration } from '@/lib/format';
 import { useSeenWhilePresent, MuteMenu } from '@/components/OrderAttention';
 import { RunStatus } from '@/components/RunStatus';
+import { SectionBoundary } from '@/components/common';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { statusColor } from '@/components/StatusPalette';
@@ -344,7 +345,7 @@ export function OrderPage() {
       {wanted && wanted !== 'close' && d.actions.includes(wanted) && (
         <ActionDialog project={project} tag={tag} action={wanted} open onOpenChange={o => !o && closeAsk()} context={wanted === 'answer' ? [...d.reports].reverse().find(r => r.question)?.question : undefined} noBranch={!d.order.branch} />
       )}
-      {d.stage === 'awaiting-review' && <MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} />}
+      {d.stage === 'awaiting-review' && <SectionBoundary title={t('Review')}><MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} /></SectionBoundary>}
       <Tabs value={tab} onValueChange={v => setParams(p => { const n = new URLSearchParams(p); n.set('tab', v); return n; }, { replace: true })}>
         <TabsList>
           <TabsTrigger value="overview">{t('Overview')}</TabsTrigger>
@@ -354,8 +355,8 @@ export function OrderPage() {
           <TabsTrigger value="evidence">{t('Evidence')}</TabsTrigger>
           <TabsTrigger value="review">{t('Review')}{hasDraft(draftKey(project, tag)) && <Badge tone="warning">{t('Draft (unsent)')}</Badge>}</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview"><Overview project={project} d={d} /></TabsContent>
-        <TabsContent value="runs">
+        <TabsContent value="overview"><SectionBoundary title={t('Overview')}><Overview project={project} d={d} /></SectionBoundary></TabsContent>
+        <TabsContent value="runs"><SectionBoundary title={t('Runs')}>
           {d.runs.length === 0 ? <Empty>{t('No runs yet.')}</Empty> : (
             <Card className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -364,15 +365,15 @@ export function OrderPage() {
               </table>
             </Card>
           )}
-        </TabsContent>
-        <TabsContent value="timeline"><Timeline d={d} /></TabsContent>
-        <TabsContent value="check"><CheckPanel project={project} detail={d} /></TabsContent>
-        <TabsContent value="evidence">{tab === 'evidence' && <EvidencePanel project={project} tag={tag} />}</TabsContent>
-        <TabsContent value="review">
+        </SectionBoundary></TabsContent>
+        <TabsContent value="timeline"><SectionBoundary title={t('Timeline')}><Timeline d={d} /></SectionBoundary></TabsContent>
+        <TabsContent value="check"><SectionBoundary title={t('Check')}><CheckPanel project={project} detail={d} /></SectionBoundary></TabsContent>
+        <TabsContent value="evidence"><SectionBoundary title={t('Evidence')}>{tab === 'evidence' && <EvidencePanel project={project} tag={tag} />}</SectionBoundary></TabsContent>
+        <TabsContent value="review"><SectionBoundary title={t('Review')}>
           {tab === 'review' && (hasDiff
             ? <Suspense fallback={<Skeleton className="h-64" />}><ReviewPanel project={project} detail={d} /></Suspense>
             : <Empty>{t('This order has no branch to review yet.')}</Empty>)}
-        </TabsContent>
+        </SectionBoundary></TabsContent>
       </Tabs>
     </div>
   );

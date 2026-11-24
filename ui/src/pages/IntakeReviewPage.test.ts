@@ -8,7 +8,8 @@ import { testTranslations as translated } from '../test-translations';
 vi.mock('react-router', () => ({ Link: ({ children, to }: { children: ReactNode; to: string }) => createElement('a', { href: to }, children), useParams: () => ({ tag: 'INTAKE-1' }) }));
 vi.mock('@/lib/queries', () => ({ useProjectId: () => 'demo' }));
 vi.mock('@/lib/api', () => ({ api: { intakeReview: async () => ({}), intakeReviewView: async () => ({}) } }));
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async importOriginal => ({
+  ...await importOriginal<typeof import('@tanstack/react-query')>(),
   useQuery: (options: { queryKey: unknown[] }) => options.queryKey[0] === 'intake-review'
     ? { data: { order: 'INTAKE-1', docs: [{ id: 'core', title: 'Core', order: 1, version: 1, blocks: [{ id: 'b1', heading_path: ['Core'], text: 'The loop.', level: 1 }] }], coverage: {}, questions: '', systems: [{ id: 'RUN', status: 'pending', entities: 1, target_count: 3 }], latestCheck: { status: 'passed', tail: '3/3 blocks classified', issues: [] } }, refetch: vi.fn() }
     : { data: undefined, refetch: vi.fn() },
