@@ -96,13 +96,7 @@ export function approve(project: ProjectConfig, orders: Orders, tag: string, not
     }
   }
   if (doc.order.parent) {
-    const merge = mergeChild(project, orders, tag, branch, note, override, commit => {
-      if (pipeline) {
-        const trial = trialAcceptance(project, orders, tag, false, override);
-        if (trial.status !== 'passed') fail('Acceptance failed: {reason}', { reason: trial.reason || trial.status });
-      }
-      acceptDesignChanges(project, orders, tag, override, note, { commit });
-    });
+    const merge = mergeChild(project, orders, tag, branch, note, override, pipeline);
     return { acceptFile: '', merge, accept, parent: doc.order.parent };
   }
   const acceptFile = path.join(project.work_orders, `${doc.order.tag}.accept.md`);
