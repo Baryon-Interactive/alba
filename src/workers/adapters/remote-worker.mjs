@@ -2,7 +2,6 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import { workerEnvironment } from './environment.mjs';
-import { codexVerifierServers, disableServers, worktreeFingerprint } from './read-only.mjs';
 
 const spec = JSON.parse(readFileSync(new URL('./spec.json', import.meta.url), 'utf8'));
 const fill = s => s.replaceAll('{tunnel_port}', process.argv[2] ?? '0');
@@ -19,13 +18,14 @@ function command(program, args) {
   return ['powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]];
 }
 const options = { cwd: spec.worktree, env: workerEnvironment(process.env, explicit, spec.env_unset), windowsHide: true };
-const baseline = spec.read_only && worktreeFingerprint(spec.worktree);
+const verifier = spec.read_only ? await import('./read-only.mjs') : undefined;
+const baseline = verifier?.worktreeFingerprint(spec.worktree);
 if (spec.read_only === 'codex-cli') {
-  const servers = codexVerifierServers(spec.program, spec.worktree, ([program, ...argv]) => {
+  const servers = verifier.codexVerifierServers(spec.program, spec.worktree, ([program, ...argv]) => {
     const [exe, flags] = command(program, argv);
     return execFileSync(exe, flags, { ...options, encoding: 'utf8', timeout: 30000 });
   });
-  args.splice(1, 0, ...disableServers(servers));
+  args.splice(1, 0, ...verifier.disableServers(servers));
 } else if (spec.read_only === 'claude-cli') {
   const home = spec.read_only_home;
   mkdirSync(home, { recursive: true });
@@ -38,7 +38,7 @@ const child = spawn(program, argv, { ...options, stdio: ['ignore', 'inherit', 'i
 child.on('error', error => { process.stderr.write(error.message + '\n'); process.exitCode = 1; });
 child.on('exit', code => {
   if (baseline) {
-    const result = worktreeFingerprint(spec.worktree) === baseline ? 'unchanged' : 'changed';
+    const result = verifier.worktreeFingerprint(spec.worktree) === baseline ? 'unchanged' : 'changed';
     writeFileSync(new URL('./result/worktree-check', import.meta.url), result);
   }
   process.exitCode = code ?? 1;

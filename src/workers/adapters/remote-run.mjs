@@ -111,7 +111,7 @@ export async function runRemote(spec, transport = {}) {
     for (const f of spec.order_files) writeFileSync(path.join(overlay, '.alba', 'order', path.basename(f)), rewrite(readFileSync(f, 'utf8')), 'utf8');
     writeFileSync(path.join(overlay, '.alba', 'order', 'prompt.md'), rewrite(readFileSync(spec.prompt_file, 'utf8')), 'utf8');
     cpSync(fileURLToPath(new URL('./remote-run.ps1', import.meta.url)), path.join(dir, 'run.ps1'));
-    cpSync(fileURLToPath(new URL('./read-only.mjs', import.meta.url)), path.join(dir, 'read-only.mjs'));
+    if (spec.read_only) cpSync(fileURLToPath(new URL('./read-only.mjs', import.meta.url)), path.join(dir, 'read-only.mjs'));
     cpSync(fileURLToPath(new URL('./remote-worker.mjs', import.meta.url)), path.join(dir, 'worker.mjs'));
     cpSync(fileURLToPath(new URL('./desktop-run.ps1', import.meta.url)), path.join(dir, 'desktop-run.ps1'));
     cpSync(fileURLToPath(new URL('../../run/environment.mjs', import.meta.url)), path.join(dir, 'environment.mjs'));
