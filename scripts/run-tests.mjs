@@ -7,9 +7,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 /** Start real serves, processes or probes and measure time: never run them next to other files. */
-const SERIAL = ['serve-reload', 'serve-isolation', 'serve-events', 'machines', 'nightly-gates', 'nightly-gates-scheduling'];
+const SLOW_SERIAL = ['serve-reload', 'serve-isolation', 'serve-events', 'machines', 'nightly-gates', 'nightly-gates-scheduling', 'acceptance', 'remote-workers'];
+// The process-table latency check is quick enough for the fast set, but sensitive to parallel integration work.
+const SERIAL = [...SLOW_SERIAL, 'process-table'];
 /** Slow integration files that `test:fast` leaves out (`pnpm test` runs them). */
-const SLOW = [...SERIAL, 'acceptance', 'design-integration', 'evidence-gates-real', 'editors', 'remote-workers'];
+const SLOW = [...SLOW_SERIAL, 'design-integration', 'evidence-gates-real', 'editors'];
 /** Keep the Node runner's ten-minute test timeout. Subprocess integration files can take several minutes. */
 const TIMEOUT_MS = 10 * 60_000;
 
