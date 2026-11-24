@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { OrderAction } from '@api';
+import type { OrderAction, OrderPhase } from '@api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Input, Textarea, Label, Select } from '@/components/ui/input';
@@ -13,20 +13,22 @@ const NEEDS_TEXT: Partial<Record<OrderAction, 'note' | 'text'>> = { rework: 'not
 const variantOf = (a: OrderAction) => (a === 'approve' ? 'success' : a === 'cancel' ? 'destructive' : a === 'rework' ? 'default' : 'default') as 'success' | 'destructive' | 'default';
 
 /** The second step of every action: nothing is sent before the person confirms here. */
-export function ActionDialog({ project, tag, action, open, onOpenChange, initialText = '', context, branch, noBranch, onDone }: {
+export function ActionDialog({ project, tag, action, open, onOpenChange, initialText = '', context, branch, noBranch, onDone, phases }: {
+  phases?: OrderPhase[];
   project: string; tag: string; action: OrderAction; open: boolean; onOpenChange: (open: boolean) => void; initialText?: string; context?: string; branch?: string; noBranch?: boolean; onDone?: () => void;
 }) {
   const act = useAct(project);
   const [text, setText] = useState(initialText);
   const [branchText, setBranchText] = useState(branch ?? '');
+  const [phase, setPhase] = useState('');
   const [worker, setWorker] = useState('');
   const workers = useWorkers(action === 'run' && open ? project : '');
   const askBranch = action === 'approve' && !!noBranch;
   const required = NEEDS_TEXT[action];
-  useEffect(() => { if (open) { setText(initialText); setBranchText(branch ?? ''); setWorker(''); act.reset(); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setText(initialText); setBranchText(branch ?? ''); setWorker(''); setPhase(''); act.reset(); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
-    const body = { tag, action, ...(required === 'text' ? { text: text.trim() } : text.trim() ? { note: text.trim() } : {}), ...(askBranch && branchText.trim() ? { branch: branchText.trim() } : {}), ...(action === 'run' && worker ? { worker } : {}) };
+    const body = { tag, action, ...(action === 'rework' && phase ? { phase } : {}), ...(required === 'text' ? { text: text.trim() } : text.trim() ? { note: text.trim() } : {}), ...(askBranch && branchText.trim() ? { branch: branchText.trim() } : {}), ...(action === 'run' && worker ? { worker } : {}) };
     act.mutate(body, { onSuccess: () => { onDone?.(); onOpenChange(false); } });
   };
   const blocked = (!!required && !text.trim()) || (askBranch && !branchText.trim());
@@ -43,6 +45,12 @@ export function ActionDialog({ project, tag, action, open, onOpenChange, initial
             <Input value={branchText} onChange={e => setBranchText(e.target.value)} placeholder="order/abc" className="font-mono text-[13px]" />
           </div>
         )}
+        {action === 'rework' && phases?.length && <label className="grid gap-1.5">
+          {t('Restart from phase')}
+          <Select value={phase || phases[phases.length - 1].id} onChange={e => setPhase(e.target.value)}>
+            {phases.map(p => <option key={p.id} value={p.id}>{p.id}</option>)}
+          </Select>
+        </label>}
         {action === 'run' && (
           <div className="grid gap-1.5">
             <Label>{t('Worker')}</Label>
@@ -71,8 +79,9 @@ export function ActionDialog({ project, tag, action, open, onOpenChange, initial
 }
 
 /** Buttons for a list of actions; each opens the confirmation. Actions the stage does not allow are left out, or shown off with the reason. */
-export function ActionButtons({ project, tag, actions, unavailable, only, size = 'sm', initialText, context, noBranch }: {
+export function ActionButtons({ project, tag, actions, unavailable, only, size = 'sm', initialText, context, noBranch, phases }: {
   project: string; tag: string; actions: OrderAction[]; unavailable?: Partial<Record<OrderAction, string>>;
+  phases?: OrderPhase[];
   only?: OrderAction[]; size?: 'sm' | 'default'; initialText?: Partial<Record<OrderAction, string>>; context?: string;
   /** The order has no branch recorded (it came from a table): next to Approve there is a box for the branch, which is recorded and checked. */
   noBranch?: boolean;
@@ -98,7 +107,7 @@ export function ActionButtons({ project, tag, actions, unavailable, only, size =
           </span>
         );
       })}
-      {open && <ActionDialog project={project} tag={tag} action={open} open onOpenChange={o => !o && setOpen(null)} initialText={initialText?.[open]} context={context} branch={branch} noBranch={noBranch} />}
+      {open && <ActionDialog project={project} tag={tag} action={open} phases={phases} open onOpenChange={o => !o && setOpen(null)} initialText={initialText?.[open]} context={context} branch={branch} noBranch={noBranch} />}
     </>
   );
 }

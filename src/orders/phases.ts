@@ -25,12 +25,15 @@ export function orderPhases(project: ProjectConfig, doc: OrderDoc, kind = doc.or
       }
     }
   }
-  const planOf = (phase: Phase) => {
+  const runsOf = (phase: Phase) => {
     const i = list.indexOf(phase);
     const cutoff = reset.findLast(a => startIndex(a) <= i)?.seq ?? 0;
-    const source = doc.runs.findLast(r => r.phase === phase.id && r.seq > cutoff && r.outcome === 'completed');
+    return doc.runs.filter(r => r.phase === phase.id && r.seq > cutoff);
+  };
+  const planOf = (phase: Phase) => {
+    const source = runsOf(phase).findLast(r => r.outcome === 'completed');
     const report = source && doc.reports.findLast(r => r.run === source.id);
     return source && report?.status === 'ready' && report.plan ? { run: source, text: report.plan } : undefined;
   };
-  return { list, index, current: list[index]!, planOf };
+  return { list, index, current: list[index]!, planOf, runsOf };
 }

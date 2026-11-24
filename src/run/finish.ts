@@ -1,4 +1,4 @@
-import { worktreeFingerprint } from './phase.ts';
+import { readOnlyChange } from './phase.ts';
 import { runProcessMatches } from './kill-tree.ts';
 import { textSessionId } from '../workers/adapters/index.ts';
 import { totalUsage } from '../usage/fold.ts';
@@ -165,11 +165,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     const failed = (summary: string, why: string, question?: string, status: 'failed' | 'blocked' = 'failed') =>
       push({ outcome: 'failed', report: { status, summary, ...(question ? { question } : {}), evidence: run.log ? [run.log] : [], commits: [] }, why });
 
-    if (run.worktree_fingerprint) {
-      let unchanged = false;
-      try { unchanged = !!run.cwd && run.worktree_fingerprint === worktreeFingerprint(run.cwd); } catch { /* a lost checkout cannot pass */ }
-      if (!unchanged) { const reason = t('The worktree changed during a read-only phase.'); failed(reason, reason); continue; }
-    }
+    const changed = readOnlyChange(run);
+    if (changed) { failed(changed, changed); continue; }
     let report: ReportInput | undefined, from: string | undefined, broken: string | undefined, writeLast: Finish['writeLast'];
     const boundReport = (candidate: ReportInput, source: string, text: string, modified?: string) => {
       if (!accepts(candidate, source, modified)) return undefined;

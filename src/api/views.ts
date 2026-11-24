@@ -1,3 +1,4 @@
+import { orderPhases } from '../orders/phases.ts';
 import { attentionState } from './attention.ts';
 import { attentionMarks, type AttentionMark } from '../orders/attention-store.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
@@ -83,6 +84,7 @@ export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: Orde
   const observation = observeRun(run, env, activity);
   return {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
+    ...(run.phase ? { phase: run.phase, model: run.model } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
     ...(run.ended ? { ended: run.ended } : {}), ...(run.outcome ? { outcome: run.outcome } : {}), ...(run.note ? { note: run.note } : {}),
     imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...observation, ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(port !== undefined ? { ports: { first: port, last: port + (dispatch?.port_block || 10) - 1 } } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
@@ -126,13 +128,18 @@ export function monitorViewOf(doc: OrderDoc, stage: Stage): A.MonitorView | unde
   return { spec, started: m.started, deadline: m.deadline, checks: m.checks, ...(m.last_at ? { lastCheckAt: m.last_at } : {}), ...(m.last_result ? { lastResult: m.last_result } : {}), ...(m.tail ? { tail: m.tail } : {}) };
 }
 
+function phaseSummary(project: ProjectConfig, doc: OrderDoc) {
+  const phases = orderPhases(project, doc);
+  return phases ? { phase: { id: phases.current.id, index: phases.index + 1, count: phases.list.length } } : {};
+}
+
 export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: AttentionMark): A.OrderSummary {
   const open = doc.runs.find(r => r.ended === undefined);
   const observation = observeRun(open, env, activity);
   const spend = spendOf(doc, env);
   const o = doc.order;
   return {
-    ...attentionState(doc, mark),
+    ...phaseSummary(project, doc), ...attentionState(doc, mark),
     ...(open && liveRuns.peek(open) ? { live: liveRuns.peek(open) } : {}), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}),
     ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
     ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}),
@@ -161,7 +168,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
       const observation = observeRun(open, env, row?.activity);
       const waitingQuestion = (stage.stage === 'awaiting-user' || stage.stage === 'blocked') && stage.waitingFor !== 'card' && latest?.question
         ? { text: latest.question, options: latest.options && toOptions(latest.options) } : undefined;
-      return { ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      return { ...phaseSummary(view.config, doc), ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
         quietMinutes: observation.quietMinutes, liveness: observation.liveness, ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
@@ -339,12 +346,21 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const messages = worktree ? readInbox(worktree, live?.inbox_opened_at) : [];
   const nudge = open ? readNudges(view.config)[nudgeKey(o.tag, open.id)] : undefined;
   const firstPass = currentFirstPass(view.orders, doc);
+  const phases = orderPhases(view.config, doc);
   return {
     ...attentionState(doc, attentionMarks(view.orders.store).get(o.tag)),
+    ...(phases ? { phases: phases.list.map((p, i): A.OrderPhase => {
+      const latest = phases.runsOf(p).at(-1);
+      const finished = latest?.outcome === 'completed' && doc.reports.findLast(r => r.run === latest.id)?.status === 'ready';
+      const runs = doc.runs.filter(r => r.phase === p.id).map(({ id, worker, model }) => ({ id, worker, model }));
+      return { id: p.id, role: p.role, mode: p.mode, state: i > phases.index ? 'next' : i < phases.index || finished ? 'done' : 'current',
+        runs, worker: latest?.worker, model: latest?.model, plan: phases.planOf(p)?.text };
+    }) } : {}),
     producerNotes: { project: producerNotes(view.config), order: producerNotes(view.config, o.tag) },
     ...(doc.reroutes?.length ? { reroutes: doc.reroutes.slice(-10).map(r => ({ id: r.id, at: r.at, from: r.from, to: r.to, note: r.note, brief: doc.runs.find(run => run.reroute === r.id)?.previous_attempts ?? r.brief })) } : {}),
     project: view.config.id,
     order: {
+      ...(o.phases ? { phases: o.phases } : {}),
       ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
       ...(o.planned ? { planned: true } : {}), ...(o.intent ? { intent: o.intent } : {}), ...(o.role ? { role: o.role } : {}),
       review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind({ kind: o.kind, routing: routingNow }), ...(o.uses?.length ? { uses: o.uses } : {}), ...(o.heavy ? { heavy: o.heavy } : {}), needs: o.needs, ...(o.condition ? { condition: o.condition } : {}),
@@ -354,7 +370,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
     needsStatus: o.needs.map(n => { try { return { tag: n, stage: view.orders.stage(view.orders.get(n), merged).stage }; } catch { return { tag: n }; } }),
     actions: actions.allowed, unavailable: actions.unavailable,
-    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch)), reports: doc.reports.map(toReport),
+    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch)), reports: doc.reports.map(r => ({ ...toReport(r), ...(r.plan ? { plan: r.plan } : {}) })),
     referencedDecisions: referencedDecisions(view.config, doc, file?.markdown), questions: (doc.questions ?? []).map(toQuestion), quotes: (doc.quotes ?? []).map(q => toQuote(view.config.id, o.tag, q)), lessons: lessonsForOrder(view.config, doc),
     decisions: doc.actions.map(a => ({ seq: a.seq, at: a.at, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.imported ? { imported: true } : {}), ...(a.override ? { override: true } : {}) })),
     ...(check ? { lastCheck: check } : {}), ...(deliveryLint ? { deliveryLint } : {}), ...(verify ? { verify } : {}), ...(spend ? { spend } : {}),

@@ -13,10 +13,10 @@ export interface Phase {
 export type Phases = Record<string, Phase[]>;
 
 export function parsePhases(raw: unknown): Phases {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('phases must map order kinds to phase lists.');
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('phases must map order kinds to phase lists.');
   const result: Phases = Object.create(null);
   for (const [kind, list] of Object.entries(raw)) {
-    if (!kind.trim() || !Array.isArray(list) || list.length < 2) throw new Error(`phases.${kind} needs read-only phases followed by one write phase.`);
+    if (!kind.trim() || !Array.isArray(list) || list.length < 2) fail('phases.{kind} needs read-only phases followed by one write phase.', { kind });
     const seen = new Set<string>();
     result[kind] = list.map((p, index) => {
       if (!p || typeof p !== 'object' || Object.keys(p).some(k => !['id', 'mode', 'role', 'timeout_minutes'].includes(k))
@@ -24,7 +24,7 @@ export function parsePhases(raw: unknown): Phases {
         || p.mode !== (index === list.length - 1 ? 'write' : 'read-only')
         || (p.role !== undefined && (typeof p.role !== 'string' || !p.role.trim()))
         || (p.timeout_minutes !== undefined && (!Number.isFinite(p.timeout_minutes) || p.timeout_minutes <= 0))) {
-        throw new Error(`Invalid phase at phases.${kind}[${index}]. Check its unique id, mode, role and timeout.`);
+        fail('Invalid phase at phases.{kind}[{index}]. Check its unique id, mode, role and timeout.', { kind, index });
       }
       seen.add(p.id);
       return { ...p };
@@ -40,7 +40,7 @@ export function validatePhaseWorkers(project: ProjectConfig, workers: WorkersFil
     if (phase.mode !== 'read-only') continue;
     const candidates = workers.workers.map(config => ({ config, available: true, running: 0, runsToday: 0, reasons: [] }));
     const choice = chooseWorker({ kind, tags: [], role: role && { ...role, readOnly: true } }, candidates);
-    if (!choice.candidates.some(c => c.verdict !== 'unfit')) throw new Error(`phases.${kind}.${phase.id} has no worker with an enforced read-only launch for its role.`);
+    if (!choice.candidates.some(c => c.verdict !== 'unfit')) fail('phases.{kind}.{id} has no worker with an enforced read-only launch for its role.', { kind, id: phase.id });
   }
 }
 

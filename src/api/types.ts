@@ -217,6 +217,7 @@ export interface OrderSpend {
 }
 
 export interface Report {
+  plan?: string;
   designChanges?: string[];
   seq: number;
   at: string;
@@ -245,6 +246,8 @@ export interface Report {
 export type Liveness = 'active' | 'quiet' | 'unverifiable' | 'gone';
 
 export interface Run {
+  phase?: string;
+  model?: string;
   ports?: { first: number; last: number };
   liveness?: Liveness;
   quietMinutes?: number;
@@ -362,6 +365,7 @@ export interface AttentionState {
 }
 
 export interface OrderSummary extends AttentionState {
+  phase?: { id: string; index: number; count: number };
   liveness?: Liveness;
   waitingQuestion?: { text: string; options?: QuestionOption[] };
   nextWorker?: string;
@@ -588,7 +592,19 @@ export interface OrderSkills {
 }
 
 /** `GET /api/orders/:tag` */
+export interface OrderPhase {
+  id: string;
+  mode: 'read-only' | 'write';
+  role?: string;
+  state: 'done' | 'current' | 'next';
+  runs: { id: string; worker: string; model?: string }[];
+  worker?: string;
+  model?: string;
+  plan?: string;
+}
+
 export interface OrderDetail extends AttentionState {
+  phases?: OrderPhase[];
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };
   acceptance?: import('../review/acceptance.ts').AcceptanceCard;
@@ -957,6 +973,7 @@ export interface NewOrderResult {
 
 /** `POST /api/orders/:tag/actions` */
 export interface ActionRequest {
+  phase?: string;
   project?: string;
   action: OrderAction;
   /** Required for `rework`, and for `close` with `done-by-lead` (at least 10 characters); optional for approve, hold, cancel, `merged-elsewhere`. */

@@ -1,3 +1,5 @@
+import { readOnlyChange } from '../run/phase.ts';
+import { orderPhases } from '../orders/phases.ts';
 import { phasesOverride } from '../orders/phase-config.ts';
 import { loadMachines } from '../machines/config.ts';
 import { foundationGaps, foundationStates, formatFoundations, orderTraits } from '../foundations/foundations.ts';
@@ -304,6 +306,11 @@ function show(orders: Orders, tag: string, project?: ProjectConfig): string {
   const { stage, why } = orders.stage(doc);
   const out: string[] = [`${o.tag}  ${o.title}`, `${t('stage')}: ${stage}  (${why})`];
   const field = (label: string, value: string | undefined) => { if (value) out.push(`${label}: ${value}`); };
+  const phases = project && orderPhases(project, doc);
+  if (phases) field(t('Order phases'), phases.list.map((p, i) => {
+    const last = phases.runsOf(p).at(-1);
+    return `${p.id} ${i + 1}/${phases.list.length}${last ? ` (${[last.worker, last.model].filter(Boolean).join(', ')})` : ''}`;
+  }).join(' → '));
   const sparseDirs = o.worktree && existsSync(o.worktree) ? worktreeSparseDirs(o.worktree) : (project ? effectiveSparse(project, o) : (o.sparse?.length ? o.sparse : undefined));
   field(t('kind'), o.kind); field(t('heavy'), o.heavy); field(t('worker'), o.worker); field(t('model'), o.model); field(t('needs'), o.needs.join(', ')); field(t('condition'), o.condition);
   field(t('source'), o.scheduled?.source); field(t('planned'), o.scheduled?.planned_at);
@@ -840,7 +847,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
       }
       case 'set': {
         need(1, 'alba orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--tools id,id] [--worker id] [--run-model m]');
-        if (values.phases === undefined && values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.sparse === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker or --run-model.');
+        if (values.phases === undefined && values.branch === undefined && values.worktree === undefined && values['base-ref'] === undefined && values.sparse === undefined && values.uses === undefined && values.tools === undefined && values.role === undefined && values.worker === undefined && values['run-model'] === undefined) fail('orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker, --run-model or --phases.');
         const before = orders.get(rest[0]).order;
         if (values.phases !== undefined) orders.update(rest[0], { phases: phasesOverride(values.phases) });
         if (values.worker !== undefined) {
@@ -880,12 +887,24 @@ ${editorLines(editors, projects.length > 1)}` : body;
       case 'run-start': {
         need(1, 'alba orders run-start <TAG> --worker <worker>');
         if (!values.worker) fail('run-start needs --worker.');
-        const { doc, run: r } = orders.runStart(rest[0], { worker: values.worker, session: values.session });
+        const phase = orderPhases(cfg, orders.get(rest[0]))?.current;
+        if (phase?.mode === 'read-only') fail('Use alba run for a read-only phase so the engine enforces its restrictions.');
+        const { doc, run: r } = orders.runStart(rest[0], { worker: values.worker, session: values.session,
+          ...(phase ? { extra: { phase: phase.id, final_phase: true, role: phase.role ?? orders.get(rest[0]).order.role, phase_timeout_minutes: phase.timeout_minutes } } : {}) });
         return `${tagLine(doc)} (${r.id}${r.note ? t(', with rework note: {note}', { note: r.note }) : ''})`;
       }
       case 'run-end': {
         need(1, 'alba orders run-end <TAG> [--outcome o]');
         const outcome = (values.outcome ?? 'completed') as RunOutcome;
+        const open = orders.get(rest[0]).runs.find(r => !r.ended);
+        const changed = open && readOnlyChange(open);
+        if (changed) {
+          orders.store.transaction(() => {
+            orders.runEnd(rest[0], 'failed', { kind: 'nonzero-exit', detail: changed, why: changed });
+            orders.report(rest[0], { status: 'failed', summary: changed, evidence: [], commits: [] });
+          });
+          return tagLine(orders.get(rest[0]));
+        }
         const { doc: ended, run: closed } = orders.runEnd(rest[0], outcome);
         // A run a person ends as completed whose log already ends with its report (a worker whose process stayed after its last
         // message): that report is recorded, as the end of the process would have done.
@@ -895,11 +914,11 @@ ${editorLines(editors, projects.length > 1)}` : body;
         if (found && !stale) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
           requeueUndeliveredInbox(orders, rest[0], closed);
-          if (found.report.status === 'ready') {
+          if (found.report.status === 'ready' && !closed.next_phase) {
             const { mergeBaseBeforeReview } = await import('../check/base-merge.ts');
             mergeBaseBeforeReview(cfg, orders, rest[0], closed);
           }
-          lintDelivery(cfg, orders, rest[0]);
+          if (!closed.next_phase) lintDelivery(cfg, orders, rest[0]);
           return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
         }
         requeueUndeliveredInbox(orders, rest[0], closed);
@@ -922,7 +941,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
           return t('stale report');
         }
         orders.report(rest[0], { ...parsed, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: readFileSync(file, 'utf8') } : {}) }, path.basename(file));
-        lintDelivery(cfg, orders, rest[0]);
+        if (!doc.runs.at(-1)?.next_phase) lintDelivery(cfg, orders, rest[0]);
         return tagLine(orders.get(rest[0]));
       }
       case 'ready': {

@@ -201,7 +201,7 @@ export default function ReviewPanel({ project, detail }: { project: string; deta
         </div>
         {rework && (
           <ActionDialog
-            project={project} tag={tag} action="rework" open onOpenChange={o => !o && setRework(false)} initialText={note}
+            project={project} tag={tag} action="rework" phases={detail.phases} open onOpenChange={o => !o && setRework(false)} initialText={note}
             onDone={() => setStored(emptyDraft())}
           />
         )}

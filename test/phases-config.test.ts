@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { tempOrders } from './helpers.ts';
+import { alba, projectDir } from './cli-helper.ts';
 import { validateProject } from '../src/config.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { validatePhaseWorkers } from '../src/orders/phase-config.ts';
@@ -8,6 +10,22 @@ const base = { id: 'sample', name: 'Sample', root: '.', work_orders: '.', state_
 const plan = { id: 'inspect', mode: 'read-only', role: 'reader' };
 const write = { id: 'build', mode: 'write' };
 const config = (list: unknown[]) => validateProject({ ...base, phases: { code: list } }, 'project.yaml');
+
+test('orders add and set expose the per-order opt-out through the CLI', () => {
+  const { dir, orders } = tempOrders();
+  const project = projectDir(dir, 'phases:\n  code:\n    - { id: inspect, mode: read-only }\n    - { id: build, mode: write }\n');
+  const run = (...args: string[]) => {
+    const result = alba(project, ['orders', ...args]);
+    assert.equal(result.code, 0, result.err);
+    return result.out;
+  };
+  run('add', 'LOOKUP', '--title', 'Check lookup', '--kind', 'code', '--phases', 'none');
+  assert.equal(orders.get('LOOKUP').order.phases, 'none');
+  run('add', 'STORE', '--title', 'Check store', '--kind', 'code');
+  assert.match(run('show', 'STORE'), /inspect 1\/2.*build 2\/2/);
+  run('set', 'STORE', '--phases', 'none');
+  assert.equal(orders.get('STORE').order.phases, 'none');
+});
 
 test('phase lists require unique ids and exactly one final write phase', () => {
   assert.deepEqual(config([plan, write]).phases?.code, [plan, write]);

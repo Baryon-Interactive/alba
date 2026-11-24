@@ -2,6 +2,7 @@ import { DraftPanel } from '@/components/DraftPanel';
 import { AcceptanceCard } from '@/components/AcceptanceCard';
 import { OrderAccounting } from '@/components/Usage';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { PhaseStrip } from '@/components/OrderPhases';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router';
 import { ArrowRight, CircleDot, FileText, Pencil, Play } from 'lucide-react';
 import { ORDER_ACTIONS, type OrderDetail, type OrderEvent, type OrderSummary, type Run } from '@api';
@@ -333,19 +334,20 @@ export function OrderPage() {
           <p className="mt-1 text-sm text-muted-foreground">{stageLabel(d.stage, d.waitingFor)} — {d.why}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} only={closeIdx < 0 ? visible : visible.slice(0, closeIdx)} noBranch={!d.order.branch} />
+          <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} phases={d.phases} only={closeIdx < 0 ? visible : visible.slice(0, closeIdx)} noBranch={!d.order.branch} />
           {closeIdx >= 0 && <Button size="sm" variant="outline" onClick={() => setClosing(true)}>{actionLabel('close')}</Button>}
-          {closeIdx >= 0 && visible.slice(closeIdx + 1).length > 0 && <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} only={visible.slice(closeIdx + 1)} noBranch={!d.order.branch} />}
+          {closeIdx >= 0 && visible.slice(closeIdx + 1).length > 0 && <ActionButtons project={project} tag={tag} actions={d.actions} unavailable={d.unavailable} phases={d.phases} only={visible.slice(closeIdx + 1)} noBranch={!d.order.branch} />}
           {d.actions.includes('answer') && <ActionButtons project={project} tag={tag} actions={d.actions} only={['answer']} context={[...d.reports].reverse().find(r => r.question)?.question} />}
           {d.order.kind === 'intake' && <Button asChild size="sm" variant="outline"><Link to={`/p/${encodeURIComponent(project)}/intake/${encodeURIComponent(tag)}`}>{t('Intake review')}</Link></Button>}
         </div>
       </div>
 
+      {d.phases && <PhaseStrip phases={d.phases} />}
       {(closing || (wanted === 'close' && d.actions.includes('close'))) && (
         <CloseOrderDialog project={project} tag={tag} open onOpenChange={o => { if (!o) { setClosing(false); if (wanted === 'close') closeAsk(); } }} />
       )}
       {wanted && wanted !== 'close' && d.actions.includes(wanted) && (
-        <ActionDialog project={project} tag={tag} action={wanted} open onOpenChange={o => !o && closeAsk()} context={wanted === 'answer' ? [...d.reports].reverse().find(r => r.question)?.question : undefined} noBranch={!d.order.branch} />
+        <ActionDialog project={project} tag={tag} phases={d.phases} action={wanted} open onOpenChange={o => !o && closeAsk()} context={wanted === 'answer' ? [...d.reports].reverse().find(r => r.question)?.question : undefined} noBranch={!d.order.branch} />
       )}
       {d.stage === 'awaiting-review' && <SectionBoundary title={t('Review')}><MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} /></SectionBoundary>}
       <Tabs value={tab} onValueChange={v => setParams(p => { const n = new URLSearchParams(p); n.set('tab', v); return n; }, { replace: true })}>

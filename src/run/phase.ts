@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import type { orderPhases } from '../orders/phases.ts';
+import { t } from '../i18n.ts';
 import { fenceUntrusted } from './fence.ts';
 
 export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
@@ -15,6 +16,12 @@ export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
   if (sections.length) sections.push('The plan is guidance. Deviate when the code says otherwise and say why in your report.');
   if (phases.current.mode === 'read-only') sections.push(`This is the read-only planning phase "${phases.current.id}". Inspect the order and its worktree. Leave all files untouched. End with a normal report block in your final message, with a one-line summary and the Markdown plan in the JSON "plan" field (at most 24 KiB).`);
   return '\n' + sections.join('\n\n') + '\n';
+}
+
+export function readOnlyChange(run: { cwd?: string; worktree_fingerprint?: string }): string | undefined {
+  if (!run.worktree_fingerprint) return;
+  try { if (run.cwd && run.worktree_fingerprint === worktreeFingerprint(run.cwd)) return; } catch { /* a missing checkout cannot pass */ }
+  return t('The worktree changed during a read-only phase.');
 }
 
 /** Include HEAD, the index, tracked changes and untracked file contents, including a dirty starting checkout. */

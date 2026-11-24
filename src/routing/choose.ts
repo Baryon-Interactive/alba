@@ -199,7 +199,7 @@ export function chooseWorker(input: RouteInput, workers: readonly Choosable[]): 
     const missing = (input.role!.requires ?? []).filter(cap => !(c.capabilities ?? []).includes(cap));
     const warnings = named && missing.length ? [`warning: explicit worker is missing capabilities: ${missing.join(', ')}`] : [];
     const base: Ranked = { worker: c.id, preference: preference < 0 ? Number.MAX_SAFE_INTEGER : preference, preferred: preference >= 0, cost: c.cost, running: load, concurrency: c.concurrency, history, kindScore, verdict: 'passed-over', reason: '', index, load, ...(warnings.length ? { warnings } : {}) };
-    if (input.role!.readOnly && !supportsReadOnly(c)) return { ...base, verdict: 'unfit' as const, reason: 'requires a local read-only engine launch' };
+    if (input.role!.readOnly && !supportsReadOnly(c)) return { ...base, verdict: 'unfit' as const, reason: t('requires a local read-only engine launch') };
     if ((!named || input.pinnedWorker) && missing.length) return { ...base, verdict: 'unfit' as const, reason: `missing capabilities: ${missing.join(', ')}` };
     if (!named && input.role!.avoid?.some(matches)) return { ...base, verdict: 'unfit' as const, reason: 'avoided by role' };
     if (!named && input.role!.only && !input.role!.only.some(matches)) return { ...base, verdict: 'unfit' as const, reason: input.role!.group ? `not in worker group ${input.role!.group}` : 'outside role workers.only' };

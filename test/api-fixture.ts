@@ -63,7 +63,7 @@ export interface Fixture {
   put(p: string, body: unknown): Promise<{ status: number; body: any }>;
 }
 
-export async function fixture(options: { now?: () => Date; populate?: boolean; uiDir?: string; extraOrigins?: string[]; second?: boolean; signIn?: boolean; project?: (dir: string, root: string) => Record<string, unknown> } = {}): Promise<Fixture> {
+export async function fixture(options: { workers?: ReturnType<typeof validateWorkers>; now?: () => Date; populate?: boolean; uiDir?: string; extraOrigins?: string[]; second?: boolean; signIn?: boolean; project?: (dir: string, root: string) => Record<string, unknown> } = {}): Promise<Fixture> {
   const { dir } = tempOrders();
   const root = path.join(dir, 'game');
   mkdirSync(path.join(root, 'orders'), { recursive: true });
@@ -85,7 +85,7 @@ export async function fixture(options: { now?: () => Date; populate?: boolean; u
     isAlive: () => false, tail: (file: string, bytes: number) => { try { const t = readFileSync(file, 'utf8'); return t.slice(-bytes); } catch { return ''; } }, readText: () => undefined,
     spawnDetached: (program: string, args: string[]) => { spawned.push({ program, args }); return 4242; },
   } as unknown as Probes;
-  const workers = validateWorkers({ workers: [
+  const workers = options.workers ?? validateWorkers({ workers: [
     { id: 'coder', engine: 'x', aliases: ['Coder'], launch: { program: 'coder', args: ['run', '{session_args}', '{prompt_file}'], session: { new: ['-s', '{session_id}'], resume: ['-r', '{session_id}'] } } },
     { id: 'editor', engine: 'claude-session' },
   ] }, 'w.yaml');
