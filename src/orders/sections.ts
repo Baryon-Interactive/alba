@@ -47,4 +47,3 @@ export function parseTemplateFileSections(markdown: string) {
   }
   return { acceptance, evidence, paths, rules };
 }
-

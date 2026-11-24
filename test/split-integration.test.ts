@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import type { Run } from '../src/orders/model.ts';
 import { applyFinish, findFinishes } from '../src/run/finish.ts';
 import { startRun } from '../src/run/launch.ts';
+import { executeTick } from '../src/tick/execute.ts';
 import { childIntegrationPrompt } from '../src/run/phase.ts';
 import { approve } from '../src/run/review.ts';
 import { humanAction } from '../src/service/actions.ts';
@@ -61,6 +62,17 @@ test('split approval supports edits, auto approval and returning a proposal to t
   humanAction(project, orders, 'T1', 'rework', 'Separate the renderer.');
   assert.equal(orders.get('T1').actions.at(-1)?.phase, 'divide');
   assert.equal(orders.stage(orders.get('T1')).stage, 'queued');
+  assert.equal(git(root, 'rev-parse', 'main').trim(), base);
+});
+
+test('a tick can finish an interrupted automatic split with an existing matching body', () => {
+  const { project, orders, root, base } = splitFixture();
+  const text = orders.get('T1').reports.at(-1)!.subtasks![0].body + '\n';
+  writeFileSync(path.join(project.work_orders, 'T1.1-data.md'), text);
+  project.split = { approve: 'auto' };
+  executeTick({ project, orders, workers: workersFile(), probes: probes() }, { maxDispatch: 0 });
+  assert.deepEqual(orders.children(orders.get('T1')).map(c => c.order.tag), ['T1.1', 'T1.2', 'T1.3']);
+  assert.equal(orders.stage(orders.get('T1')).stage, 'waiting-children');
   assert.equal(git(root, 'rev-parse', 'main').trim(), base);
 });
 

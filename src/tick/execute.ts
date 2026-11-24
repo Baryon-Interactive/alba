@@ -1,3 +1,4 @@
+import { autoAcceptSplit } from '../service/split.ts';
 import { initializeAttentionBaseline } from '../orders/attention-store.ts';
 import { t } from '../i18n.ts';
 import { runAcceptanceTrials } from '../review/acceptance.ts';
@@ -40,6 +41,9 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
   };
   done.push(...stopTokenCappedRuns(ctx.project, ctx.orders, ctx.workers, ctx.probes));
   recordFinishes();
+  if (ctx.project.split) for (const doc of ctx.orders.all()) {
+    if (doc.reports.at(-1)?.subtasks && !doc.actions.some(a => a.kind === 'accept-split')) autoAcceptSplit(ctx.project, ctx.orders, doc.order.tag);
+  }
   pollIndependentChecks(ctx);
   // Recurring schedules: create any due orders before planning what to dispatch.
   if (ctx.project.schedules?.length) done.push(...runSchedules(ctx.project, ctx.orders, { now: ctx.probes.now() }).done);
