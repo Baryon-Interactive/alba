@@ -80,6 +80,7 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
   const route = useRoute(project, o.tag);
   const m = o.mandate;
   const reroute = d.reroutes?.at(-1);
+  const activeSlot = [...d.runs].reverse().find(r => !r.ended && r.slot !== undefined)?.slot ?? [...d.runs].reverse().find(r => r.slot !== undefined)?.slot;
   const [editing, setEditing] = useState(false);
   const [editingBody, setEditingBody] = useState(false);
   return (
@@ -167,6 +168,8 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
             <Fact label={t('Branch')}><span className="font-mono text-xs">{o.branch}</span></Fact>
             <Fact label={t('Base')}><span className="font-mono text-xs">{o.base_ref}</span></Fact>
             <Fact label={t('Worktree')}><span className="font-mono text-xs">{d.worktree ?? o.worktree}</span></Fact>
+            <Fact label={t('Sparse worktree')}>{d.sparseWorktree?.length ? <span className="font-mono text-xs">{d.sparseWorktree.join(', ')}</span> : undefined}</Fact>
+            <Fact label={t('Run slot')}>{activeSlot !== undefined ? <span className="font-mono text-xs">{activeSlot}</span> : undefined}</Fact>
             <Fact label={t('Created')}>{dateTime(o.created)}</Fact>
             <Fact label={t('Updated')}>{dateTime(o.updated)}</Fact>
             <Fact label={t('Calls by other tools')}>{d.externalCalls?.length ? d.externalCalls.map(c => <div key={c.ledger} className="text-xs"><span className="font-mono">{c.ledger}</span>: {t('{ok} succeeded, {failed} failed', { ok: c.ok, failed: c.failed })}</div>) : undefined}</Fact>
@@ -198,6 +201,7 @@ function RunRow({ project, tag, r, watch }: { project: string; tag: string; r: R
     <tr className="hover:bg-accent/40">
       <td className="px-4 py-2 font-mono text-[13px] font-semibold">
         {r.hasLog ? <Link className="hover:underline" to={runHref}>{r.id}</Link> : r.id}
+        {r.slot !== undefined && <Badge tone="outline" className="ml-1.5 font-mono text-[11px] font-normal">{t('slot {n}', { n: r.slot })}</Badge>}
       </td>
       <td className="px-2 py-2">{r.worker}</td>
       <td className="px-2 py-2 text-muted-foreground">{dateTime(r.started)}</td>

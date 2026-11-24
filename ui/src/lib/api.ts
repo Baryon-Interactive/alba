@@ -161,7 +161,7 @@ export const api = {
   addDecision: (body: NewDecisionRequest) => post<DecisionEntry>('/api/decisions', body),
   evidence: (project: string, tag: string) => request<EvidenceList>(`/api/orders/${enc(tag)}/evidence${qs({ project })}`),
   events: (project: string, q: { tag?: string; after?: number; limit?: number } = {}) => request<{ events: OrderEvent[] }>(`/api/events${qs({ project, ...q })}`),
-  clean: (project: string) => request<CleanPlan>(`/api/clean${qs({ project })}`),
+  clean: (project: string, includeIgnored = false) => request<CleanPlan>(`/api/clean${qs({ project, ...(includeIgnored ? { include_ignored: '1' } : {}) })}`),
   credits: (project: string, status?: string) => request<QuoteList>(`/api/credits${qs({ project, status })}`),
   lessons: (project: string, tag?: string) => request<LessonList>(`/api/lessons${qs({ project, tag })}`),
   route: (project: string, tag: string) => request<Route>(`/api/orders/${enc(tag)}/route${qs({ project })}`),

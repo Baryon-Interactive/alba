@@ -11,7 +11,7 @@ import type { Roles } from './roles/config.ts';
 import { routingOf } from './workers/config.ts';
 import path from 'node:path';
 import { parse } from 'yaml';
-import { STAGES, type Stage } from './orders/model.ts';
+import { STAGES, normalizeSparseDirs, type Stage } from './orders/model.ts';
 import { fail } from './i18n.ts';
 import { ENGINES, normalizeEngine, validateSourceList, type SkillSourceConfig } from './skills/sources.ts';
 import { validateArt, validateCredits, validatePicks, validateUsageLedgers, type ArtConfig, type CreditsConfig, type PicksConfig, type UsageLedgerConfig } from './library/config.ts';
@@ -25,6 +25,10 @@ export interface DispatchRules {
   stall_minutes?: number;
   worktree_parent?: string;
   base_ref?: string;
+  sparse?: string[];                // cone-mode directories checked out in new worktrees (relative, no "..")
+  checkout_workers: number;         // git checkout.workers concurrency for sparse worktrees (default 4)
+  port_base?: number;               // optional base port for ALBA_PORT_BASE (= port_base + slot * port_block)
+  port_block: number;               // port stride per run slot (default 10)
   long_command_minutes: number;     // a worker whose last command is still running is waiting, not stalled, for this long
   rework_reserve: number;           // extra slots per capped class that only reworked orders may use
   provision?: string[];             // command run in a new worktree (program and arguments, no shell)
@@ -159,6 +163,16 @@ export interface DocsConfig {
   research?: string;
 }
 
+/** Default worktree-relative globs treated as regenerable ignored paths by `alba clean`. */
+export const DEFAULT_CLEAN_REGENERABLE = [
+  'node_modules/',
+  '**/Intermediate/',
+  '**/Binaries/',
+  '**/DerivedDataCache/',
+  '**/__pycache__/',
+  '**/*.log',
+] as const;
+
 /** What `alba clean` may remove. Without this section it only looks at merged, idle, clean worktrees. */
 export interface CleanConfig {
   drives?: { path: string; min_free_gb: number }[];
@@ -171,6 +185,7 @@ export interface CleanConfig {
   snapshot_seconds?: number;       // full artifact snapshot time limit (default 5)
   idle_hours: number;               // a merged worktree is removed when its last change is older than this
   caches: string[];                 // folders (relative to a worktree) that are deleted from worktrees whose work is not merged yet
+  regenerable?: string[];           // worktree-relative globs for ignored paths safe to delete when removing a worktree
   builds: { dir: string; keep: number }[];   // folders of builds (relative to the project); only the newest `keep` subfolders stay
   busy_processes: string[];         // program names; while one of them runs nothing is deleted
 }
@@ -852,7 +867,7 @@ function validateDocs(raw: unknown, file: string): DocsConfig {
 
 function validateClean(raw: unknown, file: string, root: string): CleanConfig {
   if (!isRecord(raw)) fail('{file}: "clean" must be a mapping.', { file });
-  const unknown = Object.keys(raw).filter(k => !['idle_hours', 'caches', 'builds', 'busy_processes', 'drives', 'packages', 'logs_days', 'min_gain_gb', 'auto_classes', 'auto_destructive', 'snapshot_entries', 'snapshot_seconds'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['idle_hours', 'caches', 'regenerable', 'builds', 'busy_processes', 'drives', 'packages', 'logs_days', 'min_gain_gb', 'auto_classes', 'auto_destructive', 'snapshot_entries', 'snapshot_seconds'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "clean": {keys}.', { file, keys: unknown.join(', ') });
   const out: CleanConfig = { idle_hours: 24, caches: [], builds: [], busy_processes: [] };
   if (raw.snapshot_entries !== undefined) {
@@ -876,6 +891,11 @@ function validateClean(raw: unknown, file: string, root: string): CleanConfig {
   out.caches = folders('caches') ?? [];
   out.busy_processes = folders('busy_processes') ?? [];
   for (const c of out.caches) if (path.isAbsolute(c) || c.split(/[\\/]/).includes('..')) fail('{file}: "clean.caches" entries are folders inside a worktree, "{c}" is not.', { file, c });
+  if (raw.regenerable !== undefined) {
+    if (!Array.isArray(raw.regenerable) || raw.regenerable.some(x => typeof x !== 'string' || !x.trim())) fail('{file}: "clean.regenerable" must be a list of glob patterns.', { file });
+    out.regenerable = (raw.regenerable as string[]).map(x => x.trim());
+    for (const p of out.regenerable) if (path.isAbsolute(p) || p.split(/[\\/]/).includes('..')) fail('{file}: "clean.regenerable" entries must be relative to a worktree, "{p}" is not.', { file, p });
+  }
   for (const key of ['builds', 'packages'] as const) if (raw[key] !== undefined) {
     if (!Array.isArray(raw[key])) fail('{file}: clean folder retention must be a list.', { file });
     out[key] = (raw[key] as unknown[]).map((b, i) => {
@@ -914,14 +934,14 @@ export const DEFAULT_LONG_COMMANDS: string[] = [];
 
 const dispatchDefaults = (): DispatchRules => ({
   caps: {}, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6,
-  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true,
+  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true, checkout_workers: 4, port_block: 10,
 });
 
 function validateDispatch(raw: unknown, file: string): DispatchRules {
   if (raw === undefined) return dispatchDefaults();
   if (!isRecord(raw)) fail('{file}: "dispatch" must be a mapping.', { file });
   const out: DispatchRules = dispatchDefaults();
-  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'sparse', 'checkout_workers', 'port_base', 'port_block', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "dispatch": {keys}.', { file, keys: unknown.join(', ') });
   if (raw.caps !== undefined) {
     if (!isRecord(raw.caps)) fail('{file}: "dispatch.caps" must be a mapping of name to a whole number.', { file });
@@ -988,6 +1008,29 @@ function validateDispatch(raw: unknown, file: string): DispatchRules {
     if (v === undefined) continue;
     if (typeof v !== 'string' || !v.trim()) fail('{file}: "dispatch.{key}" must be a non-empty string.', { file, key });
     out[key] = v.trim();
+  }
+  if (raw.sparse !== undefined) {
+    const checked = normalizeSparseDirs(raw.sparse);
+    if (!checked.ok) fail('{file}: "dispatch.sparse" {error}.', { file, error: checked.error });
+    out.sparse = checked.dirs;
+  }
+  if (raw.checkout_workers !== undefined) {
+    if (typeof raw.checkout_workers !== 'number' || !Number.isInteger(raw.checkout_workers) || raw.checkout_workers < 1) {
+      fail('{file}: "dispatch.checkout_workers" must be a whole number >= 1.', { file });
+    }
+    out.checkout_workers = raw.checkout_workers;
+  }
+  if (raw.port_base !== undefined) {
+    if (typeof raw.port_base !== 'number' || !Number.isInteger(raw.port_base) || raw.port_base < 1 || raw.port_base > 65535) {
+      fail('{file}: "dispatch.port_base" must be a whole number between 1 and 65535.', { file });
+    }
+    out.port_base = raw.port_base;
+  }
+  if (raw.port_block !== undefined) {
+    if (typeof raw.port_block !== 'number' || !Number.isInteger(raw.port_block) || raw.port_block < 1 || raw.port_block > 10000) {
+      fail('{file}: "dispatch.port_block" must be a whole number between 1 and 10000.', { file });
+    }
+    out.port_block = raw.port_block;
   }
   return out;
 }

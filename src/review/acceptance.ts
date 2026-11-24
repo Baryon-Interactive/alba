@@ -15,6 +15,7 @@ import { formatCaptureRun, runCapture } from '../capture/run.ts';
 import type { CaptureSummary } from '../capture/types.ts';
 export type { CaptureSummary } from '../capture/types.ts';
 import { baseRefOf } from '../run/worktree.ts';
+import { withGitLockRetrySync } from '../sync/git.ts';
 import { globToRegExp, type CheckItem } from '../check/general.ts';
 import { deliveryChecks } from '../check/delivery.ts';
 import { findOrderFile } from '../run/prompt.ts';
@@ -358,7 +359,7 @@ export function trialAcceptance(project: ProjectConfig, orders: Orders, tag: str
   if (!release) { result.reason = 'Another acceptance trial holds the project slot.'; return record(); }
   let resources = false, creationAttempted = false;
   const scratch = path.resolve(project.state_dir, 'acceptance', `trial-${result.id}`);
-  const trialGit = (...args: string[]) => timedGit(input.accept.git_timeout_minutes ?? 2, project.root, ...args);
+  const trialGit = (...args: string[]) => withGitLockRetrySync(() => timedGit(input.accept.git_timeout_minutes ?? 2, project.root, ...args));
   const logs = path.join(project.state_dir, 'acceptance', `logs-${result.id}`);
   result.log_dir = logs;
   try {

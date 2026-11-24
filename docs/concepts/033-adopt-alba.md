@@ -24,6 +24,10 @@ workers: workers.yaml
 # dispatch:
 #   worktree_parent: ../mygame-worktrees   # default: <id>-worktrees next to the repository
 #   base_ref: main                         # default: main if the repository has it, else the branch it is on
+#   sparse: [Source, Config]               # optional: cone-mode directories for new worktrees
+#   checkout_workers: 4                    # optional: git checkout.workers for sparse worktrees (default 4)
+#   port_base: 8100                        # optional: sets ALBA_PORT_BASE = port_base + ALBA_SLOT * port_block
+#   port_block: 10                         # optional: port stride per run slot (default 10)
 # skills: { engine: godot }                # unreal, unity, godot, other (no engine skills) or any
 ```
 

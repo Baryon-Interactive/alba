@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
+import { globToRegExp } from '../check/general.ts';
 
 /** Package roots may live on another drive, but must never cover the checkout or traverse links. */
 export function safePackageRoot(dir: string, projectRoot: string): boolean {
@@ -63,4 +64,61 @@ export function worktreeSignature(dir: string, runGit: (cwd: string, args: strin
     if (!metadata) return;
     return createHash('sha256').update(JSON.stringify([head, branch, metadata])).digest('hex');
   } catch (error) { failure?.((error as Error).message.split('\n')[0]); return; }
+}
+
+const normalizeRel = (p: string) => p.replace(/\\/g, '/').replace(/^\.\//, '');
+
+/** Collapses any path that traverses a symlink/junction inside `worktree` back to the link itself without following it. */
+function collapseAtLink(worktree: string, rel: string): string {
+  const trailing = rel.endsWith('/');
+  const parts = rel.replace(/\/+$/, '').split('/').filter(Boolean);
+  let cur = worktree;
+  for (let i = 0; i < parts.length; i++) {
+    cur = path.join(cur, parts[i]);
+    try {
+      if (lstatSync(cur).isSymbolicLink()) {
+        return parts.slice(0, i + 1).join('/') + (trailing || i < parts.length - 1 ? '/' : '');
+      }
+    } catch {
+      break;
+    }
+  }
+  return rel;
+}
+
+/**
+ * Lists ignored entries in a worktree (large ignored folders stay collapsed via `--directory`) and separates paths
+ * that cannot be regenerated. Never follows links.
+ */
+export function atRiskIgnoredPaths(
+  worktree: string,
+  runGit: (cwd: string, args: string[]) => string,
+  options: { caches: readonly string[]; regenerable: readonly string[]; limit?: number },
+): { count: number; paths: string[] } {
+  if (linkedAncestor(path.join(worktree, '_'))) throw new Error('Worktree traverses a link.');
+  const raw = runGit(worktree, ['status', '--porcelain', '--ignored=matching', '-z']);
+  if (!raw) return { count: 0, paths: [] };
+  const caches = options.caches.map(c => normalizeRel(c).replace(/\/+$/, '')).filter(Boolean);
+  const patterns = options.regenerable.map(g => globToRegExp(g));
+  const isRegenerable = (entry: string): boolean => {
+    const noSlash = entry.replace(/\/+$/, '');
+    if (!noSlash) return true;
+    if (noSlash === '.alba' || noSlash.startsWith('.alba/')) return true;
+    if (caches.some(c => noSlash === c || noSlash.startsWith(`${c}/`))) return true;
+    return patterns.some(re => re.test(entry) || (entry.endsWith('/') && re.test(noSlash)));
+  };
+  const collapsed = new Set<string>();
+  const tokens = raw.split('\0');
+  for (let i = 0; i < tokens.length; i++) {
+    const entry = tokens[i];
+    if (!entry) continue;
+    const status = entry.slice(0, 2);
+    if (status[0] === 'R' || status[0] === 'C' || status[1] === 'R' || status[1] === 'C') { i++; continue; }
+    if (status !== '!!') continue;
+    const norm = normalizeRel(entry.slice(3));
+    if (!norm) continue;
+    collapsed.add(collapseAtLink(worktree, norm));
+  }
+  const atRisk = [...collapsed].sort().filter(p => !isRegenerable(p));
+  return { count: atRisk.length, paths: atRisk.slice(0, options.limit ?? 10) };
 }

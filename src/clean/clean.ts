@@ -3,15 +3,15 @@ import { existsSync, lstatSync, readdirSync, readlinkSync, statSync, unlinkSync,
 import { removeTreeSync } from '../fs/remove-tree.mjs';
 import path from 'node:path';
 import type * as A from '../api/types.ts';
-import type { ProjectConfig } from '../config.ts';
+import { DEFAULT_CLEAN_REGENERABLE, type ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
 import type { OrderDoc } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
 import { baseRefOf, planWorktree } from '../run/worktree.ts';
-import { systemGit, type GitProbe } from '../sync/git.ts';
+import { systemGit, withGitLockRetrySync, type GitProbe } from '../sync/git.ts';
 import { findWorktree, type Probes } from '../tick/gather.ts';
 import { inside } from '../monitor/monitor.ts';
-import { cleanSignature, linkedAncestor, safePackageRoot, worktreeSignature } from './safety.ts';
+import { atRiskIgnoredPaths, cleanSignature, linkedAncestor, safePackageRoot, worktreeSignature } from './safety.ts';
 import { artifactOwner, driveFacts, retentionItems } from './retention.ts';
 import { executableProcesses, runProcess, type ExecutableProcess } from './processes.ts';
 import { writeStateFile } from '../orders/state-files.ts';
@@ -28,6 +28,8 @@ export interface CleanEnv {
   /** How long the plan may spend counting bytes in all (default 5000 ms); what is not counted in time has no size. */
   sizeBudgetMs?: number;
   freeDiskGb?(dir: string): number;
+  /** When true (`--include-ignored`), allow removing worktrees that contain non-regenerable ignored files. */
+  includeIgnored?: boolean;
 }
 
 export const systemClean = (probes: Probes): CleanEnv => ({
@@ -41,7 +43,7 @@ export const systemClean = (probes: Probes): CleanEnv => ({
     return execFileSync('ps', ['-A', '-o', 'comm='], { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').map(l => path.basename(l.trim())).filter(Boolean);
   },
   runGit(cwd, args) {
-    try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 300000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) {
+    try { return withGitLockRetrySync(() => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 300000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })); } catch (e) {
       const err = e as { stderr?: Buffer | string; message: string };
       throw new Error(String(err.stderr ?? err.message).trim().split('\n')[0]);
     }
@@ -189,8 +191,28 @@ export function planClean(project: ProjectConfig, orders: Orders, env: CleanEnv)
     const inBase = facts.ahead.length === 0;
     if (orderMerged && inBase) {
       const idleHours = (now - Math.max(Date.parse(facts.lastAt) || 0, safeMtime(w.path))) / 3_600_000;
-      if (idleHours >= cfg.idle_hours) items.push(item('remove', doc ? t('{tag} is merged or cancelled, its branch is in the base branch, nothing changed for {h} h.', { tag: doc.order.tag, h: Math.floor(idleHours) }) : t('No order owns it, its branch is in the base branch, nothing changed for {h} h.', { h: Math.floor(idleHours) })));
-      else items.push(item('keep', t('Merged, but changed {h} h ago (idle_hours is {n}).', { h: Math.floor(idleHours), n: cfg.idle_hours })));
+      if (idleHours >= cfg.idle_hours) {
+        let atRisk: { count: number; paths: string[] };
+        try {
+          atRisk = atRiskIgnoredPaths(w.path, (cwd, args) => env.runGit(cwd, args), {
+            caches: cfg.caches,
+            regenerable: cfg.regenerable ?? DEFAULT_CLEAN_REGENERABLE,
+          });
+        } catch {
+          items.push(item('skip', t('Git could not inspect ignored files.')));
+          continue;
+        }
+        if (atRisk.count > 0 && !env.includeIgnored) {
+          const more = atRisk.count > atRisk.paths.length ? ` (+${atRisk.count - atRisk.paths.length} more)` : '';
+          const skipped = item('skip', t('{n} ignored path(s) cannot be regenerated ({paths}{more}); pass --include-ignored to remove anyway.', { n: atRisk.count, paths: atRisk.paths.join(', '), more }));
+          skipped.atRiskIgnored = atRisk;
+          items.push(skipped);
+          continue;
+        }
+        const removable = item('remove', doc ? t('{tag} is merged or cancelled, its branch is in the base branch, nothing changed for {h} h.', { tag: doc.order.tag, h: Math.floor(idleHours) }) : t('No order owns it, its branch is in the base branch, nothing changed for {h} h.', { h: Math.floor(idleHours) }));
+        if (atRisk.count > 0) removable.atRiskIgnored = atRisk;
+        items.push(removable);
+      } else items.push(item('keep', t('Merged, but changed {h} h ago (idle_hours is {n}).', { h: Math.floor(idleHours), n: cfg.idle_hours })));
       continue;
     }
     // Build output (UE Intermediate/Cooked/StagedBuilds, DDC, sim build trees: tens of GB per worktree) is rebuilt on
@@ -278,14 +300,14 @@ export function planClean(project: ProjectConfig, orders: Orders, env: CleanEnv)
       else if (measured > 0) it.measuredBytes = measured;
     }
   }
-  return { project: project.id, at: env.probes.now().toISOString(), items, errors, drives: driveFacts(project, env.freeDiskGb) };
+  return { project: project.id, at: env.probes.now().toISOString(), items, errors, drives: driveFacts(project, env.freeDiskGb), ...(env.includeIgnored ? { includeIgnored: true } : {}) };
 }
 
 const safeMtime = (p: string): number => { try { return statSync(p).mtimeMs; } catch { return 0; } };
 
 /** Carries out a plan: only items whose action deletes. Every action leaves an event and a `result` on its item. */
 export function applyClean(project: ProjectConfig, orders: Orders, plan: A.CleanPlan, env: CleanEnv): A.CleanPlan {
-  const fresh = planClean(project, orders, env);
+  const fresh = planClean(project, orders, plan.includeIgnored ? { ...env, includeIgnored: true } : env);
   if (plan.project !== project.id) throw new Error('Clean refused: wrong project.');
   // Check every selected item before deleting any. Added unrelated candidates are never included.
   for (const item of plan.items.filter(i => ['remove', 'prune', 'delete'].includes(i.action))) {

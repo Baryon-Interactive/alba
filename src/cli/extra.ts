@@ -14,7 +14,7 @@ import type { Orders } from '../orders/service.ts';
 /** The command-line values the commands of this file read. */
 export interface ExtraValues {
   text?: string; note?: string; source?: string; who?: string; json?: boolean; choice?: string; id?: string; order?: string; date?: string;
-  default?: boolean; option?: string[]; apply?: boolean; check?: boolean; topic?: string; all?: boolean;
+  default?: boolean; option?: string[]; apply?: boolean; 'include-ignored'?: boolean; check?: boolean; topic?: string; all?: boolean;
   tag?: string; status?: string; service?: string; unit?: string; 'unit-price'?: string; quantity?: string; cap?: string; amount?: string; what?: string; need?: string; key?: string;
   since?: string; kind?: string;
 }
@@ -125,8 +125,8 @@ export function runExtra(group: string, command: string | undefined, rest: strin
       }
     }
     case 'clean': {
-      // alba clean [--apply] [--json]: the plan by default; --apply carries it out
-      const env = systemClean(systemProbes);
+      // alba clean [--apply] [--include-ignored] [--json]: the plan by default; --apply carries it out
+      const env = { ...systemClean(systemProbes), ...(values['include-ignored'] ? { includeIgnored: true } : {}) };
       const plan = planClean(cfg, orders, env);
       if (values.apply) applyClean(cfg, orders, plan, env);
       return values.json ? JSON.stringify(plan, null, 2) : formatClean(plan, values.apply === true);

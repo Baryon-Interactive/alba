@@ -1768,4 +1768,12 @@ export const zh: Record<string, string> = {
   'Final result': '最终结果',
   'completed': '已完成',
   'Agent': '智能体',
+  // large-repo worktrees, clean ignored guard, run slots
+  '{n} non-regenerable ignored path(s):': '{n} 个无法重新生成的被忽略路径：',
+  '{n} worktree(s) contain ignored files that cannot be regenerated and will be deleted.': '有 {n} 个工作树包含无法重新生成的被忽略文件，执行后将被一并删除。',
+  'I confirm removing worktrees that contain non-regenerable ignored files.': '我确认要删除包含无法重新生成的被忽略文件的工作树。',
+  'Include non-regenerable ignored files': '包含无法重新生成的被忽略文件',
+  'Sparse worktree': '稀疏工作树',
+  'Run slot': '运行槽位',
+  'slot {n}': '槽位 {n}',
 };

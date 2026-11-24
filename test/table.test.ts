@@ -166,7 +166,7 @@ test('config: clear errors for bad project files', () => {
   assert.throws(() => loadProject(write('f.yaml', YAML + 'extra: 1\n')), /unknown key/);
   assert.throws(() => loadProject(write('g.yaml', 'id: d\nname: D\nroot: .\nwork_orders: .\n')), /"state_dir" must be a non-empty string/);
   const ok = loadProject(write('h.yaml', YAML + 'dispatch:\n  caps: { ue: 7 }\n  min_free_ram_gb: 8\n  stall_minutes: 60\n  worktree_parent: wt\n  base_ref: refs/heads/main\n'));
-  assert.deepEqual(ok.dispatch, { caps: { ue: 7 }, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', min_free_ram_gb: 8, stall_minutes: 60, worktree_parent: 'wt', base_ref: 'refs/heads/main', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6, long_commands: [], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true });
+  assert.deepEqual(ok.dispatch, { caps: { ue: 7 }, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', min_free_ram_gb: 8, stall_minutes: 60, worktree_parent: 'wt', base_ref: 'refs/heads/main', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6, long_commands: [], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true, checkout_workers: 4, port_block: 10 });
 });
 
 test('import: kind rules read kind and heavy class off the words of a row', () => {

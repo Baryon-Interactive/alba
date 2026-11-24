@@ -1,4 +1,5 @@
 import { workerAdapter } from '../workers/adapters/index.ts';
+import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { producerNotes } from '../producer/notes.ts';
 import { acceptanceCard } from '../review/acceptance.ts';
@@ -65,7 +66,7 @@ export function toRun(run: StoredRun, tag: string, env: ViewEnv): A.Run {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
     ...(run.ended ? { ended: run.ended } : {}), ...(run.outcome ? { outcome: run.outcome } : {}), ...(run.note ? { note: run.note } : {}),
-    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...(alive !== undefined ? { alive } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
+    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...(alive !== undefined ? { alive } : {}), ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
     hasLog: !!run.log && existsSync(run.log), usage: usageOf(run, env.workers?.workers ?? [], env.probes),
     ...(run.role ? { role: run.role, role_source: run.role_source, role_effort: run.role_effort, role_reasoning: run.role_reasoning, mcp_servers: run.mcp_servers, role_warnings: run.role_warnings } : {}),
     ...(run.routing ? { routing: run.routing } : {}), ...(run.skills ? { skills: run.skills } : {}),
@@ -300,6 +301,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const deliveryLint = lastCheck(events, true);
   const verify = lastVerify(events);
   const worktree = o.worktree ?? row?.activity?.worktree;
+  const sparseWorktree = worktree && existsSync(worktree) ? worktreeSparseDirs(worktree) : effectiveSparse(view.config, o);
   const external = externalCallsOf(view.config, env.workers, worktree);
   const notes = pendingNotes(doc).map(n => ({ kind: n.kind, text: n.text, at: n.at, ...(n.question ? { question: n.question } : {}) }));
   const open = doc.runs.find(r => r.ended === undefined);
@@ -323,7 +325,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
       ...(o.planned ? { planned: true } : {}), ...(o.intent ? { intent: o.intent } : {}), ...(o.role ? { role: o.role } : {}),
       review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind({ kind: o.kind, routing: routingNow }), ...(o.uses?.length ? { uses: o.uses } : {}), ...(o.heavy ? { heavy: o.heavy } : {}), needs: o.needs, ...(o.condition ? { condition: o.condition } : {}),
       ...(o.role ? { role: o.role } : {}), ...(o.worker ? { worker: o.worker } : {}), ...(o.tags?.length ? { tags: o.tags } : {}), ...(o.skills?.length ? { skills: o.skills } : {}), ...(o.tools?.length ? { tools: o.tools } : {}), ...(o.priority !== undefined ? { priority: o.priority } : {}), ...(o.check ? { check: o.check } : {}), routing: toRouting(routingNow), ...(o.mandate ? { mandate: o.mandate } : {}), ...(o.branch ? { branch: o.branch } : {}),
-      ...(o.base_ref ? { base_ref: o.base_ref } : {}), ...(o.worktree ? { worktree: o.worktree } : {}), created: o.created, updated: o.updated,
+      ...(o.base_ref ? { base_ref: o.base_ref } : {}), ...(o.worktree ? { worktree: o.worktree } : {}), ...(o.sparse !== undefined ? { sparse: o.sparse } : {}), created: o.created, updated: o.updated,
     },
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
     needsStatus: o.needs.map(n => { try { return { tag: n, stage: view.orders.stage(view.orders.get(n), merged).stage }; } catch { return { tag: n }; } }),
@@ -339,5 +341,6 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     accounting, pendingNotes: notes, messages, thread: [...threadOf(doc, live), ...events.filter(e => e.type === 'usage-budget').map((e,i) => ({ id: `usage-budget-event-${i}`, at: e.at, kind: e.type, text: String(e.data?.text ?? '') })), ...warnings.filter(w => !events.some(e => e.type === 'usage-budget' && e.data?.text === w.text)).map((w,i) => ({ id: `usage-budget-${i}`, at: env.probes.now().toISOString(), kind: 'usage-budget', text: w.text }))].sort((a,b) => a.at.localeCompare(b.at)), ...(nudge ? { commitNudge: nudge } : {}),
     events: events.slice(-200), eventsTotal: events.length, ...(file ? { file } : {}),
     ...(worktree ? { worktree } : {}),
+    ...(sparseWorktree?.length ? { sparseWorktree } : {}),
   };
 }

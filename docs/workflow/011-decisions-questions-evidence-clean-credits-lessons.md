@@ -53,12 +53,19 @@ evidence:
 
 ## Clean
 
-`alba clean` shows what it would remove; `alba clean --apply` does it. The clean-plan API stays read-only; a stored producer `clean` proposal can be accepted through the producer action API.
+`alba clean` shows what it would remove; `alba clean --apply` does it. Pass `--include-ignored` to also remove merged worktrees that hold non-regenerable ignored files. The clean-plan API stays read-only; a stored producer `clean` proposal can be accepted through the producer action API.
 
 ```yaml
 clean:
   idle_hours: 24                  # a merged worktree must have been quiet this long
   caches: ["Library", ".godot"]   # folders removed from worktrees whose work is not merged yet
+  regenerable:                    # optional globs (relative to a worktree) safe to delete on worktree removal
+    - "node_modules/"
+    - "**/Intermediate/"
+    - "**/Binaries/"
+    - "**/DerivedDataCache/"
+    - "**/__pycache__/"
+    - "**/*.log"
   builds: [{ dir: artifacts/builds, keep: 3 }]   # only the newest 3 build folders stay
   packages: [{ dir: artifacts/packages, keep: 2, links_from: [artifacts/launchers] }]
   logs_days: 14                  # old .log and .events.jsonl under state/runs
@@ -72,6 +79,7 @@ clean:
 ```
 
 - A worktree whose order is merged or cancelled, whose branch is in the base branch, that has no uncommitted file and has been quiet for `idle_hours` is removed with its branch (`git worktree remove`, then `git branch -d`; a branch git will not delete is kept and the result says so).
+- Before removing a worktree, Alba checks its ignored entries (`git status --porcelain --ignored=matching -z`, keeping large ignored folders collapsed and never following links). Paths under `.alba/`, under any `clean.caches` folder, or matching `clean.regenerable` (defaults shown above) are treated as **regenerable**. Any other ignored file or folder (such as local settings, captures or exports) is **at risk**: the worktree becomes `skip` with the count and the first ten paths printed. `alba clean --include-ignored --apply` (or the Clean page's include-ignored toggle with an explicit extra confirmation before copying the command) removes it anyway; links are still unlinked without touching their targets.
 - A worktree whose work is not merged keeps everything except the `caches` folders.
 - Build folders keep the newest `keep`.
 - Open runs and unresolved monitors protect their owning worktrees, packages and builds. Ended runs and resolved monitors do not veto. A live PID must match its recorded OS creation time within one second; legacy records without that time require a process created since the run began (with the same precision tolerance). A mismatch says `pid N belongs to another process`. Unreadable creation times keep the owner's artifacts conservatively.

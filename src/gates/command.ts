@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { withGitLockRetry } from '../sync/git.ts';
 import { appendFileSync } from 'node:fs';
 import { processStartedAtAsync } from '../monitor/process.ts';
 import { processSnapshotAsync, treeMembers, stopTreeAsync, type ProcessInfo, type TreeStop, type TreeTarget } from '../run/kill-tree.ts';
@@ -129,6 +130,8 @@ export function gitText(cwd: string, args: string[], timeoutMs = 120_000): Promi
 
 /** Worktree operations yield the event loop and have a bounded lifetime (a large checkout on Windows can take many minutes). */
 export async function worktreeGit(root: string, args: string[], timeoutMs: number): Promise<void> {
-  const result = await gateCommand(['git', ...args], root, timeoutMs, undefined, undefined, { sweep: false });
-  if (result.timedOut || result.exit !== 0) throw new GateSetupError(`git ${args.join(' ')} ${result.timedOut ? 'timed out' : `exited ${result.exit}`}. ${result.stderr}${result.stdout}`);
+  await withGitLockRetry(async () => {
+    const result = await gateCommand(['git', ...args], root, timeoutMs, undefined, undefined, { sweep: false });
+    if (result.timedOut || result.exit !== 0) throw new GateSetupError(`git ${args.join(' ')} ${result.timedOut ? 'timed out' : `exited ${result.exit}`}. ${result.stderr}${result.stdout}`);
+  });
 }

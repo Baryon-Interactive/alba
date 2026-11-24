@@ -266,6 +266,8 @@ export interface Run {
   /** The tool started this process itself (and can read its log). */
   pid?: number;
   alive?: boolean;
+  /** Nonnegative integer slot assigned to a local run (`ALBA_SLOT`); absent for remote or imported runs. */
+  slot?: number;
   attempt?: number;
   hasLog: boolean;
   usage: RunUsage;
@@ -421,6 +423,8 @@ export interface OrderDefinition {
   branch?: string;
   base_ref?: string;
   worktree?: string;
+  /** Cone-mode sparse worktree directories overriding `dispatch.sparse` (`[]` means full checkout). */
+  sparse?: string[];
   created: string;
   updated: string;
 }
@@ -617,6 +621,8 @@ export interface OrderDetail {
   /** The work-order file, when there is one (text cut at 200 KB). */
   file?: { path: string; markdown: string; truncated: boolean };
   worktree?: string;
+  /** Directories checked out in this order's sparse worktree; absent when full checkout. */
+  sparseWorktree?: string[];
 }
 
 // ---------------------------------------------------------------------------------------------------------------- overview
@@ -904,6 +910,8 @@ export interface NewOrderRequest {
   heavy?: string;
   /** The local branch the order starts from instead of the project's base. */
   base_ref?: string;
+  /** Cone-mode sparse worktree directories (`[]` forces a full checkout). */
+  sparse?: string[];
   tags?: string[];
   /** Skills (names from the registry) that this order always gets. */
   skills?: string[];
@@ -1192,6 +1200,8 @@ export interface CleanItem {
   targets: string[];
   /** Junctions and symbolic links found near the top of the tree; they are removed first. */
   links: number;
+  /** Ignored paths inside a worktree that are not marked regenerable (at most the first 10 paths). */
+  atRiskIgnored?: { count: number; paths: string[] };
   bytes?: number;
   measuredBytes?: number; // Lower bound when size measurement was incomplete.
   /** After `alba clean --apply`: what happened. */
@@ -1206,6 +1216,8 @@ export interface CleanPlan {
   /** Why parts of the plan are cautious (the process list could not be read, a git call failed). */
   errors: string[];
   drives?: { path: string; free_gb?: number; min_free_gb: number; low: boolean; error?: string }[];
+  /** True when the plan was computed with `--include-ignored` (allowing removal of worktrees with non-regenerable ignored files). */
+  includeIgnored?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- credits

@@ -221,7 +221,7 @@ export function useClassify(project: string, tag: string) {
 
 export const useCredits = (project: string) => useQuery({ queryKey: keys.credits(project), queryFn: () => api.credits(project), enabled: !!project, staleTime: 15_000 });
 export const useCleanEvents = (project: string) => useQuery({ queryKey: keys.cleanEvents(project), queryFn: async () => (await api.events(project, { limit: 500 })).events.filter(e => e.type.startsWith('clean')).reverse(), enabled: !!project, staleTime: 15_000 });
-export const useCleanPlan = (project: string) => useQuery({ queryKey: keys.clean(project), queryFn: () => api.clean(project), enabled: !!project, staleTime: 30_000 });
+export const useCleanPlan = (project: string, includeIgnored = false) => useQuery({ queryKey: keys.clean(project, includeIgnored), queryFn: () => api.clean(project, includeIgnored), enabled: !!project, staleTime: 30_000 });
 
 export const useDocs = (project: string, enabled = true) => useQuery({ queryKey: keys.docs(project), queryFn: () => api.docs(project), enabled: !!project && enabled, staleTime: 15_000 });
 export const useDoc = (project: string, path: string) => useQuery({ queryKey: keys.doc(project, path), queryFn: () => api.doc(project, path), enabled: !!project && !!path, staleTime: 15_000 });

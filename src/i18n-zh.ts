@@ -246,7 +246,6 @@ export const zh: Record<string, string> = {
   '{name} cannot be empty.': '{name} 不能为空。',
   '"{value}" is not a branch name.': '“{value}”不是分支名。',
   '--branch only goes with approve (to record a branch on its own: alba orders set <TAG> --branch b).': '--branch 只能和 approve 一起用（单独记录分支：alba orders set <TAG> --branch b）。',
-  'orders set needs --branch, --worktree, --base-ref, --uses, --tools, --role, --worker or --run-model.': 'orders set 需要 --branch、--worktree、--base-ref、--uses、--tools、--role、--worker 或 --run-model。',
   'nothing changed': '没有变化',
   'Branch "{branch}" is not in {base} yet. Merge it yourself first (merging is manual in this version), then approve.': '分支“{branch}”还不在 {base} 里。请先自己合并（这个版本合并是手动的），再验收通过。',
   'no accept command configured': '没有配置验收命令',
@@ -1140,6 +1139,18 @@ export const zh: Record<string, string> = {
   'no Claude rate-limit event in the last {hours} hours': '最近 {hours} 小时内没有 Claude 限额事件',
   '{where}: "max_age_hours" must be a positive number.': '{where}："max_age_hours" 必须是正数。',
   '{where}: "type" must be "command-json", "static", "codex-sessions" or "claude-stream".': '{where}："type" 必须是 "command-json"、"static"、"codex-sessions" 或 "claude-stream"。',
+  // large-repo worktrees, clean ignored guard, run slots
+  'Git could not inspect ignored files.': 'Git 无法检查被忽略的文件。',
+  '{n} ignored path(s) cannot be regenerated ({paths}{more}); pass --include-ignored to remove anyway.': '有 {n} 个无法重新生成的被忽略路径（{paths}{more}）；如确认要删除请传 --include-ignored。',
+  '{file}: "clean.regenerable" must be a list of glob patterns.': '{file}：“clean.regenerable”必须是 glob 模式列表。',
+  '{file}: "clean.regenerable" entries must be relative to a worktree, "{p}" is not.': '{file}：“clean.regenerable”的条目必须相对于工作树，“{p}”不是。',
+  '{file}: "dispatch.sparse" {error}.': '{file}：“dispatch.sparse”无效：{error}。',
+  '{file}: "dispatch.checkout_workers" must be a whole number >= 1.': '{file}：“dispatch.checkout_workers”必须是大于等于 1 的整数。',
+  '{file}: "dispatch.port_base" must be a whole number between 1 and 65535.': '{file}：“dispatch.port_base”必须是 1 到 65535 之间的整数。',
+  '{file}: "dispatch.port_block" must be a whole number between 1 and 10000.': '{file}：“dispatch.port_block”必须是 1 到 10000 之间的整数。',
+  'sparse {error}.': '稀疏目录 {error}。',
+  'sparse worktree': '稀疏工作树',
+  'orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker or --run-model.': 'orders set 需要 --branch、--worktree、--base-ref、--sparse、--uses、--tools、--role、--worker 或 --run-model。',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */

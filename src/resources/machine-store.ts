@@ -43,6 +43,17 @@ export interface MachineHoldRow {
   ended_at: string;
 }
 
+export interface MachineRunSlotRow {
+  slot: number;
+  project: string;
+  state_dir: string;
+  tag: string;
+  run: string;
+  pid?: number;
+  started_at?: string;
+  since: string;
+}
+
 export interface MachineStoreContext {
   file?: string;
   everyMinutes?: number;
@@ -407,6 +418,130 @@ export class MachineStore {
       const res = row.resource as string, tag = row.tag as string;
       if (!wantedKeys.has(`${res}\0${tag.toLowerCase()}`)) del.run(res, projectId, tag);
     }
+  }
+
+  private ensureRunSlotsTable(): void {
+    const has = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'run_slots'").get();
+    if (has) return;
+    this.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS run_slots (
+          slot INTEGER PRIMARY KEY CHECK(slot >= 0),
+          project TEXT NOT NULL,
+          state_dir TEXT NOT NULL,
+          tag TEXT NOT NULL COLLATE NOCASE,
+          run TEXT NOT NULL,
+          pid INTEGER,
+          started_at TEXT,
+          since TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS run_slots_run ON run_slots(project, state_dir, tag, run);
+      `);
+    });
+  }
+
+  private toRunSlot(row: Record<string, unknown>): MachineRunSlotRow {
+    return {
+      slot: Number(row.slot),
+      project: row.project as string,
+      state_dir: row.state_dir as string,
+      tag: row.tag as string,
+      run: row.run as string,
+      ...(row.pid !== null && row.pid !== undefined ? { pid: Number(row.pid) } : {}),
+      ...(row.started_at !== null && row.started_at !== undefined ? { started_at: row.started_at as string } : {}),
+      since: row.since as string,
+    };
+  }
+
+  /** Computes the next free run slot without writing (used to preview a slot for provision hooks). */
+  peekRunSlot(input: {
+    project: string;
+    stateDir: string;
+    preferred?: number;
+    ownOpen: readonly { tag: string; run: string; slot?: number }[];
+    checkActive: (row: MachineRunSlotRow) => boolean;
+  }): number {
+    this.ensureRunSlotsTable();
+    const normState = path.resolve(input.stateDir);
+    const liveOwn = new Set(input.ownOpen.map(o => `${o.tag.toLowerCase()}\0${o.run}`));
+    const used = new Set<number>();
+    for (const o of input.ownOpen) if (o.slot !== undefined) used.add(o.slot);
+    for (const raw of this.db.prepare('SELECT * FROM run_slots').all()) {
+      const row = this.toRunSlot(raw);
+      if (row.project === input.project && path.resolve(row.state_dir) === normState) {
+        if (liveOwn.has(`${row.tag.toLowerCase()}\0${row.run}`)) used.add(row.slot);
+      } else if (row.pid === undefined || input.checkActive(row)) {
+        used.add(row.slot);
+      }
+    }
+    if (input.preferred !== undefined && Number.isInteger(input.preferred) && input.preferred >= 0 && !used.has(input.preferred)) {
+      return input.preferred;
+    }
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    return slot;
+  }
+
+  /** Atomically reconciles stale/ended slots and claims the preferred slot (when free) or smallest free slot >= 0. */
+  claimRunSlot(input: {
+    project: string;
+    stateDir: string;
+    tag: string;
+    run: string;
+    preferred?: number;
+    ownOpen: readonly { tag: string; run: string; slot?: number; pid?: number; started_at?: string; since: string }[];
+    checkActive: (row: MachineRunSlotRow) => boolean;
+    now: Date;
+  }): number {
+    this.ensureRunSlotsTable();
+    return this.transaction(() => {
+      const normState = path.resolve(input.stateDir);
+      const liveOwn = new Set(input.ownOpen.map(o => `${o.tag.toLowerCase()}\0${o.run}`));
+      const del = this.db.prepare('DELETE FROM run_slots WHERE slot = ?');
+      const used = new Set<number>();
+      for (const raw of this.db.prepare('SELECT * FROM run_slots').all()) {
+        const row = this.toRunSlot(raw);
+        if (row.project === input.project && path.resolve(row.state_dir) === normState) {
+          if (!liveOwn.has(`${row.tag.toLowerCase()}\0${row.run}`)) { del.run(row.slot); continue; }
+        } else if (row.pid !== undefined && !input.checkActive(row)) {
+          del.run(row.slot); continue;
+        }
+        used.add(row.slot);
+      }
+      for (const o of input.ownOpen) {
+        if (o.slot !== undefined && !used.has(o.slot)) {
+          used.add(o.slot);
+          this.db.prepare('INSERT OR IGNORE INTO run_slots(slot, project, state_dir, tag, run, pid, started_at, since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(o.slot, input.project, normState, o.tag, o.run, o.pid ?? null, o.started_at ?? null, o.since);
+        }
+      }
+      let slot: number;
+      if (input.preferred !== undefined && Number.isInteger(input.preferred) && input.preferred >= 0 && !used.has(input.preferred)) {
+        slot = input.preferred;
+      } else {
+        slot = 0;
+        while (used.has(slot)) slot++;
+      }
+      this.db.prepare('INSERT INTO run_slots(slot, project, state_dir, tag, run, pid, started_at, since) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)')
+        .run(slot, input.project, normState, input.tag, input.run, input.now.toISOString());
+      return slot;
+    });
+  }
+
+  bindRunSlotPid(project: string, stateDir: string, tag: string, run: string, pid: number, startedAt?: string): void {
+    this.ensureRunSlotsTable();
+    this.transaction(() => {
+      this.db.prepare('UPDATE run_slots SET pid = ?, started_at = ? WHERE project = ? AND state_dir = ? AND tag = ? AND run = ?')
+        .run(pid, startedAt ?? null, project, path.resolve(stateDir), tag, run);
+    });
+  }
+
+  releaseRunSlot(project: string, stateDir: string, tag: string, run: string): void {
+    this.ensureRunSlotsTable();
+    this.transaction(() => {
+      this.db.prepare('DELETE FROM run_slots WHERE project = ? AND state_dir = ? AND tag = ? AND run = ?')
+        .run(project, path.resolve(stateDir), tag, run);
+    });
   }
 }
 

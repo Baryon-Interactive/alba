@@ -200,9 +200,9 @@ test('fake launches carry rules, MCP argv and redacted run-start metadata; no-ro
       assert.ok(readFileSync(pf, 'utf8').startsWith(expectedPrompt));
       assert.match(readFileSync(pf, 'utf8').slice(expectedPrompt.length), /^\nBefore your final message, wait for or stop every background command/);
     } else {
-      // The legacy prompt, then where the worker works (its worktree only).
+      // The legacy prompt, then where the worker works (its worktree only) and the assigned run slot.
       assert.ok(readFileSync(pf, 'utf8').startsWith(expectedPrompt));
-      assert.match(readFileSync(pf, 'utf8').slice(expectedPrompt.length), /^\n## Where you work\n\nYour working folder is .*\n$/);
+      assert.match(readFileSync(pf, 'utf8').slice(expectedPrompt.length), /^\n## Where you work\n\nYour working folder is .*\n\nThis run holds slot \d+ \(`ALBA_SLOT=\d+`\)\.\n$/);
     }
     const expected = engine === 'codex-cli' ? ['exec', '--json', pf] : engine === 'opencode' ? ['run', '--format', 'json', pf] : engine === 'grok-cli' ? ['--output-format', 'streaming-json', pf] : ['-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions', '--settings', pf.replace(/\.prompt\.md$/, '.claude-settings.json'), pf];
     assert.deepEqual(argv, expected);

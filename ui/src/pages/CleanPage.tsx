@@ -18,6 +18,7 @@ import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 
 const COMMAND = 'alba clean --apply';
+const COMMAND_INCLUDE_IGNORED = 'alba clean --apply --include-ignored';
 const actionTone: Record<CleanItem['action'], Tone> = { remove: 'danger', prune: 'warning', delete: 'danger', keep: 'neutral', skip: 'primary' };
 const actionText = (a: CleanItem['action']) => ({ remove: t('remove'), prune: t('prune caches'), delete: t('delete'), keep: t('keep'), skip: t('skipped') })[a];
 const kindText = (k: CleanItem['kind']) => (k === 'worktree' ? t('worktree') : k === 'build' ? t('build folder') : t('main checkout'));
@@ -31,6 +32,12 @@ function Row({ project, i }: { project: string; i: CleanItem }) {
         <div className="font-mono text-xs break-all" title={i.path}>{i.path}</div>
         {i.targets.length > 0 && <div className="mt-0.5 text-xs text-muted-foreground">{t('deletes')}: <span className="font-mono">{i.targets.join(', ')}</span></div>}
         {i.links > 0 && <div className="mt-0.5 text-xs text-muted-foreground">{t('{n} junctions or links are taken apart first', { n: i.links })}</div>}
+        {i.atRiskIgnored && i.atRiskIgnored.count > 0 && (
+          <div className="mt-0.5 text-xs text-warning">
+            {t('{n} non-regenerable ignored path(s):', { n: i.atRiskIgnored.count })}{' '}
+            <span className="font-mono">{i.atRiskIgnored.paths.join(', ')}{i.atRiskIgnored.count > i.atRiskIgnored.paths.length ? ` (+${i.atRiskIgnored.count - i.atRiskIgnored.paths.length})` : ''}</span>
+          </div>
+        )}
       </td>
       <td className="px-2 py-2 text-sm">{i.reason}{i.result && <div className="mt-0.5 text-xs text-success">{i.result}</div>}</td>
       <td className="px-4 py-2 text-right whitespace-nowrap tabular-nums">{i.bytes !== undefined ? bytes(i.bytes) : i.measuredBytes ? t('≥ {size} measured', { size: bytes(i.measuredBytes) }) : t('Size unknown')}</td>
@@ -50,24 +57,35 @@ function Table({ project, items }: { project: string; items: CleanItem[] }) {
 }
 
 /** The step before applying: nothing is deleted from the page. The page shows the command and asks twice before it hands it over. */
-function ApplyDialog({ open, onOpenChange, count, size }: { open: boolean; onOpenChange: (o: boolean) => void; count: number; size: string }) {
+function ApplyDialog({ open, onOpenChange, count, size, includeIgnored, atRiskWorktrees }: { open: boolean; onOpenChange: (o: boolean) => void; count: number; size: string; includeIgnored: boolean; atRiskWorktrees: number }) {
   const [read, setRead] = useState(false);
+  const [confirmedIgnored, setConfirmedIgnored] = useState(false);
   const [copied, setCopied] = useState(false);
+  const needsIgnoredConfirm = includeIgnored && atRiskWorktrees > 0;
+  const command = includeIgnored ? COMMAND_INCLUDE_IGNORED : COMMAND;
   const copy = async () => {
-    try { await navigator.clipboard.writeText(COMMAND); setCopied(true); toast.success(t('Command copied')); } catch { toast.error(t('Could not copy: select the command and copy it by hand')); }
+    try { await navigator.clipboard.writeText(command); setCopied(true); toast.success(t('Command copied')); } catch { toast.error(t('Could not copy: select the command and copy it by hand')); }
   };
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) { setRead(false); setCopied(false); } onOpenChange(o); }}>
+    <Dialog open={open} onOpenChange={o => { if (!o) { setRead(false); setConfirmedIgnored(false); setCopied(false); } onOpenChange(o); }}>
       <DialogContent>
         <DialogTitle>{t('Apply the plan?')}</DialogTitle>
         <DialogDescription>{t('The board never deletes. Applying is a command you run yourself, in the project’s folder, with the same settings the board was started with.')}</DialogDescription>
         <div className="rounded-md border-l-2 border-destructive bg-muted px-3 py-2 text-sm">{t('{n} items would be changed, about {size} freed. Removed worktrees and merged branches cannot be brought back.', { n: count, size })}</div>
-        <pre className="overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-sm">{COMMAND}</pre>
+        {needsIgnoredConfirm && (
+          <div className="rounded-md border border-warning/60 bg-warning/10 px-3 py-2 text-sm">
+            {t('{n} worktree(s) contain ignored files that cannot be regenerated and will be deleted.', { n: atRiskWorktrees })}
+          </div>
+        )}
+        <pre className="overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-sm">{command}</pre>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={read} onChange={e => setRead(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]" />{t('I have read the plan and know what it removes.')}</label>
+        {needsIgnoredConfirm && (
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmedIgnored} onChange={e => setConfirmedIgnored(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]" />{t('I confirm removing worktrees that contain non-regenerable ignored files.')}</label>
+        )}
         <p className="text-xs text-muted-foreground">{t('When it has run, the events of the clean appear below on this page.')}</p>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('Back')}</Button>
-          <Button variant="destructive" disabled={!read} onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{t('Copy the command')}</Button>
+          <Button variant="destructive" disabled={!read || (needsIgnoredConfirm && !confirmedIgnored)} onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{t('Copy the command')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -79,19 +97,28 @@ export function CleanPage() {
   const project = useProjectId();
   const [editing, editButton] = useEditToggle();
   const client = useQueryClient();
-  const q = useCleanPlan(project);
+  const [includeIgnored, setIncludeIgnored] = useState(false);
+  const q = useCleanPlan(project, includeIgnored);
   const events = useCleanEvents(project);
   const [apply, setApply] = useState(false);
 
   if (q.isError) return <ErrorBox error={q.error} />;
   if (!q.data) return <div className="grid gap-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-48" /></div>;
   const s = summarizePlan(q.data);
+  const hasAtRisk = q.data.items.some(i => (i.atRiskIgnored?.count ?? 0) > 0);
+  const atRiskRemoving = s.removing.filter(i => (i.atRiskIgnored?.count ?? 0) > 0).length;
   return (
     <div>
       <PageHeader
         title={t('Clean')} count={s.removing.length}
         actions={<>
-          <Button variant="outline" onClick={() => { void client.invalidateQueries({ queryKey: keys.clean(project) }); void client.invalidateQueries({ queryKey: keys.cleanEvents(project) }); }}><RefreshCw />{t('Read again')}</Button>{editButton}</>}
+          {(hasAtRisk || includeIgnored) && (
+            <label className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs">
+              <input type="checkbox" checked={includeIgnored} onChange={e => setIncludeIgnored(e.target.checked)} className="size-3.5 accent-[var(--primary)]" />
+              {t('Include non-regenerable ignored files')}
+            </label>
+          )}
+          <Button variant="outline" onClick={() => { void client.invalidateQueries({ queryKey: keys.clean(project, includeIgnored) }); void client.invalidateQueries({ queryKey: keys.cleanEvents(project) }); }}><RefreshCw />{t('Read again')}</Button>{editButton}</>}
       >
         {t('The plan of `alba clean`, read only. Worked out {when}.', { when: ago(q.data.at) })}
       </PageHeader>
@@ -129,7 +156,7 @@ export function CleanPage() {
           </Card>
         )}
       </Section>
-      <ApplyDialog open={apply} onOpenChange={setApply} count={s.removing.length} size={s.unknown ? s.bytes ? t('≥ {size} measured', { size: bytes(s.bytes) }) : t('Size unknown') : bytes(s.bytes)} />
+      <ApplyDialog open={apply} onOpenChange={setApply} count={s.removing.length} size={s.unknown ? s.bytes ? t('≥ {size} measured', { size: bytes(s.bytes) }) : t('Size unknown') : bytes(s.bytes)} includeIgnored={includeIgnored} atRiskWorktrees={atRiskRemoving} />
     </div>
   );
 }
