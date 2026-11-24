@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { fail } from '../i18n.ts';
+import { withGitLockRetrySync } from '../sync/git.ts';
 
 export interface WorktreePlan { path: string; branch: string; baseRef: string }
 
@@ -15,7 +16,7 @@ const slash = (p: string) => p.replace(/\\/g, '/');
  */
 /** The main checkout as it is now: the base branch's head and its changed files (`git status --porcelain` lines). */
 export function mainCheckoutState(project: ProjectConfig): { head?: string; dirty: string[] } {
-  const run = (args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', project.root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
+  const run = (args: string[]) => withGitLockRetrySync(() => execFileSync('git', ['--no-optional-locks', '-C', project.root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }));
   let head: string | undefined;
   try { head = run(['rev-parse', '--verify', `${baseRefOf(project)}^{commit}`]).trim(); } catch { /* no base branch yet */ }
   let dirty: string[] = [];
@@ -32,7 +33,7 @@ export function outsideWorktree(project: ProjectConfig, run: { started: string; 
   const since = Date.parse(run.started) / 1000;
   let commits: string[] = [];
   try {
-    const log = execFileSync('git', ['--no-optional-locks', '-C', project.root, 'log', '-g', '--date=unix', '--format=%H%x09%gd%x09%gs', baseRefOf(project)], { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const log = withGitLockRetrySync(() => execFileSync('git', ['--no-optional-locks', '-C', project.root, 'log', '-g', '--date=unix', '--format=%H%x09%gd%x09%gs', baseRefOf(project)], { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }));
     commits = log.split('\n').flatMap(line => {
       const [hash, selector, subject] = line.split('\t');
       const at = Number(/@\{(\d+)\}/.exec(selector ?? '')?.[1]);
@@ -69,7 +70,7 @@ export function baseRefOf(project: ProjectConfig): string {
   if (project.dispatch.base_ref) return localRef(project.dispatch.base_ref, '"dispatch.base_ref"');
   let ref = defaultBase.get(project.root);
   if (!ref) {
-    const run = (args: string[]) => { try { return execFileSync('git', ['-C', project.root, ...args], { encoding: 'utf8', timeout: 10000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } };
+    const run = (args: string[]) => { try { return withGitLockRetrySync(() => execFileSync('git', ['-C', project.root, ...args], { encoding: 'utf8', timeout: 10000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })).trim(); } catch { return ''; } };
     ref = run(['rev-parse', '--verify', '--quiet', 'refs/heads/main']) ? 'refs/heads/main' : (run(['symbolic-ref', '--quiet', 'HEAD']) || 'refs/heads/main');
     defaultBase.set(project.root, ref);
   }
@@ -78,7 +79,7 @@ export function baseRefOf(project: ProjectConfig): string {
 
 export function git(cwd: string, args: string[]): string {
   try {
-    return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 120000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    return withGitLockRetrySync(() => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 120000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }));
   } catch (e) {
     const err = e as { stderr?: Buffer | string; message: string };
     return fail('git {args} failed: {why}', { args: args.join(' '), why: String(err.stderr ?? err.message).trim().split('\n')[0] });
@@ -86,7 +87,7 @@ export function git(cwd: string, args: string[]): string {
 }
 
 const gitOk = (cwd: string, args: string[]): boolean => {
-  try { execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore', timeout: 60000, windowsHide: true }); return true; } catch { return false; }
+  try { withGitLockRetrySync(() => execFileSync('git', ['-C', cwd, ...args], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 60000, windowsHide: true })); return true; } catch { return false; }
 };
 
 /** Fails with what to set when the base branch is not in the repository. */

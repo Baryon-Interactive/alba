@@ -18,6 +18,7 @@ import { startedAtForCheck, tick, type Probes } from '../tick/gather.ts';
 import type { WorkerConfig } from '../workers/config.ts';
 import { ownerOf } from '../usage/spend.ts';
 import { processStartMatches } from '../run/kill-tree.ts';
+import { withGitLockRetrySync } from '../sync/git.ts';
 
 export interface CheckedItem { item: string; verdict: 'pass' | 'fail' | 'doubt'; evidence: string }
 export interface IndependentVerdict { checked: CheckedItem[]; pass: boolean; summary: string }
@@ -88,11 +89,11 @@ export function chooseReviewerFromPool(
 
 export function addDetachedCheckout(root: string, cwd: string, commit: string): void {
   mkdirSync(path.dirname(cwd), { recursive: true });
-  reviewGit(root, 'worktree', 'add', '--detach', cwd, commit);
+  withGitLockRetrySync(() => reviewGit(root, 'worktree', 'add', '--detach', cwd, commit));
 }
 
 export function removeDetachedCheckout(root: string, cwd: string, force = false): void {
-  reviewGit(root, 'worktree', 'remove', ...(force ? ['-f'] : []), cwd);
+  withGitLockRetrySync(() => reviewGit(root, 'worktree', 'remove', ...(force ? ['-f'] : []), cwd));
 }
 
 export function launchReadOnlyReview(

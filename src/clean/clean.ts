@@ -8,7 +8,7 @@ import { t } from '../i18n.ts';
 import type { OrderDoc } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
 import { baseRefOf, planWorktree } from '../run/worktree.ts';
-import { systemGit, type GitProbe } from '../sync/git.ts';
+import { systemGit, withGitLockRetrySync, type GitProbe } from '../sync/git.ts';
 import { findWorktree, type Probes } from '../tick/gather.ts';
 import { inside } from '../monitor/monitor.ts';
 import { cleanSignature, linkedAncestor, safePackageRoot, worktreeSignature } from './safety.ts';
@@ -41,7 +41,7 @@ export const systemClean = (probes: Probes): CleanEnv => ({
     return execFileSync('ps', ['-A', '-o', 'comm='], { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').map(l => path.basename(l.trim())).filter(Boolean);
   },
   runGit(cwd, args) {
-    try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 300000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) {
+    try { return withGitLockRetrySync(() => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 300000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })); } catch (e) {
       const err = e as { stderr?: Buffer | string; message: string };
       throw new Error(String(err.stderr ?? err.message).trim().split('\n')[0]);
     }
