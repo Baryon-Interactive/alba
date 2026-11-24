@@ -7,12 +7,12 @@ import { fenceUntrusted } from './fence.ts';
 
 export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
   if (!phases) return '';
-  const sections = phases.list.slice(0, phases.index).flatMap(phase => {
-    const plan = phases.planOf(phase);
-    return plan ? [`## Plan from phase ${phase.id} (${plan.run.worker}, ${plan.run.model ?? 'default'})`,
-      fenceUntrusted('phase plan', plan.text, 24 * 1024)] : [];
-  });
-  if (sections.length) sections.push('The plan is guidance. Deviate when the code says otherwise and say why in your report.');
+  const latest = phases.list.slice(0, phases.index).map(phases.planOf).findLast(plan => plan !== undefined);
+  const sections = latest ? [
+    `## Plan from phase ${latest.run.phase} (${latest.run.worker}, ${latest.run.model ?? 'default'})`,
+    fenceUntrusted('phase plan', latest.text, 24 * 1024),
+    'The plan is guidance. Deviate when the code says otherwise and say why in your report.',
+  ] : [];
   if (phases.current.mode === 'read-only') sections.push(`This is the read-only planning phase "${phases.current.id}". Inspect the order and its worktree. Leave all files untouched. End with a normal report block in your final message, with a one-line summary and the Markdown plan in the JSON "plan" field (at most 24 KiB).`);
   return '\n' + sections.join('\n\n') + '\n';
 }

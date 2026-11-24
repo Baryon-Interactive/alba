@@ -1,4 +1,4 @@
-import { readOnlyChange } from '../run/phase.ts';
+import { phasePrompt, readOnlyChange } from '../run/phase.ts';
 import { orderPhases } from '../orders/phases.ts';
 import { phasesOverride } from '../orders/phase-config.ts';
 import { loadMachines } from '../machines/config.ts';
@@ -1021,8 +1021,9 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
     const doc = orders.get(command!);
     let promptWorkers: ReturnType<typeof workersOf> | undefined;
     try { promptWorkers = workersOf(values.workers, cfg); } catch { promptWorkers = undefined; }
-    const role = resolveRole(effectiveRoles(cfg, promptWorkers), { ...doc.order, kind: routingOf(cfg, doc).kind || doc.order.kind });
-    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines), roleRules(role));
+    const phases = orderPhases(cfg, doc);
+    const role = resolveRole(effectiveRoles(cfg, promptWorkers), { role: phases?.current.role ?? doc.order.role, kind: routingOf(cfg, doc).kind || doc.order.kind });
+    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines) + phasePrompt(phases), roleRules(role));
     if (values.out) { writeFileSync(values.out, text, 'utf8'); return t('Wrote {file}', { file: values.out }); }
     return text.trimEnd();
   }
