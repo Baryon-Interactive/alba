@@ -42,6 +42,8 @@ Follow the skill `alba-worker-rules` (listed below): its rules on committing, lo
 
 `status` is `ready` (done, committed and checked), `waiting` (one `question` for a person), `blocked`, `failed` or `dropped`, or `monitoring` (a long job that already runs on its own is handed to the tool's monitor, with a `monitor` object; the skill says how). Never claim `ready` for what you did not verify. The skill has the full rules.
 
+ALBA_RUN=T1/r2. Include this value in the report's JSON field "run".
+
 ## Where you work
 
 Your working folder is <worktree> (branch demo-t1). Run every command, build and commit there and only there. Never change, build in or commit to <root> or another worktree: that checkout belongs to the lead, and a run that changes it is stopped at review. Read files elsewhere when the order names them, but write only inside your folder.
