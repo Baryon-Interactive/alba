@@ -26,6 +26,7 @@ Start with the [five-minute demo](../examples/demo/README.md), then choose a top
 | [037-capture-recipes.md](workflow/037-capture-recipes.md) | 037. Capture recipes |
 | [038-visual-targets.md](workflow/038-visual-targets.md) | 038. Visual targets, measured rounds and convergence |
 | [044-phases.md](workflow/044-phases.md) | 044. Order phases |
+| [045-split-and-integrate.md](workflow/045-split-and-integrate.md) | 045. Split and integrate an order |
 | [042-schedules.md](workflow/042-schedules.md) | 042. Recurring order schedules |
 
 ## Workers

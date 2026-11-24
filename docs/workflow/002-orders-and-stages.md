@@ -11,7 +11,8 @@ The stage of an order is computed from stored facts by one pure function (`infer
 | 1 | `cancelled` | nobody | the last relevant action is `cancel` |
 | 2 | `merged` | nobody | approved or closed (`merged-elsewhere`, `done-by-lead`), and not sent back |
 | 3 | `held` | a person, to release | `hold` without a later `release` |
-| 4 | `awaiting-user` | a person, to answer or to click a card | the current report is `waiting` and has a question (`waiting_for`: `answer` unless the report or the table's status word says `card`; document 011) |
+| 3a | `waiting-children` | child orders | an accepted split has children still open. The stage reason gives their count ([split and integrate](045-split-and-integrate.md)) |
+| 4 | `awaiting-user` | a person, to answer or to click a card | a completed split awaits a decision, or the current report is `waiting` and has a question (`waiting_for`: `answer` unless the report or the table's status word says `card`; document 011) |
 | 5 | `awaiting-review` | a person, to review | the current report is `ready` |
 | 6 | `blocked` | a person, to decide | the current report is `blocked` |
 | 7 | `failed` | a person, to look | the current report is `failed` |
@@ -31,7 +32,7 @@ A report is *current* only if no `queue`, `rework` or `answer` action and no run
 
 `alba orders ready` lists orders in `queued` whose `needs` are all merged.
 
-A project can configure `phases` by order kind. Each list contains one or more `read-only` phases followed by one final `write` phase. Give each phase a unique `id` and optionally a `role` and positive `timeout_minutes`. Set `--phases none` on `orders add` or `orders set` to use a single ordinary run for that order.
+A project can configure `phases` by order kind. Each list begins with a `read-only` or `split` phase, optionally continues with more `read-only` phases, and ends with one `write` phase. Give each phase a unique `id` and optionally a `role` and positive `timeout_minutes`. Set `--phases none` on `orders add` or `orders set` to use a single ordinary run for that order.
 
 ## 3. Files
 
