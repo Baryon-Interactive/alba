@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -75,6 +75,22 @@ test('POST /api/say previews, refuses restart, and queues a waiting order', asyn
     assert.deepEqual((await sent.json() as GroupSayResult).results, [{ tag: 'T1', delivery: 'queued' }]);
     assert.equal(pendingNotes(orders.get('T1')).length, 1);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test('say CLI refuses a group restart and can preview without text', () => {
+  const { project } = fixture();
+  writeFileSync(project.file, JSON.stringify({ id: project.id, name: 'Demo', state: project.state, root: project.root, state_dir: project.state_dir, work_orders: project.work_orders }));
+  const orders = new Orders(stateStore(project));
+  orders.add({ tag: 'T1', title: 'Demo', kind: 'task' });
+  orders.report('T1', { ...ready, status: 'blocked' });
+  const cli = (...args: string[]) => spawnSync(process.execPath, ['src/cli/main.ts', '--project', project.file, 'say', '@all', ...args], { encoding: 'utf8', windowsHide: true });
+  const refused = cli('--text', 'Check again', '--restart');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /restart cannot be used with a group/);
+  const preview = cli('--dry-run', '--json');
+  assert.equal(preview.status, 0, preview.stderr);
+  assert.deepEqual(JSON.parse(preview.stdout).results, [{ tag: 'T1' }]);
+  assert.deepEqual(pendingNotes(orders.get('T1')), []);
 });
 
 test('a message without an open run waits in notes and the next prompt, without resetting review or monitoring', () => {
