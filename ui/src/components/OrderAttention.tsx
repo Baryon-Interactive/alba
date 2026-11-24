@@ -14,7 +14,7 @@ export const ProjectOrders = createContext<ReadonlyMap<string, OrderSummary>>(ne
 export function NewPill({ tag, unread }: { tag?: string; unread?: boolean }) {
   const orders = useContext(ProjectOrders);
   if (!(unread ?? orders.get(tag ?? '')?.unread)) return null;
-  return <span className="new-pill mx-1 inline-flex shrink-0 items-center rounded-full bg-primary px-1.5 py-0.5 font-sans text-[10px] leading-none font-semibold text-primary-foreground"><span aria-hidden>{t('New')}</span><span className="sr-only">{t('New')}</span></span>;
+  return <span className="new-pill mx-1 inline-flex shrink-0 items-center rounded-full bg-primary px-1.5 py-0.5 font-sans text-[10px] leading-none font-semibold text-black dark:text-primary-foreground"><span aria-hidden>{t('New')}</span><span className="sr-only">{t('New')}</span></span>;
 }
 
 function useAttentionWrite(project: string) {
