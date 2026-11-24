@@ -19,10 +19,12 @@ test('a split validates every child and the complete sibling dependency graph', 
   assert.deepEqual(validateSubtasks([item, other], ['code']), [item, other]);
   const eight = Array.from({ length: 8 }, (_, i) => ({ ...item, key: String(i) }));
   assert.equal(validateSubtasks(eight).length, 8);
+  assert.equal(validateSubtasks([item, { ...other, body: body.padEnd(16383) }])[1].body.length, 16383);
   for (const invalid of [[item], [...eight, item], [item, item], [item, { ...other, needs: ['missing'] }],
     [{ ...item, needs: ['store'] }, other], [item, { ...other, kind: 'missing' }],
     [item, { ...other, body: '' }], [item, { ...other, body: 'No acceptance' }],
-    [item, { ...other, body: body.padEnd(16384) }]]) {
+    [item, { ...other, body: body.padEnd(16384) }], [item, { ...other, body: body + '\u{1F331}'.repeat(4096) }],
+    [item, { ...other, needs: 'lookup' }], [item, { ...other, needs: ['store'] }]]) {
     assert.throws(() => validateSubtasks(invalid, ['code']));
   }
 });

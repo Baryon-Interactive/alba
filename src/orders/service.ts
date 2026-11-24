@@ -270,11 +270,11 @@ export class Orders {
     });
   }
 
-  recordSplit(tag: string, report: number, selection: NonNullable<Action['selection']>, branch: string): void {
+  recordSplit(tag: string, report: number, selection: NonNullable<Action['selection']>, branch: string, automatic: boolean): void {
     const children = selection.map(item => item.tag);
     const doc = this.get(tag);
-    doc.actions.push({ seq: nextSeq(doc), kind: 'accept-split', at: this.now(), author: this.actor, report, children, selection, branch });
-    this.save(doc, 'action-accept-split', { report, children, branch });
+    doc.actions.push({ seq: nextSeq(doc), kind: 'accept-split', at: this.now(), author: this.actor, report, children, selection, branch, ...(automatic ? { automatic: true } : {}) });
+    this.save(doc, 'action-accept-split', { report, children, branch, automatic });
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */

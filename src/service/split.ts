@@ -12,11 +12,11 @@ export function autoAcceptSplit(project: ProjectConfig, orders: Orders, tag: str
   const policy = project.split.approve;
   const approval = typeof policy === 'string' ? policy : policy[doc.runs.at(-1)?.routing?.kind || doc.order.kind];
   if (!report?.subtasks || approval !== 'auto' || orders.stage(doc).waitingFor !== 'card') return;
-  try { acceptSplit(project, orders, tag, undefined, report.seq); }
+  try { acceptSplit(project, orders, tag, undefined, report.seq, true); }
   catch (error) { orders.record(tag, 'split-approval-failed', { reason: (error as Error).message }); }
 }
 
-export function acceptSplit(project: ProjectConfig, orders: Orders, tag: string, edits?: unknown, reportSeq?: number) {
+export function acceptSplit(project: ProjectConfig, orders: Orders, tag: string, edits?: unknown, reportSeq?: number, automatic = false) {
   const files: string[] = [];
   try {
     return orders.store.transaction(() => {
@@ -49,7 +49,7 @@ export function acceptSplit(project: ProjectConfig, orders: Orders, tag: string,
         });
         if (child.file) files.push(child.file);
       }
-      orders.recordSplit(tag, report.seq, tasks.map(({ key, title, kind }) => ({ key, title, kind, tag: tags.get(key)! })), plan.branch);
+      orders.recordSplit(tag, report.seq, tasks.map(({ key, title, kind }) => ({ key, title, kind, tag: tags.get(key)! })), plan.branch, automatic);
     });
   } catch (error) {
     for (const file of files) rmSync(file, { force: true });

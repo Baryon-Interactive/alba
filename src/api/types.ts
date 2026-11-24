@@ -634,7 +634,7 @@ export interface OrderPhase {
 export interface OrderDetail extends AttentionState {
   parent?: string;
   children?: ChildSummary[];
-  split?: { report: number; subtasks: import('../orders/subtasks.ts').Subtask[]; pending: boolean; decision?: Decision & { report?: number; children?: string[]; author?: string; selection?: { key: string; tag: string; title: string; kind: string }[] } };
+  split?: { report: number; subtasks: import('../orders/subtasks.ts').Subtask[]; pending: boolean; decision?: Decision & { automatic?: true; report?: number; children?: string[]; author?: string; selection?: { key: string; tag: string; title: string; kind: string }[] } };
   phases?: OrderPhase[];
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };

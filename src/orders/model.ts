@@ -215,6 +215,7 @@ export interface Report {
 }
 
 export interface Action {
+  automatic?: true;
   report?: number;
   children?: string[];
   selection?: { key: string; tag: string; title: string; kind: string }[];
