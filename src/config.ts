@@ -19,7 +19,8 @@ import { validatePlugins } from './plugins/registry.ts';
 import { validateEditors } from './editors/config.ts';
 import { validateRelease, type ReleaseConfig } from './release/config.ts';
 import { validateSchedules, type ScheduleConfig } from './schedules/config.ts';
-export type { ScheduleConfig };
+import { validateConsult, type ConsultConfig } from './consult/config.ts';
+export type { ScheduleConfig, ConsultConfig };
 
 export interface DispatchRules {
   caps: Record<string, number>;
@@ -265,6 +266,8 @@ export interface ProjectConfig {
   orders?: OrdersConfig;
   /** Recurring schedules that create orders on a timetable (`schedules:` in alba.yaml). */
   schedules?: ScheduleConfig[];
+  /** Mid-run cross-model consultation settings (`consult:` in alba.yaml). */
+  consult?: ConsultConfig;
   /** Selects a machine engine module; no engine is selected by default. */
   engine?: string;
   release?: ReleaseConfig;
@@ -646,7 +649,8 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
   if (raw.orders !== undefined) cfg.orders = validateOrdersConfig(raw.orders, file, base);
   if (raw.schedules !== undefined) cfg.schedules = validateSchedules(raw.schedules, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders', 'schedules'].includes(k));
+  if (raw.consult !== undefined) cfg.consult = validateConsult(raw.consult, file);
+  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders', 'schedules', 'consult'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }

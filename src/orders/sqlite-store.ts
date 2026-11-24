@@ -44,10 +44,12 @@ export interface IdempotencyReceiptRow {
 
 /** SQLite keeps the schema version independent from the optimistic document version. */
 export class SqliteStore implements OrderStore {
+  readonly dir: string;
   readonly db: DatabaseSync;
   private depth = 0;
   private schedulesReady = false;
   constructor(dir: string) {
+    this.dir = dir;
     mkdirSync(dir, { recursive: true });
     this.db = new DatabaseSync(path.join(dir, 'state.sqlite'));
     this.db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');

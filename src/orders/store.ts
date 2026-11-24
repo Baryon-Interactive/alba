@@ -6,6 +6,7 @@ import { tryLock } from '../fs/lock.ts';
 
 /** Everything the engine needs from storage. A `node:sqlite` implementation can replace the file one. */
 export interface OrderStore {
+  readonly dir?: string;
   tags(): string[];
   all?(): OrderDoc[];
   read(tag: string): OrderDoc | undefined;
