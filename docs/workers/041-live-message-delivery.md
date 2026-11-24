@@ -2,6 +2,20 @@
 
 Messages sent with `alba say <TAG> --text ...` or from the console's **Thread** panel are always written to `.alba/inbox.md` in the order's worktree. On supported local engines, Alba also delivers those messages into the running worker automatically instead of waiting for the worker to remember to read the file.
 
+## Send to a group
+
+`alba say @running --text "Check the updated build"` uses the same delivery path as messaging each matching order separately. Use `--dry-run` to list the targets and `--json` for machine-readable results. Quote group names in shells that interpret `@`, for example `alba say '@worker:demo' --dry-run` in PowerShell.
+
+| Group | Selected orders |
+|---|---|
+| `@running` | Every order with an open run |
+| `@monitoring` | Orders in the monitoring stage |
+| `@waiting` | Orders in awaiting-user or blocked |
+| `@worker:<id>` | Orders with an open run owned by that worker |
+| `@all` | The union of running, monitoring and waiting targets |
+
+Alba resolves the targets once and sends in tag order. Each result gives the tag and delivery mode (`live`, `steer`, `file`, or `queued` for the next run), or the error for that order. Delivery continues after an error. The CLI exits with status 1 if any delivery failed. Group delivery does not support `--restart` or replies to an individual thread. The [HTTP API](../console/010-api.md) exposes the same operation.
+
 ## Delivery by engine
 
 ### Claude Code (`claude-cli`)

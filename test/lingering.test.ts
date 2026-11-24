@@ -86,6 +86,20 @@ test('a run whose log ends with its report and has been quiet for 10 minutes is 
   assert.equal(lingeringOf(s.project, s.probes, doc()), undefined);
 });
 
+test('a report at the end of the log that names another run is not this run handing in: it is neither delivered nor lingering', () => {
+  const s = setup({ stall_minutes: 60 });
+  const doc = () => s.orders.get('T1').runs[0];
+  const withRun = (run: string) => writeFileSync(s.log, TAIL.replace('{"status":"ready"', `{"run":"${run}","status":"ready"`));
+  withRun('T1/r0');                                                                             // the predecessor's report echoed back
+  assert.equal(handedIn(s.probes, doc()), undefined);
+  assert.equal(lingeringOf(s.project, s.probes, doc()), undefined);
+  assert.deepEqual(tick(s.project, s.orders, s.workers, s.probes, { record: false }).report.problems.map(p => p.kind).filter(k => k === 'lingering'), []);
+  withRun(`T1/${doc().id}`);                                                                    // its own run id, either form
+  assert.equal(lingeringOf(s.project, s.probes, doc())?.status, 'ready');
+  withRun(doc().id);
+  assert.equal(lingeringOf(s.project, s.probes, doc())?.status, 'ready');
+});
+
 test('lingering_minutes changes the wait; report (default) changes nothing, stop ends this run\'s process tree and records its report', () => {
   const s = setup({ lingering_minutes: 60 });
   s.clock.now = new Date('2026-11-04T14:30:00Z');

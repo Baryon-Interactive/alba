@@ -112,8 +112,14 @@ export function handedIn(probes: Probes, run: Run): HandedIn | undefined {
   const tail = probes.tail(file, TAIL_BYTES);
   const cut = Buffer.byteLength(tail) >= TAIL_BYTES;
   const report = deliveredReport(tail, { cut });
-  if (!report) return undefined;
+  // A block naming another run (a predecessor's report echoed into this log) is not this run's delivery: never stop the run for it.
+  if (!report || namesAnotherRun(report, run.id)) return undefined;
   return { status: report.status, summary: report.summary, quietMinutes: (probes.now().getTime() - Date.parse(at)) / 60000, ended: parseStreamLog(tail, { cut }).ended === true };
+}
+
+/** The report names a run (`r2` or `TAG/r2`) and it is not `runId`. A report without a run id names none. */
+function namesAnotherRun(report: ReportInput, runId: string): boolean {
+  return !!report.run && report.run !== runId && !report.run.endsWith(`/${runId}`);
 }
 
 /**

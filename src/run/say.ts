@@ -1,3 +1,4 @@
+import type { GroupSayResult } from '../api/types.ts';
 import { fail, t, UserError } from '../i18n.ts';
 import { actionProblem } from '../orders/stage.ts';
 import type { Run } from '../orders/model.ts';
@@ -15,6 +16,38 @@ export interface SayResult {
   message: string;
   delivery?: SayDeliveryMode;
   started?: Extract<StartResult, { mode: 'start' }>;
+}
+
+/** Resolve the group once before sending. Queuing a message can change an order's state. */
+export function sayToGroup(ctx: RunContext, group: string, text: string, options: { dryRun?: boolean; restart?: boolean; reply?: string } = {}): GroupSayResult {
+  if (options.restart) fail('--restart cannot be used with a group.');
+  if (options.reply) fail('--reply needs a single order.');
+  if (!options.dryRun && !text.trim()) fail('A message needs its text (--text).');
+  const worker = /^@worker:([^\s:]+)$/.exec(group)?.[1];
+  if (!worker && !['@all', '@running', '@monitoring', '@waiting'].includes(group)) fail('Unknown message group "{group}".', { group });
+  const docs = ctx.orders.all();
+  const merged = ctx.orders.mergedSet(docs);
+  const targets = docs.filter(doc => {
+    const open = doc.runs.find(r => !r.ended);
+    if (worker) return open && (open.worker === worker || ownerOf(ctx.workers.workers, open.worker)?.id === worker);
+    if (group === '@running') return !!open;
+    const stage = ctx.orders.stage(doc, merged).stage;
+    if (group === '@monitoring') return stage === 'monitoring';
+    const waiting = stage === 'awaiting-user' || stage === 'blocked';
+    return group === '@waiting' ? waiting : open || waiting || stage === 'monitoring';
+  }).map(doc => doc.order.tag).sort();
+
+  const results: GroupSayResult['results'] = [];
+  for (const tag of targets) {
+    if (options.dryRun) { results.push({ tag }); continue; }
+    try {
+      const sent = sayToOrder(ctx, tag, text);
+      results.push({ tag, delivery: sent.delivery ?? 'queued' });
+    } catch (error) {
+      results.push({ tag, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { group, dryRun: !!options.dryRun, results };
 }
 
 /** Verifies the recorded OS creation time; older records retain the launch-window check before the stop probe validates them. */

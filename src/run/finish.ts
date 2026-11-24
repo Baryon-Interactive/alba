@@ -9,11 +9,11 @@ import { UserError, t } from '../i18n.ts';
 import type { Run, RunEnd, RunOutcome } from '../orders/model.ts';
 import { probesTailReader, readRunEndReason } from './end-reason.ts';
 import { saveWipSnapshot, type SaveWipOptions } from './wip.ts';
-import { parseReportBlock, parseReportFile, REPORT_BEGIN, REPORT_END, type ReportInput } from '../orders/report.ts';
+import { parseReportBlock, parseReportFile, staleReport, REPORT_BEGIN, REPORT_END, type ReportInput } from '../orders/report.ts';
 import { REPORT_STATUSES } from '../orders/model.ts';
 import type { Orders } from '../orders/service.ts';
 import { startedAtForCheck, type Probes } from '../tick/gather.ts';
-import { trailingTransientFailures } from './launch.ts';
+import { engineSession, trailingTransientFailures } from './launch.ts';
 import { parseStreamLog, workerAdapter } from '../workers/adapters/index.ts';
 import { parseUsage, type RunUsage } from '../usage/usage.ts';
 import { MAX_RESUMES, isLimitError, isLostSessionError, isTransientError } from './transient.ts';
@@ -42,6 +42,7 @@ function headOf(worktree: string): string | undefined {
 
 /** What to record for a run whose process has gone away. */
 export interface Finish {
+  stale?: NonNullable<ReturnType<typeof staleReport>>[];
   live_summary?: LiveSummary;
   tag: string;
   run: string;
@@ -74,7 +75,7 @@ function bouncePrompt(error: string | undefined, finalMessage: boolean): string 
     ? `The report block is invalid:\n${fenceUntrusted('report validation error', error)}`
     : (finalMessage ? 'No report block was found in the final agent message.' : 'No report block was found.');
   const shape = JSON.stringify({ status: 'ready', summary: 'one sentence', question: '', evidence: [], commits: [] });
-  return [reason, '', 'Print exactly this report block, using the field names shown:', REPORT_BEGIN, shape, REPORT_END, '', `Allowed status values: ${REPORT_STATUSES.join(', ')}.`, 'Allowed field names: status, summary, question, options, waiting_for, scope, evidence, commits, skill_suggestions, monitor, revision.', '', 'Do not redo the work: check `git log` and print only the report block.'].join('\n');
+  return [reason, '', 'Print exactly this report block, using the field names shown:', REPORT_BEGIN, shape, REPORT_END, '', `Allowed status values: ${REPORT_STATUSES.join(', ')}.`, 'Allowed field names: run, status, summary, question, options, waiting_for, scope, evidence, commits, skill_suggestions, monitor, revision.', '', 'Do not redo the work: check `git log` and print only the report block.'].join('\n');
 }
 
 /**
@@ -115,7 +116,12 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       continue;
     }
     if (!run?.pid || run.imported || stillOurs(run, probes)) continue;
-    const started = Date.parse(run.started) - 2000;
+    const stale: NonNullable<Finish['stale']> = [];
+    const accepts = (candidate: Pick<ReportInput, 'run'>, source: string, time?: string) => {
+      const rejected = staleReport(doc, run, candidate, source, time, prior => engineSession(prior, probes));
+      if (rejected && !stale.some(r => r.file === source && r.namedRun === rejected.namedRun)) stale.push(rejected);
+      return !rejected;
+    };
     const sources = [run.last_file, path.join(project.work_orders, `${doc.order.tag}.report.json`).replace(/\\/g, '/')].filter((f): f is string => !!f);
     const stderr = run.log ? probes.tail(run.log, TAIL_BYTES) : '';
     const eventTail = run.events_file ? probes.tail(run.events_file, TAIL_BYTES) : '';
@@ -153,31 +159,48 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     const lostSession = isLostSessionError(stderr) || isLostSessionError(eventTail);
     const push = (f: Omit<Finish, 'tag' | 'run' | 'session' | 'usage'>, hasFinalOrBroken = false) => {
       const end = f.end ?? { ...endReason(f.report?.status, hasFinalOrBroken), why: f.why };
-      out.push({ tag: doc.order.tag, run: run.id, live_summary: summary, ...(!readReport ? { missing_report: true } : {}), ...(session ? { session } : {}), ...(usage ? { usage } : {}), ...(lostSession && !readReport ? { lost_session: true } : {}), ...f, end });
+      out.push({ tag: doc.order.tag, run: run.id, ...(stale.length ? { stale } : {}), live_summary: summary, ...(!readReport ? { missing_report: true } : {}), ...(session ? { session } : {}), ...(usage ? { usage } : {}), ...(lostSession && !readReport ? { lost_session: true } : {}), ...f, end });
     };
     const failed = (summary: string, why: string, question?: string, status: 'failed' | 'blocked' = 'failed') =>
       push({ outcome: 'failed', report: { status, summary, ...(question ? { question } : {}), evidence: run.log ? [run.log] : [], commits: [] }, why });
 
     let report: ReportInput | undefined, from: string | undefined, broken: string | undefined, writeLast: Finish['writeLast'];
+    const boundReport = (candidate: ReportInput, source: string, text: string, modified?: string) => {
+      if (!accepts(candidate, source, modified)) return undefined;
+      if (hasDeliveryChecks(project.checks)) candidate.delivery_text = text;
+      return candidate;
+    };
     for (const file of sources) {
       const time = probes.fileTime(file);
-      const text = time && Date.parse(time) >= started ? probes.readText(file) : undefined;
+      const text = time ? probes.readText(file) : undefined;
       if (text === undefined) continue;
-      try { report = parseReportFile(file, text); if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = text; from = path.basename(file); break; }
-      catch (e) { if (e instanceof UserError && !/No report block found/.test(e.message)) broken = e.message; }
+      try {
+        report = boundReport(parseReportFile(file, text), file, text, time);
+        if (report) {
+          from = path.basename(file);
+          break;
+        }
+      } catch (e) {
+        if (e instanceof UserError && accepts({}, file, time) && !/No report block found/.test(e.message)) broken = e.message;
+      }
     }
     if (!report && stream.finalText.trim() && run.last_file) {
-      // The engine has no final-message file: its last message is in the log. Keep it where the order says, and read the block from it.
-      try { report = parseReportBlock(stream.finalText); if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = stream.finalText; from = path.basename(run.last_file); writeLast = { file: run.last_file, text: stream.finalText.trim() + '\n' }; }
-      catch (e) { if (e instanceof UserError && !/No report block found/.test(e.message)) broken = e.message; }
+      try {
+        report = boundReport(parseReportBlock(stream.finalText), run.events_file ?? run.log ?? 'final message', stream.finalText);
+        if (report) {
+          from = path.basename(run.last_file);
+          writeLast = { file: run.last_file, text: stream.finalText.trim() + '\n' };
+        }
+      } catch (e) { if (e instanceof UserError && !/No report block found/.test(e.message)) broken = e.message; }
     }
     let earlier: EarlierReport | undefined;
     if (!report && !broken && run.events_file) {
       // The last message has no block, but an earlier one of this run has (a background command ended after the final message
       // and the engine answered its notification), or the worker saved its report to a file with the Write tool.
       earlier = earlierReport(probes.readText(run.events_file) ?? '');
+      if (earlier) report = boundReport(earlier.report, earlier.file ?? run.events_file, earlier.text);
+      if (!report) earlier = undefined;
       if (earlier) {
-        report = earlier.report; if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = earlier.text;
         if (run.last_file) { from = path.basename(run.last_file); writeLast = { file: run.last_file, text: earlier.text.trim() + '\n' }; } else from = path.basename(run.events_file);
       }
     }
@@ -185,7 +208,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     if (!report && !broken && run.log) {
       // No final-message file (a process stopped before it wrote one): the block the worker printed at the end of its log is its report.
       const printed = deliveredReport(tail, { cut: Buffer.byteLength(tail) >= TAIL_BYTES });
-      if (printed) { report = printed; if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = stream.finalText || tail; from = path.basename(run.log); fromLog = true; }
+      if (printed) report = boundReport(printed, run.events_file ?? run.log, stream.finalText || tail);
+      if (report) { from = path.basename(run.log); fromLog = true; }
     }
     if (report) { readReport = true; push({ outcome: 'completed', report, from, ...(writeLast ? { writeLast } : {}), ...(earlier ? { report_from: { where: earlier.where, ...(earlier.file ? { file: earlier.file } : {}) } } : {}), why: earlier?.where === 'earlier-message' ? t('process ended, report block read from an earlier message (the last message had none)') : earlier ? t('process ended, report block read from a file the worker wrote ({file})', { file: earlier.file ?? '' }) : fromLog ? t('process ended, report block read from the log') : t('process ended, report block read') }); continue; }
     const lastBounce = [...priorEvents].map((e, i) => ({ e, i })).reverse().find(x => x.e.type === 'report-bounced');
@@ -256,6 +280,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
 export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, wipOptions?: Pick<SaveWipOptions, 'maxFileBytes' | 'maxTotalBytes' | 'runGit'>): void {
   const before = orders.get(f.tag);
   const storedRun = before.runs.find(r => r.id === f.run);
+  if (!storedRun || storedRun.ended !== undefined) return;
+  for (const stale of f.stale ?? []) orders.record(f.tag, 'stale-report', stale);
   const worktree = before.order.worktree ?? storedRun?.cwd;
   const baseEnd: RunEnd = f.end ?? (f.report && !f.missing_report
     ? { kind: 'report', detail: `report block read (${f.report.status})`, why: f.why }
@@ -279,7 +305,7 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
   }
   if (f.report) {
     const lastFile = orders.get(f.tag).runs.find(r => r.id === f.run)?.last_file;
-    const deliveryText = f.report.delivery_text ?? f.writeLast?.text ?? (lastFile && existsSync(lastFile) ? readFileSync(lastFile, 'utf8') : undefined);
+    const deliveryText = f.report.delivery_text ?? f.writeLast?.text ?? (lastFile && !f.stale?.some(r => r.file === lastFile) && existsSync(lastFile) ? readFileSync(lastFile, 'utf8') : undefined);
     // The run has ended, so the branch HEAD now is the revision it delivered. A report that leaves the field out gets it from git
     // instead of a bounce for one line (`revision_is_head` still catches a revision that is not HEAD).
     if (!f.report.revision && worktree) {

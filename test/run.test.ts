@@ -70,6 +70,75 @@ test('report block: the new markers, an empty question, and ready leads to await
   assert.equal(orders.stage(orders.get('T1')).stage, 'awaiting-review');
 });
 
+test('finish binds reports to the current run and only inherits files from a resumed run', () => {
+  for (const [named, old, resumed, accepted] of [
+    ['T1/r2', false, false, true], ['r1', false, false, false], [undefined, false, false, true],
+    [undefined, true, false, false], ['r1', true, true, true], ['r1', false, true, false],
+  ] as const) {
+    const { orders, project } = fixture();
+    const file = path.join(project.work_orders, 'T1.last.txt');
+    const first = orders.runStart('T1', { worker: 'demo', session: 'prior', extra: { last_file: file } }).run;
+    orders.runEnd('T1', 'capacity');
+    const current = orders.runStart('T1', { worker: 'demo', session: resumed ? 'prior' : 'new', extra: { continuation: resumed, last_file: file, pid: 42 } }).run;
+    const text = ['--- alba-report ---', JSON.stringify({ status: 'ready', summary: 'Done', run: named }), '--- end ---'].join('\n');
+    const finish = findFinishes(project, orders, probes({
+      fileTime: p => p === file ? old ? first.started : current.started : undefined,
+      readText: p => p === file ? text : undefined,
+    }))[0];
+    applyFinish(orders, finish);
+    assert.equal(finish.report?.status === 'ready', accepted);
+    const rejected = orders.store.events({ tag: 'T1' }).filter(e => e.type === 'stale-report');
+    assert.equal(rejected.length, accepted ? 0 : 1);
+    if (!accepted) {
+      assert.equal(finish.missing_report, true);
+      assert.equal(rejected[0].data?.namedRun, named ?? null);
+      assert.equal(rejected[0].data?.file, file);
+    }
+  }
+});
+
+test('finish recognises the resumed session id from the previous engine log', () => {
+  const { orders, project } = fixture();
+  const file = 'T1.last.txt';
+  const previous = orders.runStart('T1', { worker: 'demo', extra: { log: 'prior.log', last_file: file } }).run;
+  orders.runEnd('T1', 'capacity');
+  const session = 'ae9a1111-1111-4111-8111-111111111111';
+  orders.runStart('T1', { worker: 'demo', session, extra: { pid: 42, continuation: true, last_file: file } });
+  const block = '--- alba-report ---\n{"run":"r1","status":"ready","summary":"Done"}\n--- end ---';
+  const finish = findFinishes(project, orders, probes({
+    fileTime: p => p === file ? previous.started : undefined,
+    readText: p => p === file ? block : p === 'prior.log' ? `session id: ${session}` : undefined,
+  }))[0];
+  assert.equal(finish.report?.status, 'ready');
+  assert.equal(finish.stale, undefined);
+});
+
+test('a finish collected before the next run cannot close that run or attach its delivery', () => {
+  const { orders, project } = fixture();
+  orders.runStart('T1', { worker: 'demo', extra: { pid: 42, log: 'r1.log' } });
+  const block = '--- alba-report ---\n{"run":"r1","status":"ready","summary":"Done"}\n--- end ---';
+  const finish = findFinishes(project, orders, probes({ tail: () => block }))[0];
+  assert.equal(finish.report?.status, 'ready');
+  orders.runEnd('T1', 'cancelled');
+  orders.runStart('T1', { worker: 'demo' });
+  applyFinish(orders, finish);
+  assert.equal(orders.get('T1').runs.at(-1)?.ended, undefined);
+  assert.deepEqual(orders.get('T1').reports, []);
+});
+
+test('a stale final log block follows missing-report handling', () => {
+  const { orders, project } = fixture();
+  orders.runStart('T1', { worker: 'demo' });
+  orders.runEnd('T1', 'capacity');
+  orders.runStart('T1', { worker: 'demo', extra: { pid: 42, log: 'r2.log' } });
+  const block = '--- alba-report ---\n{"run":"r1","status":"ready","summary":"Done"}\n--- end ---';
+  const finish = findFinishes(project, orders, probes({ tail: () => block }))[0];
+  applyFinish(orders, finish);
+  assert.equal(finish.missing_report, true);
+  assert.equal(orders.get('T1').reports.some(r => r.status === 'ready'), false);
+  assert.equal(orders.store.events({ tag: 'T1' }).find(e => e.type === 'stale-report')?.data?.file, 'r2.log');
+});
+
 test('transient errors are recognised and backed off 1, 5, 15 minutes, three times', () => {
   for (const line of ['ERROR: model at capacity, please retry', 'unexpected status 429 Too Many Requests', 'HTTP 503 Service Unavailable', 'stream disconnected before completion', 'read ECONNRESET', 'Reconnecting... 3/5'])
     assert.ok(isTransientError(line), line);

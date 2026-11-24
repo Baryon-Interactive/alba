@@ -13,7 +13,7 @@ import { planOrder, editPlan } from '../orders/planned.ts';
 import { usageRows } from '../usage/store.ts';
 import { collectUsage, usageReport, sinceDate } from '../usage/accounting.ts';
 import { runUsageScorecard } from './scorecard.ts';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { mergeListFlags, parseReleaseArgs, releaseFlags } from './args.ts';
@@ -30,7 +30,7 @@ function editorLines(rows: (EditorSlot & { up?: boolean; pids?: number[]; projec
 }
 import { UserError, fail, t } from '../i18n.ts';
 import { RUN_OUTCOMES, STAGES, type ActionKind, type OrderDoc, type RunOutcome, type Stage } from '../orders/model.ts';
-import { parseReportFile } from '../orders/report.ts';
+import { parseReportFile, staleReport } from '../orders/report.ts';
 import { reportInRunLog } from '../run/lingering.ts';
 import { Orders, STAGE_PRIORITY } from '../orders/service.ts';
 import { stateStore } from '../orders/backend.ts';
@@ -41,7 +41,7 @@ import { addWorker, editWorker, parseSetArgs, recordWorkerEdit, workerYaml } fro
 import { formatReport } from '../tick/plan.ts';
 import { prewarmEndpointProbes, systemProbes, tick } from '../tick/gather.ts';
 import { executeTick } from '../tick/execute.ts';
-import { startRun } from '../run/launch.ts';
+import { engineSession, startRun } from '../run/launch.ts';
 import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { lessonRunFor, selectLessons } from '../lessons/select.ts';
 import { promptFor } from '../run/prompt.ts';
@@ -53,7 +53,7 @@ import { approve, rework } from '../run/review.ts';
 import { startServer } from '../web/server.ts';
 import { keyFile, newKey, writeKeyFile } from '../web/auth.ts';
 import { answerOrder } from '../run/answer.ts';
-import { sayToOrder } from '../run/say.ts';
+import { sayToGroup, sayToOrder } from '../run/say.ts';
 import { readInbox } from '../run/inbox.ts';
 import { requeueUndeliveredInbox } from '../run/messages.ts';
 import { formatStatus, recentEndedStatusRows, statusRows, unreachableStatusLines, watchOrder } from './live.ts';
@@ -185,6 +185,7 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
                                              hand a running alba serve over to new code on the same port without stopping open runs (exit 0 on done, 1 on refusal or timeout)
   answer <TAG> (--text <answer> | --choice N [--text note]) [--worker id]
                                              answer the question an order waits on (--choice picks option N of its options): the worker's own session continues when its engine can, else a new run carries the answer
+  say <group> [--text <message>] [--dry-run]    message @running, @monitoring, @waiting, @worker:<id> or @all
   say <TAG> --text <message> [--reply id] [--restart]    leave a message or answer for a running order. --restart stops its process and starts again
   web [--port 4790] [--allow-origin url]... [--sign-in] --project f.yaml...
                                              the board: a server-rendered page on 127.0.0.1 (several --project allowed)
@@ -702,7 +703,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
     if (command !== 'run' || rest.length) fail('Usage: alba gates run [--now] [--gate name] | status | cancel');
     return runNightlyGates(cfg, orders, { force: values.now, gate: values.gate }).then(result => { if (['failed', 'error'].includes(result.status)) exitCode = 1; return JSON.stringify(result, null, 2); });
   }
-  if (group === 'schedules') return runSchedulesCli(cfg, orders, command, rest, { json: values.json, note: values.note });
+  if (group === 'schedules') return runSchedulesCli(cfg, orders, command, rest, { json: values.json, note: values.note, workers: values.workers });
   if (group === 'design' && command === 'measure') {
     const workersPath = values.workers ?? process.env.ALBA_WORKERS ?? cfg.workers;
     const workers = workersPath ? loadWorkers(workersPath) : undefined;
@@ -886,7 +887,9 @@ ${editorLines(editors, projects.length > 1)}` : body;
         // A run a person ends as completed whose log already ends with its report (a worker whose process stayed after its last
         // message): that report is recorded, as the end of the process would have done.
         const found = outcome === 'completed' && !ended.reports.some(r => r.run === closed.id) ? reportInRunLog(systemProbes, closed) : undefined;
-        if (found) {
+        const stale = found && staleReport(ended, closed, found.report, found.file);
+        if (stale) orders.record(rest[0], 'stale-report', stale);
+        if (found && !stale) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
           requeueUndeliveredInbox(orders, rest[0], closed);
           if (found.report.status === 'ready') {
@@ -908,6 +911,13 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
         if (!values.file) fail('report needs --file.');
         const file = resolveFile(values.file, cfg);
         const parsed = parseReportFile(file, readFileSync(file, 'utf8'));
+        const doc = orders.get(rest[0]);
+        const current = doc.runs.at(-1) ?? { id: '', started: orders.now() };
+        const stale = (doc.runs.length || parsed.run) && staleReport(doc, current, parsed, file, statSync(file).mtime.toISOString(), prior => engineSession(prior, systemProbes));
+        if (stale) {
+          orders.record(rest[0], 'stale-report', stale);
+          return t('stale report');
+        }
         orders.report(rest[0], { ...parsed, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: readFileSync(file, 'utf8') } : {}) }, path.basename(file));
         lintDelivery(cfg, orders, rest[0]);
         return tagLine(orders.get(rest[0]));
@@ -1051,12 +1061,21 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
   }
 
   if (group === 'say') {
-    need0(command, 'alba say <TAG> --text <message> [--restart]');
-    if (!values.text?.trim()) fail('A message needs its text (--text).');
+    need0(command, 'alba say <TAG | group> --text <message> [--restart | --dry-run]');
+    const isGroup = command!.startsWith('@');
+    if (!isGroup && values['dry-run']) fail('--dry-run needs a message group.');
+    if (!isGroup && !values.text?.trim()) fail('A message needs its text (--text).');
     let workers = { file: '', workers: [] as ReturnType<typeof workersOf>['workers'], quota_sources: {} };
-    if (values.restart) workers = workersOf(values.workers, cfg);
+    if (values.restart && !isGroup) workers = workersOf(values.workers, cfg);
     else { try { workers = workersOf(values.workers, cfg); } catch { /* projects without a workers file fall back to run.engine */ } }
-    return sayToOrder({ project: cfg, orders, workers, probes: systemProbes }, command!, values.text, { restart: values.restart, reply: values.reply }).message;
+    const ctx = { project: cfg, orders, workers, probes: systemProbes };
+    if (isGroup) {
+      const result = sayToGroup(ctx, command!, values.text ?? '', { dryRun: values['dry-run'], restart: values.restart, reply: values.reply });
+      if (result.results.some(row => row.error)) exitCode = 1;
+      if (values.json) return JSON.stringify(result, null, 2);
+      return result.results.map(r => [r.tag, r.delivery ?? r.error].filter(Boolean).join('  ')).join('\n') || t('No matching orders.');
+    }
+    return sayToOrder(ctx, command!, values.text, { restart: values.restart, reply: values.reply }).message;
   }
 
   if (group === 'answer') {

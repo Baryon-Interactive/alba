@@ -13,6 +13,7 @@ export interface ScheduleConfig {
   every_minutes?: number;
   daily_at?: string;
   cron?: string;
+  precheck?: string | string[];
   catch_up: ScheduleCatchUp;
   max_open: number;
   enabled: boolean;
@@ -26,7 +27,7 @@ export interface ScheduleConfig {
 
 const KNOWN_KEYS = [
   'id', 'order', 'tag', 'every_minutes', 'daily_at', 'cron',
-  'catch_up', 'max_open', 'enabled', 'title', 'kind', 'worker', 'priority', 'needs',
+  'precheck', 'catch_up', 'max_open', 'enabled', 'title', 'kind', 'worker', 'priority', 'needs',
 ] as const;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -129,6 +130,12 @@ export function validateSchedules(raw: unknown, file: string, base: string): Sch
       enabled,
     };
 
+    if (item.precheck !== undefined) {
+      const command = item.precheck;
+      if (typeof command === 'string' && command.trim()) entry.precheck = command.trim();
+      else if (Array.isArray(command) && command.length && command.every(arg => typeof arg === 'string') && command[0].trim()) entry.precheck = [...command];
+      else fail('{file}: "{at}.precheck" must be a command or a program and arguments.', { file, at });
+    }
     if (item.title !== undefined) {
       if (typeof item.title !== 'string' || !item.title.trim()) fail('{file}: "{at}.title" must be non-empty text.', { file, at });
       entry.title = item.title.trim();

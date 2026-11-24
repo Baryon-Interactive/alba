@@ -1,8 +1,9 @@
-import { REPORT_STATUSES, STAGES, type MonitorCriterion, type MonitorSpec, type OptionInput, type ReportStatus, type Stage, type WaitingFor } from './model.ts';
+import { REPORT_STATUSES, STAGES, type MonitorCriterion, type MonitorSpec, type OrderDoc, type Run, type OptionInput, type ReportStatus, type Stage, type WaitingFor } from './model.ts';
 import { fail } from '../i18n.ts';
 
 /** The structured report a worker gives at the end of a round. */
 export interface ReportInput {
+  run?: string;
   design_changes?: string[];
   revision?: string;
   /** Tool-supplied original delivery text; never accepted as a report JSON field. */
@@ -25,6 +26,22 @@ export interface ReportInput {
   source?: 'inferred' | 'inferred-git';
 }
 
+/** A pre-launch file can only be inherited from the immediately preceding, continued run. */
+export function staleReport(
+  doc: OrderDoc, current: Pick<Run, 'id' | 'started'> & Partial<Pick<Run, 'worker' | 'session' | 'continuation' | 'rotated'>>,
+  report: Pick<ReportInput, 'run'>, file: string, modified?: string, sessionOf: (run: Run) => string | undefined = r => r.session,
+) {
+  const matches = (id: string) => !report.run || report.run === id || report.run === `${doc.order.tag}/${id}`;
+  if (modified !== undefined && Date.parse(modified) < Date.parse(current.started)) {
+    const index = doc.runs.findIndex(r => r.id === current.id);
+    const prior = doc.runs[index - 1];
+    const resumed = prior && (current.rotated?.from === prior.worker || (current.continuation && current.worker === prior.worker && current.session && current.session === sessionOf(prior)));
+    if (resumed && matches(prior.id) && Date.parse(modified) >= Date.parse(prior.started)
+      && (report.run || prior.last_file?.replaceAll('\\', '/') === file.replaceAll('\\', '/'))) return undefined;
+  } else if (matches(current.id)) return undefined;
+  return { run: current.id, namedRun: report.run ?? null, file, ...(modified ? { modified } : {}) };
+}
+
 export const REPORT_BEGIN = '--- alba-report ---';
 export const REPORT_END = '--- end ---';
 
@@ -43,7 +60,7 @@ export const REPORT_END = '--- end ---';
 export function validateReport(value: unknown): ReportInput {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) fail('A report must be a JSON object.');
   const v = value as Record<string, unknown>;
-  const known = ['design_changes', 'status', 'summary', 'question', 'options', 'waiting_for', 'evidence', 'commits', 'skill_suggestions', 'monitor', 'scope', 'revision'];
+  const known = ['run', 'design_changes', 'status', 'summary', 'question', 'options', 'waiting_for', 'evidence', 'commits', 'skill_suggestions', 'monitor', 'scope', 'revision'];
   const extra = Object.keys(v).filter(k => !known.includes(k));
   if (extra.length) fail('Unknown report field(s): {fields}. Allowed: {allowed}.', { fields: extra.join(', '), allowed: known.join(', ') });
   if (typeof v.status !== 'string' || !(REPORT_STATUSES as readonly string[]).includes(v.status)) {
@@ -60,6 +77,7 @@ export function validateReport(value: unknown): ReportInput {
     if (!Array.isArray(x) || x.some(i => typeof i !== 'string' || !i.trim())) fail('Report "{key}" must be a list of non-empty strings.', { key });
     return (x as string[]).map(i => i.trim());
   };
+  if (v.run !== undefined && (typeof v.run !== 'string' || !v.run.trim())) fail('Report "run" must be a non-empty run id.');
   const designChanges = v.design_changes as string[] | undefined;
   const status = v.status as ReportStatus;
   const question = typeof v.question === 'string' && v.question.trim() ? v.question.trim() : undefined;
@@ -84,7 +102,7 @@ export function validateReport(value: unknown): ReportInput {
   else if (v.monitor !== undefined) fail('Report "monitor" only makes sense with status "monitoring", not "{status}".', { status });
   const evidence = list('evidence');
   const commits = list('commits');
-  return { status, summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
+  return { status, ...(typeof v.run === 'string' ? { run: v.run.trim() } : {}), summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
 }
 
 const CRITERIA = ['exit_code', 'file_exists', 'output_matches', 'order_stage', 'after'] as const;

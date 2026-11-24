@@ -18,7 +18,7 @@ Print exactly this report block, using the field names shown:
 --- end ---
 
 Allowed status values: progress, waiting, ready, blocked, failed, dropped, monitoring.
-Allowed field names: status, summary, question, options, waiting_for, scope, evidence, commits, skill_suggestions, monitor, revision.
+Allowed field names: run, status, summary, question, options, waiting_for, scope, evidence, commits, skill_suggestions, monitor, revision.
 
 Do not redo the work: check `git log` and print only the report block.
 
@@ -44,6 +44,8 @@ Follow the skill `alba-worker-rules` (listed below): its rules on committing, lo
 ```
 
 `status` is `ready` (done, committed and checked), `waiting` (one `question` for a person), `blocked`, `failed` or `dropped`, or `monitoring` (a long job that already runs on its own is handed to the tool's monitor, with a `monitor` object; the skill says how). Never claim `ready` for what you did not verify. The skill has the full rules.
+
+ALBA_RUN=T1/r2. Include this value in the report's JSON field "run".
 
 ## Where you work
 

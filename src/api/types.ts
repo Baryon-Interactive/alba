@@ -987,6 +987,12 @@ export interface ActionResult {
 
 /** `POST /api/orders/:tag/say`: a message for a running order. Without `restart` it is left in the worktree inbox. With `restart` the run's own process is stopped and a new run carries the message. */
 export interface SayRequest { project?: string; text: string; restart?: boolean; reply?: string }
+export interface GroupSayResult {
+  group: string;
+  dryRun: boolean;
+  results: { tag: string; delivery?: 'live' | 'steer' | 'file' | 'queued'; error?: string }[];
+}
+
 export interface SayResult {
   ok: true;
   tag: string;
@@ -1782,7 +1788,11 @@ export interface ServeReloadResult {
 export interface ScheduleFireView {
   plannedAt: string;
   firedAt: string;
-  status: 'created' | 'skipped';
+  status: 'created' | 'skipped' | 'skipped-precheck' | 'precheck-failed' | 'missed';
+  count?: number;
+  firstPlannedAt?: string;
+  output?: string;
+  precheck?: 'bypassed';
   orderTag?: string;
   reason?: string;
   manual?: boolean;
@@ -1804,6 +1814,9 @@ export interface ScheduleView {
   state: 'active' | 'paused' | 'disabled';
   nextAt?: string;
   lastFire?: ScheduleFireView;
+  history: ScheduleFireView[];
+  spend7dUsd: number | 'unknown';
+  healthReason?: string;
   firesToday: number;
   kind?: string;
   worker?: string;
@@ -1822,7 +1835,8 @@ export interface ScheduleList {
 export interface ScheduleRunResult {
   ok: true;
   id: string;
-  status: 'created' | 'skipped' | 'duplicate' | 'paused';
+  status: ScheduleFireView['status'] | 'duplicate' | 'paused';
+  precheck?: 'bypassed';
   plannedAt: string;
   orderTag?: string;
   reason?: string;
