@@ -27,8 +27,14 @@ A worker that starts something long (a package step, a remote simulation, a rend
 --- end ---
 ```
 
-- `check` is a program and its arguments (no shell). It must only read: it is run by the tick, not by the worker.
-- A condition is exactly one of `exit_code` (the check exits with this code), `file_exists` (a path, relative to the check's folder) or `output_matches` (a regular expression on the output). `done_when` is required, `fail_when` is optional, `deadline_minutes` is 1 to 10080.
+- `check` is a program and its arguments (no shell). It must only read: it is run by the tick, not by the worker. `check` is optional when `done_when` (and `fail_when`, if given) only use `order_stage` or `after`.
+- A condition is exactly one of:
+  - `exit_code`: the check exits with this code;
+  - `file_exists`: a path, relative to the check's folder;
+  - `output_matches`: a regular expression on the output;
+  - `order_stage`: `{ "tag": "T2", "stage": ["merged", "awaiting-review"] }` — true when that order of the same project is in one of the listed stages (an unknown tag counts as not holding and adds an observation to the monitor output);
+  - `after`: `"<ISO time>"` — true once the clock reaches or passes that ISO 8601 timestamp.
+  `done_when` is required, `fail_when` is optional (both accept all five condition types), `deadline_minutes` is 1 to 10080.
 - `cwd` must be the order's worktree, the project folder or a folder named in `dispatch.monitor_dirs` (relative paths there are resolved against the project file). A check that wants to run anywhere else is refused: the order goes back to its worker with that as the reason. `dispatch.monitor_timeout_seconds` (default 120) stops a check that hangs; the end of its output is kept.
 - Optional `pid` identifies the background job. The report records its OS process creation time with the PID; this distinguishes PID reuse from the original job. When that process has ended (or its pid now belongs to another process), the next check decides: `done_when` or `fail_when` as usual, and when neither holds the job ended without success and the order goes back to its worker as `failed` ("its process (pid N) is gone and neither condition you gave was met"). A job that exits when it is done is therefore handed back at the next tick; before, a monitor whose job had exited was never checked again.
 - One monitor per order. A new `monitoring` report replaces the old one.

@@ -7,7 +7,9 @@ import { minutes } from './format.ts';
 export const criterionText = (c: MonitorCriterion): string =>
   'exit_code' in c ? t('the check exits with {code}', { code: c.exit_code })
     : 'file_exists' in c ? t('the file {path} exists', { path: c.file_exists })
-      : t('the output matches {pattern}', { pattern: c.output_matches });
+      : 'output_matches' in c ? t('the output matches {pattern}', { pattern: c.output_matches })
+        : 'order_stage' in c ? t('order {tag} is {stages}', { tag: c.order_stage.tag, stages: c.order_stage.stage.join(' / ') })
+          : t('after {time}', { time: c.after });
 
 /** What the last check found. */
 export const monitorResultLabel = (r: MonitorView['lastResult']): string => {
@@ -29,7 +31,7 @@ export function deadlineText(deadline: string, now = Date.now()): string {
 }
 
 /** The check, as a person would type it. */
-export const checkLine = (spec: MonitorView['spec']): string => spec.check.map(a => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ');
+export const checkLine = (spec: MonitorView['spec']): string => (spec.check ?? []).map(a => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ');
 
 /** "step 3/7" for the card: the step in hand is the one after those done; all steps done says so. Nothing when the worker listed no steps. */
 export function stepText(p: ProgressView | undefined): string | undefined {

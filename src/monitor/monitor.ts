@@ -43,11 +43,43 @@ const tailOf = (text: string): string => {
   return clean.length > TAIL_CHARS ? '…' + clean.slice(-TAIL_CHARS) : clean;
 };
 
+export interface CriterionContext {
+  orders?: Orders;
+  now?: Date;
+  observations?: string[];
+}
+
 /** Does one condition hold for what the check just did? */
-export function holds(c: MonitorCriterion, ran: { code: number | null; output: string; timedOut: boolean }, cwd: string, probes: Probes): boolean {
+export function holds(
+  c: MonitorCriterion,
+  ran: { code: number | null; output: string; timedOut: boolean },
+  cwd: string,
+  probes: Probes,
+  ctx?: CriterionContext,
+): boolean {
   if ('exit_code' in c) return !ran.timedOut && ran.code === c.exit_code;
   if ('file_exists' in c) return probes.fileTime(path.resolve(cwd, c.file_exists)) !== undefined;
-  try { return new RegExp(c.output_matches, 'u').test(ran.output.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')); } catch { return false; }
+  if ('output_matches' in c) {
+    try { return new RegExp(c.output_matches, 'u').test(ran.output.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')); } catch { return false; }
+  }
+  if ('order_stage' in c) {
+    const orders = ctx?.orders;
+    if (!orders) {
+      ctx?.observations?.push(`order_stage: cannot inspect order "${c.order_stage.tag}"`);
+      return false;
+    }
+    const resolved = orders.resolveTag(c.order_stage.tag);
+    if (!resolved) {
+      ctx?.observations?.push(`order_stage: unknown order "${c.order_stage.tag}"`);
+      return false;
+    }
+    const stage = orders.stage(orders.get(resolved)).stage;
+    ctx?.observations?.push(`order_stage: ${resolved} is ${stage}`);
+    return c.order_stage.stage.includes(stage);
+  }
+  const nowMs = (ctx?.now ?? probes.now()).getTime();
+  const targetMs = Date.parse(c.after);
+  return Number.isFinite(targetMs) && nowMs >= targetMs;
 }
 
 /** What the worker is told when it is continued (always English: it is read by the worker, not by a person). */
@@ -57,9 +89,12 @@ export function monitorNote(spec: MonitorSpec, result: Exclude<MonitorResult, 'w
     : result === 'failed' ? 'The monitor says the job failed: the condition you gave for failure was met.'
     : result === 'deadline' ? `The monitor gave up waiting: the ${spec.deadline_minutes} minutes you allowed are over and neither condition was met.`
     : 'The monitor could not run your check command, so it handed the order back.';
+  const checkLine = spec.check?.length
+    ? `Check command: ${spec.check.join(' ')} (${checks} checks made)`
+    : `Condition monitor (${checks} checks made)`;
   return [
     verdict, '',
-    `Check command: ${spec.check.join(' ')} (${checks} checks made)`,
+    checkLine,
     '', 'End of the output of the last check:', '```', tail || '(no output)', '```',
     ...(spec.note ? ['', `Your own note when you handed it over: ${spec.note}`] : []),
   ].join('\n');
@@ -73,7 +108,8 @@ export function monitorNote(spec: MonitorSpec, result: Exclude<MonitorResult, 'w
  */
 export function runMonitors(project: ProjectConfig, orders: Orders, probes: Probes, skip: ReadonlySet<string> = new Set()): MonitorPass {
   const pass: MonitorPass = { done: [], problems: [], resolved: [] };
-  const now = probes.now().getTime();
+  const nowDate = probes.now();
+  const now = nowDate.getTime();
   for (const doc of orders.all()) {
     if (orders.stage(doc).stage !== 'monitoring' || skip.has(doc.order.tag)) continue;
     const tag = doc.order.tag;
@@ -82,21 +118,37 @@ export function runMonitors(project: ProjectConfig, orders: Orders, probes: Prob
     if (!state || !spec) { pass.problems.push({ tag, text: t('{tag}: the report that handed over the monitor has no monitor to run.', { tag }) }); continue; }
     const stale = staleMonitor(project, doc, probes);
     const exitedPid = stale && 'pid' in stale.evidence ? Number(stale.evidence.pid) : undefined;
-    const folder = checkFolder(project, doc, spec);
-    if ('refused' in folder) {
-      orders.monitorResolved(tag, 'refused', folder.refused, monitorNote(spec, 'refused', folder.refused, state.checks));
-      pass.resolved.push(tag);
-      pass.done.push(t('{tag}: the monitor was not run ({why}); the order goes back to its worker', { tag, why: folder.refused }));
-      continue;
+    const hasCheck = Array.isArray(spec.check) && spec.check.length > 0;
+    let cwd = doc.order.worktree ?? project.root;
+    let ran: { code: number | null; output: string; timedOut: boolean; error?: string } = { code: null, output: '', timedOut: false };
+    if (hasCheck) {
+      const folder = checkFolder(project, doc, spec);
+      if ('refused' in folder) {
+        orders.monitorResolved(tag, 'refused', folder.refused, monitorNote(spec, 'refused', folder.refused, state.checks));
+        pass.resolved.push(tag);
+        pass.done.push(t('{tag}: the monitor was not run ({why}); the order goes back to its worker', { tag, why: folder.refused }));
+        continue;
+      }
+      if (!probes.runCheck) { pass.problems.push({ tag, text: t('{tag}: this tool cannot run check commands here, so its monitor is not checked.', { tag }) }); continue; }
+      cwd = folder.cwd;
+      ran = probes.runCheck(spec.check!, cwd, project.dispatch.monitor_timeout_seconds);
     }
-    if (!probes.runCheck) { pass.problems.push({ tag, text: t('{tag}: this tool cannot run check commands here, so its monitor is not checked.', { tag }) }); continue; }
-    const ran = probes.runCheck(spec.check, folder.cwd, project.dispatch.monitor_timeout_seconds);
-    const tail = tailOf(ran.error ? `${t('could not run the check command')}: ${ran.error}` : ran.timedOut ? `${ran.output}\n${t('(the check command was stopped after {s} s)', { s: project.dispatch.monitor_timeout_seconds })}` : ran.output);
-    const result: MonitorResult = ran.error ? 'refused' : holds(spec.done_when, ran, folder.cwd, probes) ? 'done' : spec.fail_when && holds(spec.fail_when, ran, folder.cwd, probes) ? 'failed' : exitedPid !== undefined ? 'failed' : now >= Date.parse(state.deadline) ? 'deadline' : 'waiting';
-    orders.monitorChecked(tag, { result, tail, observation: monitorObservation(spec, folder.cwd, ran.output, probes, [ran.code, ran.error, ran.timedOut]) });
+    const observations: string[] = [];
+    const ctx: CriterionContext = { orders, now: nowDate, observations };
+    const doneHolds = !ran.error && holds(spec.done_when, ran, cwd, probes, ctx);
+    const failHolds = !ran.error && !doneHolds && !!spec.fail_when && holds(spec.fail_when, ran, cwd, probes, ctx);
+    const rawOut = ran.error
+      ? `${t('could not run the check command')}: ${ran.error}`
+      : ran.timedOut
+        ? `${ran.output}\n${t('(the check command was stopped after {s} s)', { s: project.dispatch.monitor_timeout_seconds })}`
+        : ran.output;
+    const combinedOutput = observations.length ? [rawOut, ...observations].filter(Boolean).join('\n') : rawOut;
+    const tail = tailOf(combinedOutput);
+    const result: MonitorResult = ran.error ? 'refused' : doneHolds ? 'done' : failHolds ? 'failed' : exitedPid !== undefined ? 'failed' : now >= Date.parse(state.deadline) ? 'deadline' : 'waiting';
+    orders.monitorChecked(tag, { result, tail, observation: monitorObservation(spec, cwd, combinedOutput, probes, [ran.code, ran.error, ran.timedOut]) });
     if (result === 'waiting') continue;
     const checks = orders.get(tag).monitor?.checks ?? state.checks + 1;
-    const ended = result === 'failed' && exitedPid !== undefined && !(spec.fail_when && holds(spec.fail_when, ran, folder.cwd, probes)) ? exitedPid : undefined;
+    const ended = result === 'failed' && exitedPid !== undefined && !failHolds ? exitedPid : undefined;
     orders.monitorResolved(tag, result, tail, monitorNote(spec, result, tail, checks, ended));
     pass.resolved.push(tag);
     pass.done.push(ended !== undefined ? t('{tag}: the monitored job (pid {pid}) has ended without meeting its condition; the order goes back to its worker', { tag, pid: ended }) : t('{tag}: the monitor ended ({result}); the order goes back to its worker', { tag, result }));

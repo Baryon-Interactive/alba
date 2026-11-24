@@ -1776,4 +1776,17 @@ export const zh: Record<string, string> = {
   'Sparse worktree': '稀疏工作树',
   'Run slot': '运行槽位',
   'slot {n}': '槽位 {n}',
+  // schedules
+  'Schedules': '定时工单',
+  'No schedules configured (add schedules: in alba.yaml).': '尚未配置定时工单（请在 alba.yaml 中添加 schedules:）。',
+  'paused (auto)': '已自动暂停',
+  'Last fire': '上次触发',
+  '{open}/{max} open': '未结束 {open}/{max}',
+  'Schedule {id} created {tag}': '定时任务 {id} 已创建 {tag}',
+  'Schedule {id} already ran for this minute': '定时任务 {id} 本分钟已运行过',
+  'Schedule {id} skipped: {reason}': '定时任务 {id} 已跳过：{reason}',
+  'Schedule {id} paused': '定时任务 {id} 已暂停',
+  'Schedule {id} resumed': '定时任务 {id} 已恢复',
+  'order {tag} is {stages}': '工单 {tag} 处于 {stages}',
+  'after {time}': '在 {time} 之后',
 };

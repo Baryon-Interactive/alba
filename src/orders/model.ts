@@ -81,6 +81,7 @@ export interface Order {
   worktree?: string;
   sparse?: string[];         // cone-mode sparse worktree directories overriding project dispatch.sparse ([] = full checkout)
   source?: ImportSource;
+  scheduled?: { id: string; source: string; planned_at: string };
   created: string;
   updated: string;
 }
@@ -140,12 +141,17 @@ export interface Run {
 }
 
 /** One condition of a monitor: exactly one of these keys. */
-export type MonitorCriterion = { exit_code: number } | { file_exists: string } | { output_matches: string };
+export type MonitorCriterion =
+  | { exit_code: number }
+  | { file_exists: string }
+  | { output_matches: string }
+  | { order_stage: { tag: string; stage: Stage[] } }
+  | { after: string };
 
 /** What a worker hands over when it ends its round with status `monitoring`: a cheap, read-only command the tick runs every pass, and when it counts as done or failed. */
 export interface MonitorSpec {
   pid?: number;
-  check: string[];                  // program and arguments, no shell
+  check?: string[];                 // program and arguments, no shell; optional when only order_stage / after criteria are used
   cwd?: string;                     // the order's worktree unless it says otherwise; must stay inside the worktree or the folders the project allows
   done_when: MonitorCriterion;
   fail_when?: MonitorCriterion;

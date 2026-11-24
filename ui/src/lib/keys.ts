@@ -35,5 +35,6 @@ export const keys = {
   docs: (project: string) => ['docs', project] as const,
   doc: (project: string, path: string) => ['doc', project, path] as const,
   docSearch: (project: string, q: string) => ['doc-search', project, q] as const,
+  schedules: (project: string) => ['schedules', project] as const,
 };
 export type QueryKey = readonly unknown[];

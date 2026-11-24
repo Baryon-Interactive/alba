@@ -80,6 +80,35 @@ export function useMachineChanges(project: string) {
 }
 /** The project's shared resources (`resources` in the project file) and who holds a lease on them. */
 export const useResources = (project: string) => useQuery({ queryKey: keys.resources(project), queryFn: () => api.resources(project), enabled: !!project, staleTime: 10_000, refetchInterval: 30_000 });
+export const useSchedules = (project: string) => useQuery({ queryKey: keys.schedules(project), queryFn: () => api.schedules(project), enabled: !!project, staleTime: 10_000, refetchInterval: 30_000 });
+
+export function useScheduleActions(project: string) {
+  const client = useQueryClient();
+  const refresh = () => {
+    for (const k of [keys.schedules(project), keys.orders(project), keys.overview(project), keys.projectOverview(project), keys.producer(project)]) {
+      void client.invalidateQueries({ queryKey: k });
+    }
+  };
+  return {
+    run: useMutation({
+      mutationFn: (id: string) => api.scheduleRun(project, id),
+      onSuccess: res => {
+        if (res.status === 'created') toast.success(t('Schedule {id} created {tag}', { id: res.id, tag: res.orderTag ?? '' }));
+        else if (res.status === 'duplicate') toast.message(t('Schedule {id} already ran for this minute', { id: res.id }));
+        else toast.warning(t('Schedule {id} skipped: {reason}', { id: res.id, reason: res.reason ?? '' }));
+        refresh();
+      },
+    }),
+    pause: useMutation({
+      mutationFn: (id: string) => api.schedulePause(project, id),
+      onSuccess: res => { toast.success(t('Schedule {id} paused', { id: res.id })); refresh(); },
+    }),
+    resume: useMutation({
+      mutationFn: (id: string) => api.scheduleResume(project, id),
+      onSuccess: res => { toast.success(t('Schedule {id} resumed', { id: res.id })); refresh(); },
+    }),
+  };
+}
 
 /** A person takes back a lease that was not released (its run is gone). */
 export function useReleaseLease(project: string) {

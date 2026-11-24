@@ -170,6 +170,8 @@ function Overview({ project, d }: { project: string; d: OrderDetail }) {
             <Fact label={t('Worktree')}><span className="font-mono text-xs">{d.worktree ?? o.worktree}</span></Fact>
             <Fact label={t('Sparse worktree')}>{d.sparseWorktree?.length ? <span className="font-mono text-xs">{d.sparseWorktree.join(', ')}</span> : undefined}</Fact>
             <Fact label={t('Run slot')}>{activeSlot !== undefined ? <span className="font-mono text-xs">{activeSlot}</span> : undefined}</Fact>
+            <Fact label={t('Source')}><span className="font-mono text-xs">{o.source}</span></Fact>
+            <Fact label={t('Planned')}>{o.planned_at ? dateTime(o.planned_at) : undefined}</Fact>
             <Fact label={t('Created')}>{dateTime(o.created)}</Fact>
             <Fact label={t('Updated')}>{dateTime(o.updated)}</Fact>
             <Fact label={t('Calls by other tools')}>{d.externalCalls?.length ? d.externalCalls.map(c => <div key={c.ledger} className="text-xs"><span className="font-mono">{c.ledger}</span>: {t('{ok} succeeded, {failed} failed', { ok: c.ok, failed: c.failed })}</div>) : undefined}</Fact>

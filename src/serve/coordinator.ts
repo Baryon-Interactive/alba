@@ -25,6 +25,7 @@ import { scheduledClean } from '../clean/scheduled.ts';
 import { systemClean } from '../clean/clean.ts';
 import { runMeasurements } from '../design/measure.ts';
 import { runNightlyGates } from '../gates/runner.ts';
+import { runSchedules } from '../schedules/engine.ts';
 import { tick } from '../tick/gather.ts';
 import { peerRunning, useFleetLock } from './fleet.ts';
 import { bindProjectMachineStore, closeMachineStores, machineStorePath, unbindProjectMachineStore } from '../resources/machine-store.ts';
@@ -180,6 +181,23 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
   };
   const gatesTimer = setInterval(gatesPass, 30_000);
   gatesTimer.unref();
+  const schedulesPass = () => {
+    const passIntervalMs = options.everyMinutes > 0 ? options.everyMinutes * 60_000 : 60_000;
+    for (const project of options.projects) {
+      if (!project.schedules?.length) continue;
+      try {
+        const res = runSchedules(project, ordersFor(project), { now: options.probes.now(), passIntervalMs });
+        if (res.done.length) {
+          board.invalidate();
+          for (const line of res.done) options.print(`[${project.id}] ${line}`);
+        }
+      } catch (e) {
+        options.print(`[${project.id}] schedules failed: ${(e as Error).message.split('\n')[0]}`);
+      }
+    }
+  };
+  const schedulesTimer = setInterval(schedulesPass, 30_000);
+  schedulesTimer.unref();
   const roundPass = () => {
     for (const project of options.projects) try {
       reconcileProducerSession(project);
@@ -245,6 +263,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
       for (const line of lines) options.print(line);
       measurePass();
       gatesPass();
+      schedulesPass();
     } finally { ticking = false; }
   };
 
@@ -429,6 +448,7 @@ export function startCoordinator(options: ServeOptions, board: Board): Serve {
     clearInterval(chatTimer);
     clearInterval(measureTimer);
     clearInterval(gatesTimer);
+    clearInterval(schedulesTimer);
   };
 
   const drain = async (timeoutMs = 120_000): Promise<void> => {

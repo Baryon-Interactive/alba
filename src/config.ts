@@ -18,6 +18,8 @@ import { validateArt, validateCredits, validatePicks, validateUsageLedgers, type
 import { validatePlugins } from './plugins/registry.ts';
 import { validateEditors } from './editors/config.ts';
 import { validateRelease, type ReleaseConfig } from './release/config.ts';
+import { validateSchedules, type ScheduleConfig } from './schedules/config.ts';
+export type { ScheduleConfig };
 
 export interface DispatchRules {
   caps: Record<string, number>;
@@ -261,6 +263,8 @@ export interface FirstPassConfig {
 export interface ProjectConfig {
   /** Per-kind order templates and preflight rules (`orders:` in alba.yaml). */
   orders?: OrdersConfig;
+  /** Recurring schedules that create orders on a timetable (`schedules:` in alba.yaml). */
+  schedules?: ScheduleConfig[];
   /** Selects a machine engine module; no engine is selected by default. */
   engine?: string;
   release?: ReleaseConfig;
@@ -329,7 +333,7 @@ export type ProducerMode = 'off' | 'observe' | 'propose' | 'auto';
 export const PRODUCER_ACTIONS = ['nudge', 'answer', 'queue', 'hold', 'rework', 'accept', 'accept-part', 'draft-order', 'add-order', 'broadcast', 'ask', 'note', 'close-case', 'reprioritize', 'lint-bounce', 'dispatch', 'clean', 'reroute', 'tool-call'] as const;
 export type ProducerActionKind = (typeof PRODUCER_ACTIONS)[number];
 export interface ProducerRule { id: string; instruction: string; action: ProducerActionKind; mode: ProducerMode }
-export const PRODUCER_TRIGGERS = ['machine-down', 'delivery', 'failed', 'blocked', 'question', 'commit-reminder', 'no-report', 'loop', 'error-pattern', 'quota-unreadable', 'free-slot', 'ready-to-draft', 'stalled-run', 'monitor-stale', 'dispatch', 'repeated-failure', 'clean', 'target-failing', 'target-unmeasured', 'gap-unowned', 'idle-capacity', 'nightly-gate-failed'] as const;
+export const PRODUCER_TRIGGERS = ['machine-down', 'delivery', 'failed', 'blocked', 'question', 'commit-reminder', 'no-report', 'loop', 'error-pattern', 'quota-unreadable', 'free-slot', 'ready-to-draft', 'stalled-run', 'monitor-stale', 'dispatch', 'repeated-failure', 'clean', 'target-failing', 'target-unmeasured', 'gap-unowned', 'idle-capacity', 'nightly-gate-failed', 'schedule-paused'] as const;
 export const DEFAULT_SESSION_TRIGGERS = ['machine-down', 'delivery', 'failed', 'blocked', 'question', 'commit-reminder', 'no-report', 'loop', 'ready-to-draft', 'stalled-run', 'monitor-stale', 'dispatch', 'repeated-failure', 'clean', 'target-failing', 'target-unmeasured', 'gap-unowned', 'idle-capacity', 'nightly-gate-failed'];
 export const DEFAULT_NOTICE_TRIGGERS = ['machine-down', 'gap-unowned', 'target-unmeasured', 'idle-capacity', 'commit-reminder'];
 export interface ProducerEngineConfig {
@@ -641,7 +645,8 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.credits !== undefined) cfg.credits = validateCredits(raw.credits, file, base, cfg.root, id);
   if (raw.usage_ledgers !== undefined) cfg.usage_ledgers = validateUsageLedgers(raw.usage_ledgers, file, base);
   if (raw.orders !== undefined) cfg.orders = validateOrdersConfig(raw.orders, file, base);
-  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders'].includes(k));
+  if (raw.schedules !== undefined) cfg.schedules = validateSchedules(raw.schedules, file, base);
+  const unknown = Object.keys(raw).filter(k => !['engine', 'release', 'review', 'machines', 'gates', 'design', 'design_docs', 'foundations', 'intake', 'id', 'name', 'root', 'work_orders', 'state_dir', 'state', 'dispatch_table', 'decisions', 'evidence', 'lessons', 'docs', 'clean', 'monitor', 'kinds', 'classifier', 'skills', 'resources', 'picks', 'art', 'credits', 'usage_ledgers', 'producer', 'drafting', 'accept', 'capture', 'dispatch', 'workers', 'sync', 'checks', 'verify', 'budget', 'usage_warnings', 'roles', 'routing', 'plugins', 'editors', 'orders', 'schedules'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s): {keys}.', { file, keys: unknown.join(', ') });
   return cfg;
 }

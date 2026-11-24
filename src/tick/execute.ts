@@ -16,6 +16,7 @@ import { refreshFacts } from '../producer/facts/snapshot.ts';
 import { saveBriefReadings } from '../producer/briefs.ts';
 import { pollIndependentChecks } from '../review/independent.ts';
 import { runFirstPass } from '../review/first-pass.ts';
+import { runSchedules } from '../schedules/engine.ts';
 
 /**
  * The real tick:
@@ -38,6 +39,8 @@ export function executeTick(ctx: RunContext, options: { maxDispatch: number }): 
   done.push(...stopTokenCappedRuns(ctx.project, ctx.orders, ctx.workers, ctx.probes));
   recordFinishes();
   pollIndependentChecks(ctx);
+  // Recurring schedules: create any due orders before planning what to dispatch.
+  if (ctx.project.schedules?.length) done.push(...runSchedules(ctx.project, ctx.orders, { now: ctx.probes.now() }).done);
   // Long jobs handed to the monitor: one check each; the ones that ended are queued again and start first below.
   const monitored = runMonitors(ctx.project, ctx.orders, ctx.probes);
   done.push(...monitored.done);

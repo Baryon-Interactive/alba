@@ -1,5 +1,6 @@
 import type { WorkersFile } from '../workers/config.ts';
 import { nightlyCaseInputs } from '../gates/state.ts';
+import { scheduleCaseInputs } from '../schedules/store.ts';
 import { ESCALATE_HARD, rerouteRefusal } from './reroute.ts';
 import { attemptFacts, previousAttempts } from '../run/previous-attempts.ts';
 import { ownerOf } from '../usage/spend.ts';
@@ -215,7 +216,7 @@ function upsert(cases: ProducerCase[], input: Omit<ProducerCase, 'id' | 'revisio
   return { changed: true, item };
 }
 function closeResolved(cases: ProducerCase[], openKeys: Set<string>, now: string): ProducerCase[] {
-  for (const c of cases) if (c.status === 'open' && !c.key.startsWith('chat/') && !c.key.startsWith('round/') && !c.key.startsWith('nightly/') && !openKeys.has(c.key)) { c.status = 'closed'; c.closedAt = now; c.updatedAt = now; }
+  for (const c of cases) if (c.status === 'open' && !c.key.startsWith('chat/') && !c.key.startsWith('round/') && !c.key.startsWith('nightly/') && !c.key.startsWith('schedule/') && !openKeys.has(c.key)) { c.status = 'closed'; c.closedAt = now; c.updatedAt = now; }
   return cases;
 }
 
@@ -250,9 +251,27 @@ export function syncNightlyCases(project: ProjectConfig, now: string): void {
   });
 }
 
+/** Schedule auto-pause owns this namespace; ordinary intake must not close an open schedule-paused card. */
+export function syncScheduleCases(project: ProjectConfig, now: string): void {
+  stateTransaction(project, () => {
+    const cases = readStateJson<ProducerCase[]>(project, CASES, []), open = new Set<string>();
+    for (const input of scheduleCaseInputs(project)) {
+      open.add(input.key);
+      const result = upsert(cases, { ...input, now });
+      if (result.changed) audit(project, { kind: 'case', case: input.key, revision: result.item.revision, trigger: input.trigger });
+    }
+    for (const c of cases) if (c.key.startsWith('schedule/') && c.status === 'open' && !open.has(c.key)) {
+      c.status = 'closed'; c.closedAt = now; c.updatedAt = now;
+      audit(project, { kind: 'case', case: c.key, status: c.status, trigger: c.trigger });
+    }
+    writeStateFile(project, CASES, JSON.stringify(cases));
+  });
+}
+
 /** Turns the durable order facts and one tick's findings into stable, mergeable cases. */
 export function intakeProducer(project: ProjectConfig, orders: Orders, options: ProducerPassOptions = {}): ProducerCase[] {
   if (project.gates) syncNightlyCases(project, atIso(options.now));
+  if (project.schedules?.length) syncScheduleCases(project, atIso(options.now));
   runAcceptanceTrials(project, orders);
   const now = atIso(options.now);
   const docs = orders.all();

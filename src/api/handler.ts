@@ -13,6 +13,7 @@ import { getDesignDoc, intakeReview, listDesignDocs, saveDesignDoc } from '../de
 import { reviewIntakeSystems } from '../design/intake-review.ts';
 import { runMeasurements } from '../design/measure.ts';
 import { cancelNightlyRuns } from '../gates/runner.ts';
+import { pauseSchedule, resumeSchedule, runScheduleNow, scheduleViews } from '../schedules/engine.ts';
 import { applyChangeSet } from '../design/library.ts';
 import { readChangeSet } from '../design/library.ts';
 import { DESIGN_OFF, DesignError } from '../design/model.ts';
@@ -85,7 +86,8 @@ import { doctorProject, type DoctorResult } from '../plugins/doctor.ts';
 import { pluginsView } from '../plugins/view.ts';
 import { libraryGet, libraryPost } from './library.ts';
 import { overviewAll, overviewProject } from './overview-all.ts';
-import { sendJson as json } from '../web/response.ts';
+import { sendBody, sendJson } from '../web/response.ts';
+import { bodyHashOf, claimIdempotency, completeIdempotency, IDEMPOTENCY_KEY_RE, MUTATING_METHODS, releaseIdempotency } from './idempotency.ts';
 import { readOrders } from './read-orders.ts';
 import type { Hub } from './hub.ts';
 import { transcriptRuns } from '../run/transcript.ts';
@@ -167,14 +169,26 @@ const projectCaches = new WeakMap<ApiContext, { at: number; revision: number; pr
 function classify(e: UserError): ApiFailure {
   if (/^Acceptance failed:/.test(e.english)) return new ApiFailure(409, 'conflict', e.message);
   const m = e.english;      // the status comes from the English text, whatever language the message is in
-  if (/^No order "|has no run |No worktree found|^No worker "|^No skill "|merge readiness cannot be read|^There is no (pick set|setting|quote file) /.test(m)) return new ApiFailure(404, 'not_found', e.message);
+  if (/^No order "|has no run |No worktree found|^No worker "|^No skill "|^No schedule "|merge readiness cannot be read|^There is no (pick set|setting|quote file) /.test(m)) return new ApiFailure(404, 'not_found', e.message);
   if (/already exists|exists already| cannot start now: |^There is a worker ".*" already|cannot (queue|hold|release|cancel|approve|rework|answer|message) an order that is|only an order that is awaiting review|waits for a card to be clicked|is taken already|which is still open|was decided already|is decided already|was answered already|The (file|text) of .* changed; |has a quote .* already|would go above the approved cap|nothing can be spent|only a queued order can be started|already has an open run|has no open run|has no process this tool started|Refusing to stop|is not in .* yet\. Merge it|accept command/.test(m)) return new ApiFailure(409, 'conflict', e.message);
   return new ApiFailure(400, 'bad_request', e.message);
 }
 
 const withDetails = (f: ApiFailure, details: { field?: string; message: string }[]): ApiFailure => new ApiFailure(f.status, f.code, f.message, details);
 
+const parsedBodies = new WeakMap<IncomingMessage, Record<string, unknown>>();
+const capturedResponses = new WeakMap<ServerResponse, { status: number; body: string } | null>();
+
+function json(res: ServerResponse, status: number, value: unknown): void {
+  if (capturedResponses.has(res)) {
+    capturedResponses.set(res, { status, body: JSON.stringify(value) });
+  }
+  sendJson(res, status, value);
+}
+
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const cached = parsedBodies.get(req);
+  if (cached !== undefined) return Promise.resolve(cached);
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
@@ -184,11 +198,17 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
     });
     req.on('end', () => {
       const text = Buffer.concat(chunks).toString('utf8').trim();
-      if (!text) return resolve({});
+      if (!text) {
+        const empty: Record<string, unknown> = {};
+        parsedBodies.set(req, empty);
+        return resolve(empty);
+      }
       try {
         const v = JSON.parse(text) as unknown;
         if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error('not an object');
-        resolve(v as Record<string, unknown>);
+        const obj = v as Record<string, unknown>;
+        parsedBodies.set(req, obj);
+        resolve(obj);
       } catch { reject(new ApiFailure(400, 'bad_request', 'The body must be a JSON object.')); }
     });
     req.on('error', reject);
@@ -232,12 +252,72 @@ export function langOf(req: IncomingMessage, url: URL): Lang {
 }
 
 export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: ServerResponse, url: URL, port: number): Promise<void> {
+  const method = (req.method ?? 'GET').toUpperCase();
+  let claimed: { store: import('../orders/store.ts').OrderStore; key: string } | undefined;
   try {
-    await withLang(langOf(req, url), () => route(ctx, req, res, url, port));
+    await withLang(langOf(req, url), async () => {
+      const rawKey = req.headers['idempotency-key'];
+      const headerKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
+      if (headerKey !== undefined && MUTATING_METHODS.has(method)) {
+        if (!originAllowed(req.headers.origin, port, ctx.extraOrigins)) throw new ApiFailure(403, 'forbidden', 'This origin may not use the interface.');
+        if (!admitted(req)) throw new ApiFailure(401, 'unauthorized', 'A write needs the console key in the header x-alba-token, or a signed-in browser session.');
+        if (!IDEMPOTENCY_KEY_RE.test(headerKey)) {
+          throw new ApiFailure(400, 'bad_request', t('Idempotency-Key must be 1 to 100 characters of letters, digits, "-" and "_".'));
+        }
+        const body = await readJson(req);
+        const projectId = typeof body.project === 'string' && body.project ? body.project : (url.searchParams.get('project') ?? undefined);
+        const project = (projectId ? ctx.projects.find(p => p.id === projectId) : undefined) ?? ctx.projects[0];
+        if (project) {
+          const store = stateStore(project);
+          const claim = claimIdempotency(store, {
+            key: headerKey,
+            method,
+            route: url.pathname,
+            bodyHash: bodyHashOf(body),
+            now: ctx.probes.now(),
+          });
+          if (claim.outcome === 'mismatch') {
+            throw new ApiFailure(409, 'request_mismatch', t('Idempotency-Key "{key}" was already used with a different request.', { key: headerKey }));
+          }
+          if (claim.outcome === 'in_progress') {
+            throw new ApiFailure(409, 'request_in_progress', t('A request with Idempotency-Key "{key}" is still in progress.', { key: headerKey }));
+          }
+          if (claim.outcome === 'replay') {
+            sendBody(req, res, claim.statusCode, claim.responseBody, {
+              'content-type': 'application/json; charset=utf-8',
+              'cache-control': 'no-store',
+              'x-content-type-options': 'nosniff',
+              vary: 'x-alba-lang, Accept-Language',
+              'idempotent-replay': 'true',
+            });
+            return;
+          }
+          claimed = { store, key: headerKey };
+          capturedResponses.set(res, null);
+        }
+      }
+      await route(ctx, req, res, url, port);
+    });
+    if (claimed) {
+      const captured = capturedResponses.get(res);
+      if (captured && captured.status < 500) {
+        completeIdempotency(claimed.store, claimed.key, captured.status, captured.body, ctx.probes.now());
+      } else {
+        releaseIdempotency(claimed.store, claimed.key);
+      }
+    }
   } catch (e) {
     const failure = e instanceof ApiFailure ? e : e instanceof DesignError ? new ApiFailure(e.status, e.status === 409 ? 'conflict' : e.status === 404 ? 'not_found' : 'bad_request', e.message) : e instanceof EditRefused ? withDetails(classify(e), e.details) : e instanceof UserError ? classify(e) : new ApiFailure(500, 'internal', (e as Error).message.split('\n')[0]);
+    const payload = { error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } } satisfies A.ApiError;
+    if (claimed) {
+      if (failure.status < 500) {
+        completeIdempotency(claimed.store, claimed.key, failure.status, JSON.stringify(payload), ctx.probes.now());
+      } else {
+        releaseIdempotency(claimed.store, claimed.key);
+      }
+    }
     if (res.headersSent) return void res.end();
-    json(res, failure.status, { error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } } satisfies A.ApiError);
+    sendJson(res, failure.status, payload);
   }
 }
 
@@ -458,6 +538,11 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
     if (parts[0] === 'overview' && parts.length === 1) {
       const snap = ctx.snapshot();
       return json(res, 200, overview(viewOf(snap, q('project')), snap, env(), ctx.extraProblems?.(viewOf(snap, q('project')).config.id)) satisfies A.Overview);
+    }
+    if (parts[0] === 'schedules' && parts.length === 1) {
+      const view = light(q('project'));
+      const now = ctx.probes.now();
+      return json(res, 200, { project: view.config.id, at: now.toISOString(), schedules: scheduleViews(view.config, view.orders, now) } satisfies A.ScheduleList);
     }
     if (parts[0] === 'orders' && parts.length === 1) {
       const view = light(q('project'));
@@ -1209,6 +1294,32 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (ctx.workers) answerOrder(runCtx(), tag, note, { choice, who, question: parts[3] });
       else view.orders.pick(tag, parts[3], { choice, note, who });
       return done<A.Question>(200, toQuestion(view.orders.get(tag).questions!.find(x => x.id.toLowerCase() === parts[3].toLowerCase())!));
+    }
+
+    if (parts[0] === 'schedules' && parts.length === 3 && (parts[2] === 'run' || parts[2] === 'pause' || parts[2] === 'resume')) {
+      const id = parts[1];
+      const now = ctx.probes.now();
+      if (parts[2] === 'run') {
+        const outcome = runScheduleNow(view.config, view.orders, id, now);
+        const schedule = scheduleViews(view.config, view.orders, now).find(s => s.id === id)!;
+        return done<A.ScheduleRunResult>(200, {
+          ok: true,
+          id,
+          status: outcome.status,
+          plannedAt: outcome.plannedAt,
+          ...(outcome.orderTag ? { orderTag: outcome.orderTag } : {}),
+          ...(outcome.reason ? { reason: outcome.reason } : {}),
+          schedule,
+        });
+      }
+      if (parts[2] === 'pause') {
+        pauseSchedule(view.config, view.orders, id, { reason: str(body, 'reason'), now });
+        const schedule = scheduleViews(view.config, view.orders, now).find(s => s.id === id)!;
+        return done<A.ScheduleStateResult>(200, { ok: true, id, schedule });
+      }
+      resumeSchedule(view.config, view.orders, id, now);
+      const schedule = scheduleViews(view.config, view.orders, now).find(s => s.id === id)!;
+      return done<A.ScheduleStateResult>(200, { ok: true, id, schedule });
     }
 
     if (parts[0] === 'leases' && parts[1] === 'release' && parts.length === 2) {

@@ -126,7 +126,7 @@ export class Orders {
     }
   }
 
-  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source'] }): OrderDoc {
+  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; priority?: number; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source']; scheduled?: Order['scheduled'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -134,6 +134,7 @@ export class Orders {
         fail('Order "{tag}" already exists ({stage}; a merged or cancelled order keeps its tag). The next free tag like it is {next}.', { tag: taken, stage, next: nextFreeTag(input.tag, this.store.tags()) });
       }
       if (!input.title.trim()) fail('An order needs a title.');
+      if (input.priority !== undefined && (!Number.isInteger(input.priority) || Math.abs(input.priority) > 1000000)) fail('Priority must be a bounded integer.');
       const needs = [...new Set((input.needs ?? []).map(n => n.trim()).filter(Boolean))];
       if (needs.some(n => n.toLowerCase() === input.tag.toLowerCase())) fail('An order cannot need itself.');
       const at = this.now();
@@ -149,6 +150,7 @@ export class Orders {
       if (input.planned) order.planned = true;
       if (input.intent) order.intent = input.intent;
       if (input.role) { if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(input.role)) fail('Invalid role identifier.'); order.role = input.role; }
+      if (input.priority !== undefined) order.priority = input.priority;
       if (input.worker) order.worker = input.worker;
       if (input.model?.trim()) order.model = input.model.trim();
       if (input.heavy) order.heavy = input.heavy;
@@ -168,8 +170,9 @@ export class Orders {
       }
       if (input.condition) order.condition = input.condition;
       if (input.source) order.source = input.source;
+      if (input.scheduled) order.scheduled = input.scheduled;
       const doc: OrderDoc = { version: 1, order, runs: [], reports: [], actions: [] };
-      this.save(doc, 'order-added', { title: order.title, kind: order.kind, needs });
+      this.save(doc, 'order-added', { title: order.title, kind: order.kind, needs, ...(order.scheduled ? { source: order.scheduled.source, planned_at: order.scheduled.planned_at } : {}) });
       return doc;
     });
   }
@@ -412,7 +415,7 @@ export class Orders {
           doc.monitor.process_started_at = this.processStart(report.monitor.pid);
         }
       }
-      this.save(doc, 'report', { status: report.status, summary: report.summary, question: report.question, ...(report.options ? { options: report.options.length } : {}), ...(report.monitor ? { monitor: report.monitor.check.join(' ') } : {}) });
+      this.save(doc, 'report', { status: report.status, summary: report.summary, question: report.question, ...(report.options ? { options: report.options.length } : {}), ...(report.monitor ? { monitor: report.monitor.check?.length ? report.monitor.check.join(' ') : 'condition' } : {}) });
       return { doc, report };
     });
   }
