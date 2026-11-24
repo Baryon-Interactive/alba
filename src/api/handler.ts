@@ -1234,7 +1234,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
           break;
         }
         case 'queue': case 'hold': case 'release': case 'cancel': case 'rework': case 'stop':
-          humanAction(view.config, view.orders, tag, action as 'queue', note);
+          humanAction(view.config, view.orders, tag, action as 'queue', note, undefined, false, str(body, 'phase'));
           break;
         case 'close': {
           const how = str(body, 'how', true)!;

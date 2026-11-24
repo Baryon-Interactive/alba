@@ -96,20 +96,24 @@ export function removeDetachedCheckout(root: string, cwd: string, force = false)
   withGitLockRetrySync(() => reviewGit(root, 'worktree', 'remove', ...(force ? ['-f'] : []), cwd));
 }
 
-export function launchReadOnlyReview(
+export function readOnlyCommand(
   ctx: Pick<RunContext, 'project' | 'probes'>,
   worker: WorkerConfig,
   cwd: string,
   promptInstruction: string,
   lastFile: string,
-  logFile: string,
-): { pid: number; process_started_at?: string } {
+) {
   const named = Object.fromEntries(Object.entries(worker.launch!.env).map(([key, value]) => [key, value.replace(/\{skill_names\}|\{skill_allow\}/g, '')]));
   const adapter = workerAdapter(worker.engine);
   const environment = adapter.verifierEnvironment?.(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) ?? { env: named, envUnset: worker.launch!.env_unset };
   const mcpServers = adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
   const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers);
-  const pid = ctx.probes.spawnDetached(worker.launch!.program, args, { cwd, ...environment, logFile });
+  return { program: worker.launch!.program, args, ...environment };
+}
+
+export function launchReadOnlyReview(ctx: Pick<RunContext, 'project' | 'probes'>, worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, logFile: string): { pid: number; process_started_at?: string } {
+  const { program, args, ...environment } = readOnlyCommand(ctx, worker, cwd, prompt, lastFile);
+  const pid = ctx.probes.spawnDetached(program, args, { cwd, ...environment, logFile });
   const process_started_at = ctx.probes.processStartedAt?.(pid);
   return { pid, process_started_at };
 }

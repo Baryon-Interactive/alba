@@ -1,3 +1,4 @@
+import { orderPhases } from '../orders/phases.ts';
 import type { Route, Routing } from '../api/types.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
 import type { WorkersFile } from '../workers/config.ts';
@@ -5,7 +6,7 @@ import type { ProjectConfig } from '../config.ts';
 import { t } from '../i18n.ts';
 import type { Order, OrderDoc, StoredRouting } from '../orders/model.ts';
 import type { WorkerState } from '../tick/plan.ts';
-import { chooseWorker, rolePolicy } from './choose.ts';
+import { chooseWorker, rolePolicy, supportsReadOnly } from './choose.ts';
 import { routingOf } from './classify.ts';
 import { isGenericKind } from './kinds.ts';
 
@@ -17,7 +18,8 @@ export const toRouting = (r: StoredRouting): Routing => ({ kind: r.kind, tags: r
 
 /** Use the dispatch role everywhere, including reroute validation and manual starts. */
 export function roleForOrder(project: ProjectConfig, doc: OrderDoc, file?: WorkersFile) {
-  return resolveRole(effectiveRoles(project, file), { ...doc.order, kind: effectiveKind({ ...doc.order, routing: routingOf(project, doc) }) });
+  const kind = effectiveKind({ ...doc.order, routing: routingOf(project, doc) });
+  return resolveRole(effectiveRoles(project, file), { kind, role: orderPhases(project, doc, kind)?.current.role ?? doc.order.role });
 }
 
 /** A removed/disabled worker or changed role must not leave an order pinned forever. */
@@ -26,6 +28,7 @@ export function workerPinProblem(project: ProjectConfig, doc: OrderDoc, file: Wo
   if (!pin) return;
   const worker = file.workers.find(w => w.id === pin);
   if (!worker) return t('Worker pin {worker} dropped: unknown worker.', { worker: pin });
+  if (orderPhases(project, doc)?.current.mode === 'read-only' && !supportsReadOnly(worker)) return t('The worker cannot enforce a read-only phase.');
   if (!worker.enabled) return t('Worker pin {worker} dropped: disabled worker.', { worker: pin });
   const role = roleForOrder(project, doc, file);
   if (!role.definition) return t('Worker pin {worker} dropped: order has no role.', { worker: pin });
@@ -37,8 +40,9 @@ export function workerPinProblem(project: ProjectConfig, doc: OrderDoc, file: Wo
 export function routeFor(project: ProjectConfig, doc: OrderDoc, workers: readonly WorkerState[], at: string = new Date().toISOString(), file?: WorkersFile): Route {
   const routing = routingOf(project, doc, at);
   const kind = isGenericKind(doc.order.kind) ? routing.kind : doc.order.kind;
-  const role = resolveRole(effectiveRoles(project, file), { ...doc.order, kind: kind || doc.order.kind });
-  const choice = chooseWorker({ kind, tags: routing.tags, workerText: doc.order.worker, pinnedWorker: doc.order.next_worker, role: rolePolicy(role) }, workers);
+  const role = roleForOrder(project, doc, file);
+  const phase = orderPhases(project, doc, kind)?.current;
+  const choice = chooseWorker({ kind, tags: routing.tags, workerText: phase?.role ? undefined : doc.order.worker, pinnedWorker: doc.order.next_worker, role: rolePolicy(role, phase?.mode === 'read-only') }, workers);
   return {
     project: project.id, tag: doc.order.tag, routing: toRouting({ ...routing, kind: kind || routing.kind }),
     ...(choice.named ? { named: choice.named } : {}), outcome: choice.outcome, ...(choice.chosen ? { chosen: choice.chosen } : {}), ...(choice.ideal ? { ideal: choice.ideal } : {}),

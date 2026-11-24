@@ -919,6 +919,7 @@ export interface WorkerList { workers: Worker[]; sources: { source: string; late
 
 /** `POST /api/orders` */
 export interface NewOrderRequest {
+  phases?: 'none';
   role?: string;
   project?: string;
   tag: string;

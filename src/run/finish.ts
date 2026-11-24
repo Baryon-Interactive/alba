@@ -1,3 +1,4 @@
+import { worktreeFingerprint } from './phase.ts';
 import { runProcessMatches } from './kill-tree.ts';
 import { textSessionId } from '../workers/adapters/index.ts';
 import { totalUsage } from '../usage/fold.ts';
@@ -122,7 +123,7 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       if (rejected && !stale.some(r => r.file === source && r.namedRun === rejected.namedRun)) stale.push(rejected);
       return !rejected;
     };
-    const sources = [run.last_file, path.join(project.work_orders, `${doc.order.tag}.report.json`).replace(/\\/g, '/')].filter((f): f is string => !!f);
+    const sources = [run.last_file, !run.next_phase && path.join(project.work_orders, `${doc.order.tag}.report.json`).replace(/\\/g, '/')].filter((f): f is string => !!f);
     const stderr = run.log ? probes.tail(run.log, TAIL_BYTES) : '';
     const eventTail = run.events_file ? probes.tail(run.events_file, TAIL_BYTES) : '';
     const tail = eventTail || stderr;
@@ -164,6 +165,11 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     const failed = (summary: string, why: string, question?: string, status: 'failed' | 'blocked' = 'failed') =>
       push({ outcome: 'failed', report: { status, summary, ...(question ? { question } : {}), evidence: run.log ? [run.log] : [], commits: [] }, why });
 
+    if (run.worktree_fingerprint) {
+      let unchanged = false;
+      try { unchanged = !!run.cwd && run.worktree_fingerprint === worktreeFingerprint(run.cwd); } catch { /* a lost checkout cannot pass */ }
+      if (!unchanged) { const reason = t('The worktree changed during a read-only phase.'); failed(reason, reason); continue; }
+    }
     let report: ReportInput | undefined, from: string | undefined, broken: string | undefined, writeLast: Finish['writeLast'];
     const boundReport = (candidate: ReportInput, source: string, text: string, modified?: string) => {
       if (!accepts(candidate, source, modified)) return undefined;
@@ -210,6 +216,10 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       const printed = deliveredReport(tail, { cut: Buffer.byteLength(tail) >= TAIL_BYTES });
       if (printed) report = boundReport(printed, run.events_file ?? run.log, stream.finalText || tail);
       if (report) { from = path.basename(run.log); fromLog = true; }
+    }
+    if (run.next_phase && report?.status === 'ready' && !report.plan?.trim()) {
+      broken = 'A ready planning report needs a nonempty plan.';
+      report = undefined;
     }
     if (report) { readReport = true; push({ outcome: 'completed', report, from, ...(writeLast ? { writeLast } : {}), ...(earlier ? { report_from: { where: earlier.where, ...(earlier.file ? { file: earlier.file } : {}) } } : {}), why: earlier?.where === 'earlier-message' ? t('process ended, report block read from an earlier message (the last message had none)') : earlier ? t('process ended, report block read from a file the worker wrote ({file})', { file: earlier.file ?? '' }) : fromLog ? t('process ended, report block read from the log') : t('process ended, report block read') }); continue; }
     const lastBounce = [...priorEvents].map((e, i) => ({ e, i })).reverse().find(x => x.e.type === 'report-bounced');
@@ -295,6 +305,20 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
   if (f.missing_report) orders.patchRun(f.tag, f.run, { missing_report: true });
   if (f.report_from) { orders.patchRun(f.tag, f.run, { report_from: f.report_from.where }); orders.record(f.tag, 'report-from-earlier', { run: f.run, ...f.report_from }); }
   if (f.session || f.usage || f.limit || f.lost_session) orders.patchRun(f.tag, f.run, { ...(f.session ? { session: f.session } : {}), ...(f.usage ? { usage: f.usage } : {}), ...(f.limit ? { limit: f.limit } : {}), ...(f.lost_session ? { lost_session: true } : {}) });
+  // A scheduler must see the completed planning run, its report and the released phase pin together.
+  if (storedRun.next_phase && f.report) {
+    const report = f.report;
+    orders.store.transaction(() => {
+      const current = orders.get(f.tag);
+      if (current.runs.find(r => !r.ended)?.id !== f.run) return;
+      if (f.writeLast) writeFileSync(f.writeLast.file, f.writeLast.text, 'utf8');
+      orders.runEnd(f.tag, f.outcome, end);
+      orders.report(f.tag, report, f.from ?? 'tick');
+      if (report.status === 'ready' && current.order.next_worker === storedRun.worker) orders.clearWorkerPin(f.tag, t('Read-only phase completed.'));
+    });
+    requeueUndeliveredInbox(orders, f.tag, storedRun);
+    return;
+  }
   orders.runEnd(f.tag, f.outcome, end);
   try {
   if (f.writeLast) writeFileSync(f.writeLast.file, f.writeLast.text, 'utf8');

@@ -1,3 +1,4 @@
+import { fail } from '../i18n.ts';
 import { chooseWorker, rolePolicy } from '../routing/choose.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
 import type { ProjectConfig } from '../config.ts';
@@ -45,5 +46,5 @@ export function validatePhaseWorkers(project: ProjectConfig, workers: WorkersFil
 
 export function phasesOverride(value: unknown): 'none' | undefined {
   if (value === undefined || value === 'none') return value;
-  throw new Error('Order phases must be none.');
+  return fail('Order phases must be none.');
 }

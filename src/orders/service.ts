@@ -1,7 +1,7 @@
 import { phasesOverride } from './phase-config.ts';
 import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
 import { ACTION_KINDS, RUN_OUTCOMES, nextSeq, normalizeSparseDirs } from './model.ts';
-import { StaleWrite, type OrderStore } from './store.ts';
+import { writeFileAtomic, StaleWrite, type OrderStore } from './store.ts';
 import { actionProblem, inferStage, type StageResult } from './stage.ts';
 import type { ReportInput } from './report.ts';
 import { UserError, fail, t, withLang } from '../i18n.ts';
@@ -262,7 +262,7 @@ export class Orders {
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string } = {}): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -318,6 +318,7 @@ export class Orders {
       if (options.author?.trim()) action.author = options.author.trim();
       if (options.requeuedFrom) action.requeued_from = options.requeuedFrom;
       if (options.commit?.trim()) action.commit = options.commit.trim();
+      if (kind === 'rework' && options.phase) action.phase = options.phase;
       if (options.choice !== undefined) action.choice = options.choice;
       if (options.imported) action.imported = true;
       if (options.override) action.override = true;
@@ -395,7 +396,13 @@ export class Orders {
     return this.retry(() => {
       const doc = this.get(tag);
       const run = doc.runs.find(r => r.ended === undefined) ?? doc.runs[doc.runs.length - 1];
+      if (run?.next_phase && input.status === 'ready' && !input.plan?.trim()) fail('A ready planning report needs a nonempty plan.');
       const report: Report = { seq: nextSeq(doc), at: this.now(), status: input.status as ReportStatus, summary: input.summary, evidence: input.evidence, commits: input.commits };
+      if (input.plan !== undefined) {
+        if (Buffer.byteLength(input.plan) > 24 * 1024) fail('Report plan must be Markdown text of at most 24 KiB.');
+        report.plan = input.plan;
+        if (run?.plan_file) writeFileAtomic(run.plan_file, input.plan);
+      }
       if (input.revision) report.revision = input.revision;
       if (input.delivery_text !== undefined) report.delivery_text = input.delivery_text;
       if (run) report.run = run.id;

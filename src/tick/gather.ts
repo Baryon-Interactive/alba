@@ -1,6 +1,8 @@
 import { rolePolicy } from '../routing/choose.ts';
 import { machineProblems, machinesView, refreshMachines } from '../machines/probe.ts';
 import { loadMachines } from '../machines/config.ts';
+import { validatePhaseWorkers } from '../orders/phase-config.ts';
+import { orderPhases } from '../orders/phases.ts';
 import { workerPinProblem } from '../routing/route.ts';
 import { roleResults } from '../roles/statistics.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
@@ -319,6 +321,7 @@ export async function prewarmEndpointProbes(orders: Orders, workers: WorkersFile
 
 /** Reads orders, quota and the machine, then lets `planTick` decide. Writes the quota history, and, when `nudge` is set, a commit reminder. */
 export function tick(project: ProjectConfig, orders: Orders, workersFile: WorkersFile, probes: Probes, options: TickOptions): TickResult {
+  if (project.phases) validatePhaseWorkers(project, workersFile);
   if (options.record) for (const doc of orders.all()) if (doc.runs.some(r => !r.ended)) pickupOutbox(orders, doc.order.tag);
   const now = probes.now();
   const at = now.toISOString();
@@ -413,7 +416,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
     const stage = options.includePlanned && actualStage === 'planned' && o.needs.every(n => merged.has(n)) ? 'queued' : actualStage;
     const lastRun = [...d.runs].sort((x, y) => y.seq - x.seq)[0];
     const lastAction = [...d.actions].sort((x, y) => y.seq - x.seq).find(x => x.kind === 'queue' || x.kind === 'rework' || x.kind === 'answer' || x.kind === 'message' || x.kind === 'monitor');
-    const bounced = lastAction?.bounce === true && lastAction.kind === 'message';
+    const bounced = lastAction?.bounce === true && lastAction.kind === 'message' && (!lastRun?.phase || lastAction.seq > lastRun.seq);
     const notes = pendingNotes(d);
     const open = d.runs.find(r => r.ended === undefined);
     if (open) {
@@ -434,6 +437,7 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
     }
     const routing = routingOf(project, d, at);
     const effectiveKind = isGenericKind(o.kind) ? routing.kind || o.kind : o.kind;
+    const phase = orderPhases(project, d, effectiveKind)?.current;
     const gaps = foundationSets.length && (stage === 'queued' || open) ? foundationGaps(foundationSets, { kind: effectiveKind, tags: [...(o.tags ?? []), ...routing.tags] }) : [];
     const isResume = bounced || (!!lastRun?.ended && lastRun.outcome !== 'completed' && (lastAction?.seq ?? 0) < lastRun.seq);
     const isMonitorResume = notes.some(n => n.kind === 'monitor');
@@ -495,8 +499,8 @@ export function tick(project: ProjectConfig, orders: Orders, workersFile: Worker
       ...(gaps.length ? { foundations: gaps.map(g => ({ set: g.name, mode: g.mode, missing: missingText(g) })) } : {}),
       ...(orderPreflight ? { preflight: orderPreflight } : {}),
       ...(preflightWaiting ? { preflightWaiting: true } : {}),
-      role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { ...o, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind })),
-      tag: o.tag, stage: open ? 'running' : stage, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind, kindTags: routing.tags, heavy: heavyOf(project, d), workerText: o.worker, pinnedWorker: pinProblem ? undefined : o.next_worker,
+      role: rolePolicy(resolveRole(effectiveRoles(project, workersFile), { role: phase?.role ?? o.role, kind: effectiveKind }), phase?.mode === 'read-only'),
+      tag: o.tag, stage: open ? 'running' : stage, kind: isGenericKind(o.kind) ? routing.kind || o.kind : o.kind, kindTags: routing.tags, heavy: heavyOf(project, d), workerText: phase?.role ? undefined : o.worker, pinnedWorker: pinProblem ? undefined : o.next_worker,
       ...(o.mandate?.spend_cap !== undefined ? { spendCapUsd: o.mandate.spend_cap, spentUsd: orderSpend(d, workersFile.workers, probes).cost_usd ?? 0 } : {}),
       priority: o.priority,
       row: o.source?.row ?? 1e6 + index,

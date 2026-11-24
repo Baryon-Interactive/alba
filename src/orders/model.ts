@@ -88,6 +88,12 @@ export interface Order {
 }
 
 export interface Run {
+  phase?: string;
+  final_phase?: boolean;
+  next_phase?: string;
+  phase_timeout_minutes?: number;
+  worktree_fingerprint?: string;
+  plan_file?: string;
   host?: string;
   remote_worktree?: string;
   previous_attempts?: string;
@@ -180,6 +186,7 @@ export interface MonitorState {
 }
 
 export interface Report {
+  plan?: string;
   design_changes?: string[];
   revision?: string;
   delivery_text?: string;
@@ -203,6 +210,7 @@ export interface Report {
 }
 
 export interface Action {
+  phase?: string;
   queued?: boolean; // A message for the next run; does not reset the current stage.
   lint?: boolean;
   seq: number;

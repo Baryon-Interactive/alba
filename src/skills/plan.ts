@@ -1,4 +1,5 @@
 import type { OrderSkill } from '../api/types.ts';
+import { orderPhases } from '../orders/phases.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
 import type { ProjectConfig } from '../config.ts';
 import type { OrderDoc } from '../orders/model.ts';
@@ -15,7 +16,7 @@ export interface SkillPlan { registry: Registry; selection: Selection; mounts: s
 export function planSkills(project: ProjectConfig, workers: WorkersFile | undefined, doc: OrderDoc, worker?: WorkerConfig): SkillPlan {
   const registry = readRegistry(workers?.skills, project);
   const routing = routingOf(project, doc);
-  const role = resolveRole(effectiveRoles(project, workers), { ...doc.order, kind: routing.kind || doc.order.kind });
+  const role = resolveRole(effectiveRoles(project, workers), { role: orderPhases(project, doc)?.current.role ?? doc.order.role, kind: routing.kind || doc.order.kind });
   // A tool's skill comes with the tool: it joins the registry for this order only, and is selected because the order uses the tool.
   // A registry skill of the same name stays (the project's copy wins) and is selected for the tool.
   const fromTools = toolSkills(orderTools(project, doc, routing.kind || doc.order.kind).tools);

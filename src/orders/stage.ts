@@ -69,6 +69,12 @@ export function inferStage(order: Order, runs: readonly Run[], reports: readonly
     const card = current.waiting_for === 'card';
     return hit('awaiting-user', card ? t('the latest report waits for a card to be clicked: {q}', { q: current.question }) : t('the latest report waits for an answer: {q}', { q: current.question }), card ? 'card' : 'answer');
   }
+  if (current?.status === 'ready' && lastRun?.next_phase && current.run === lastRun.id) {
+    if (open) return hit('running', t('run {id} by {worker} is open', { id: open.id, worker: open.worker }));
+    if (lastRun.outcome !== 'completed') return hit('failed', t('The planning run did not complete.'));
+    if (unmet.length) return hit('waiting-needs', t('queued, waiting for {needs} to be merged', { needs: unmet.join(', ') }));
+    return hit('queued', t('{phase} ready, next phase: {next}', { phase: lastRun.phase!, next: lastRun.next_phase }));
+  }
   if (current?.status === 'ready') return hit('awaiting-review', t('the latest report says ready: {s}', { s: current.summary }));
   if (current?.status === 'blocked') return hit('blocked', t('the latest report says blocked: {s}', { s: current.summary }), 'answer');
   if (current?.status === 'failed') return hit('failed', t('the latest report says failed: {s}', { s: current.summary }));

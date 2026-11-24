@@ -3,6 +3,7 @@ import { fail } from '../i18n.ts';
 
 /** The structured report a worker gives at the end of a round. */
 export interface ReportInput {
+  plan?: string;
   run?: string;
   design_changes?: string[];
   revision?: string;
@@ -60,13 +61,14 @@ export const REPORT_END = '--- end ---';
 export function validateReport(value: unknown): ReportInput {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) fail('A report must be a JSON object.');
   const v = value as Record<string, unknown>;
-  const known = ['run', 'design_changes', 'status', 'summary', 'question', 'options', 'waiting_for', 'evidence', 'commits', 'skill_suggestions', 'monitor', 'scope', 'revision'];
+  const known = ['plan', 'run', 'design_changes', 'status', 'summary', 'question', 'options', 'waiting_for', 'evidence', 'commits', 'skill_suggestions', 'monitor', 'scope', 'revision'];
   const extra = Object.keys(v).filter(k => !known.includes(k));
   if (extra.length) fail('Unknown report field(s): {fields}. Allowed: {allowed}.', { fields: extra.join(', '), allowed: known.join(', ') });
   if (typeof v.status !== 'string' || !(REPORT_STATUSES as readonly string[]).includes(v.status)) {
     fail('Report "status" must be one of: {allowed}.', { allowed: REPORT_STATUSES.join(', ') });
   }
   if (typeof v.summary !== 'string' || !v.summary.trim()) fail('Report "summary" must be a non-empty one-line string.');
+  if (v.plan !== undefined && (typeof v.plan !== 'string' || Buffer.byteLength(v.plan) > 24 * 1024)) fail('Report plan must be Markdown text of at most 24 KiB.');
   if (v.summary.includes('\n')) fail('Report "summary" must be a single line.');
   if (v.question !== undefined && typeof v.question !== 'string') fail('Report "question" must be a string (one question only), empty or left out when there is none.');
   if (v.design_changes !== undefined && (!Array.isArray(v.design_changes) || v.design_changes.some(p => typeof p !== 'string' || !/^\.alba\/design\/changes\/[A-Za-z0-9][A-Za-z0-9_.-]*\.json$/.test(p)) || new Set(v.design_changes).size !== v.design_changes.length)) fail('Report design_changes must list unique .alba/design/changes/*.json files.');
@@ -102,7 +104,7 @@ export function validateReport(value: unknown): ReportInput {
   else if (v.monitor !== undefined) fail('Report "monitor" only makes sense with status "monitoring", not "{status}".', { status });
   const evidence = list('evidence');
   const commits = list('commits');
-  return { status, ...(typeof v.run === 'string' ? { run: v.run.trim() } : {}), summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
+  return { status, ...(typeof v.plan === 'string' ? { plan: v.plan } : {}), ...(typeof v.run === 'string' ? { run: v.run.trim() } : {}), summary: v.summary.trim(), ...(designChanges?.length ? { design_changes: designChanges } : {}), ...(typeof v.revision === 'string' ? { revision: v.revision } : {}), ...(monitor ? { monitor } : {}), ...(question ? { question } : {}), ...(options ? { options } : {}), ...(v.waiting_for ? { waiting_for: v.waiting_for as WaitingFor } : {}), ...(v.scope === 'project' ? { scope: 'project' as const } : {}), evidence, commits, ...(suggestions?.length ? { skill_suggestions: suggestions } : {}) };
 }
 
 const CRITERIA = ['exit_code', 'file_exists', 'output_matches', 'order_stage', 'after'] as const;
