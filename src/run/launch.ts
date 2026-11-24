@@ -34,6 +34,7 @@ import { MAX_RESUMES } from './transient.ts';
 import { baseRefOf, checkBaseRef, commonGitDir, ensureWorktree, mainCheckoutState, planWorktree, worktreeGitDir, worktreeSparseDirs } from './worktree.ts';
 import { installBaseGuard, RUN_ENV } from './ref-guard.ts';
 import { bindEditor, dropEditor, editorPoolsOf, editorPortProblem, editorPrompt, editorSlots, runMachine, takeEditor } from '../editors/pool.ts';
+import { commitConsultRun, CONSULT_ENV, CONSULT_TOKEN_ENV, consultPrompt, prepareConsultRun } from '../consult/spec.ts';
 import { exitFileOf } from './spawn.ts';
 import type { ResolvedRole } from '../roles/config.ts';
 
@@ -371,16 +372,22 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const handoff = rotating ? writeHandoff({ project, doc, from: { worker: rotating.from, run: previous }, to: worker.id, why: rotating.reason, worktree: plan.path, runId, probes: ctx.probes, lessons: getLessons(), skills: skillPlan.listed }) : undefined;
   const activeSparse = worktreeSparseDirs(plan.path);
   const reportRun = `${doc.order.tag}/${runId}`;
-  const buildWrittenPrompt = (slot?: number, portBase?: number) => withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + `\nALBA_RUN=${reportRun}. Include this value in the report's JSON field "run".\n` + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + runSlotPrompt(slot, portBase) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
+  const consultPlan = !remote ? prepareConsultRun(ctx, doc, runWorker, runId, plan.path, runsDir, roleMount.warnings) : undefined;
+  const buildWrittenPrompt = (slot?: number, portBase?: number) => withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + `\nALBA_RUN=${reportRun}. Include this value in the report's JSON field "run".\n` + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + runSlotPrompt(slot, portBase) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (consultPlan ? consultPrompt(consultPlan.spec) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
   const sessionId = resumeSession ?? randomUUID();
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = launchArgs(worker.launch, values, resumeSession !== undefined);
-  const launchEnv = expandEnv(worker.launch.env, { ...skillEnvValues(skillPlan.selection), tunnel_port: values.tunnel_port });
+  const launchEnv = { ...expandEnv(worker.launch.env, { ...skillEnvValues(skillPlan.selection), tunnel_port: values.tunnel_port }), ...(consultPlan ? { [CONSULT_ENV]: consultPlan.specPath, [CONSULT_TOKEN_ENV]: consultPlan.spec.token } : {}) };
   const environment = adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file, cwd: plan.path, ...(inboxHook ? { inboxHook } : {}), program: worker.launch.program, extraArgs: roleMount.args });
   if (!environment.program) args.unshift(...roleMount.args);
   Object.assign(environment.env, roleMount.env);
   environment.env[RUN_ENV] = reportRun;
   environment.envUnset = environment.envUnset.filter(name => name !== RUN_ENV);
+  if (consultPlan) {
+    environment.env[CONSULT_ENV] = consultPlan.specPath;
+    environment.env[CONSULT_TOKEN_ENV] = consultPlan.spec.token;
+    environment.envUnset = environment.envUnset.filter(name => name !== CONSULT_ENV && name !== CONSULT_TOKEN_ENV);
+  }
   if (editor) { environment.env.NO_PROXY = withLoopback(environment.env.NO_PROXY ?? process.env.NO_PROXY); environment.env.no_proxy = withLoopback(environment.env.no_proxy ?? process.env.no_proxy); }
   const launchProgram = environment.program ?? worker.launch.program;
   const launchArgv = environment.program ? environment.args : args;
@@ -433,6 +440,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
       portBase = slot !== undefined ? computePortBase(project.dispatch, slot) : undefined;
       const writtenPrompt = buildWrittenPrompt(slot, portBase);
       writeFileSync(promptFile, writtenPrompt, 'utf8');
+      if (consultPlan) commitConsultRun(consultPlan);
       const recordedPrompt = recordRunPrompt({ workOrders: project.work_orders, doc, skills: skillPlan.listed, selection: chosenLessons, promptText, writtenPrompt, rules, handoff });
       const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(slot !== undefined ? { slot } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}), lessons: recordedPrompt.lessons, prompt_bytes: recordedPrompt.prompt_bytes } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
       orders.record(doc.order.tag, 'lessons-mounted', { run: opened.id, ...recordedPrompt.lessons });

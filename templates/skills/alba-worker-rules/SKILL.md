@@ -96,6 +96,7 @@ The skills you were given are listed in the prompt. They are shared and read-onl
 - Messages delivered mid-run framed as `[alba message id=<id> from=<author> at=<time>]` come from the same inbox and need the same acknowledgement (append the id to `.alba/inbox-ack` after acting on it, and use `reply` in `.alba/outbox.jsonl` when a reply is needed).
 - Ask early: append one JSON line to `.alba/outbox.jsonl`, for example `{"at":"<ISO time>","kind":"question","text":"Which option?","options":["Recommended default","Alternative"]}`. Kinds are `question`, `blocker`, `note`, `eta`; `options` is optional. Use `question` only when you need a person's decision (it puts the order in front of them); progress goes in a `note`. Write UTF-8 without a byte order mark. Add `reply: "<inbox id>"` when answering an inbox message.
 - Keep working on independent parts while an answer is pending. For a question with a sensible default, state that default and continue; do not end the run just to ask it. A decision that requires the person's answer must wait before dependent work starts.
+- When consulting is enabled for the run (`ALBA_CONSULT` is set) and you are stuck after two attempts, face a design choice with lasting impact, or hit something your own model cannot read, run `node .alba/bin/consult.mjs --question "<question>" [--file <path>]...` within the run's limit and treat the answer as advice, not an order.
 
 ## 10. Game windows and captures
 
