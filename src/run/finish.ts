@@ -165,18 +165,18 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       push({ outcome: 'failed', report: { status, summary, ...(question ? { question } : {}), evidence: run.log ? [run.log] : [], commits: [] }, why });
 
     let report: ReportInput | undefined, from: string | undefined, broken: string | undefined, writeLast: Finish['writeLast'];
-    const takeReport = (candidate: ReportInput, source: string, text: string, modified?: string) => {
-      if (!accepts(candidate, source, modified)) return false;
-      report = candidate;
-      if (hasDeliveryChecks(project.checks)) report.delivery_text = text;
-      return true;
+    const boundReport = (candidate: ReportInput, source: string, text: string, modified?: string) => {
+      if (!accepts(candidate, source, modified)) return undefined;
+      if (hasDeliveryChecks(project.checks)) candidate.delivery_text = text;
+      return candidate;
     };
     for (const file of sources) {
       const time = probes.fileTime(file);
       const text = time ? probes.readText(file) : undefined;
       if (text === undefined) continue;
       try {
-        if (takeReport(parseReportFile(file, text), file, text, time)) {
+        report = boundReport(parseReportFile(file, text), file, text, time);
+        if (report) {
           from = path.basename(file);
           break;
         }
@@ -186,7 +186,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     }
     if (!report && stream.finalText.trim() && run.last_file) {
       try {
-        if (takeReport(parseReportBlock(stream.finalText), run.events_file ?? run.log ?? 'final message', stream.finalText)) {
+        report = boundReport(parseReportBlock(stream.finalText), run.events_file ?? run.log ?? 'final message', stream.finalText);
+        if (report) {
           from = path.basename(run.last_file);
           writeLast = { file: run.last_file, text: stream.finalText.trim() + '\n' };
         }
@@ -197,9 +198,9 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
       // The last message has no block, but an earlier one of this run has (a background command ended after the final message
       // and the engine answered its notification), or the worker saved its report to a file with the Write tool.
       earlier = earlierReport(probes.readText(run.events_file) ?? '');
-      if (earlier && !accepts(earlier.report, earlier.file ?? run.events_file)) earlier = undefined;
+      if (earlier) report = boundReport(earlier.report, earlier.file ?? run.events_file, earlier.text);
+      if (!report) earlier = undefined;
       if (earlier) {
-        report = earlier.report; if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = earlier.text;
         if (run.last_file) { from = path.basename(run.last_file); writeLast = { file: run.last_file, text: earlier.text.trim() + '\n' }; } else from = path.basename(run.events_file);
       }
     }
@@ -207,7 +208,8 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
     if (!report && !broken && run.log) {
       // No final-message file (a process stopped before it wrote one): the block the worker printed at the end of its log is its report.
       const printed = deliveredReport(tail, { cut: Buffer.byteLength(tail) >= TAIL_BYTES });
-      if (printed && accepts(printed, run.events_file ?? run.log)) { report = printed; if (project.checks.report_required || project.checks.report_must_match?.length || project.checks.report_must_not_match?.length) report.delivery_text = stream.finalText || tail; from = path.basename(run.log); fromLog = true; }
+      if (printed) report = boundReport(printed, run.events_file ?? run.log, stream.finalText || tail);
+      if (report) { from = path.basename(run.log); fromLog = true; }
     }
     if (report) { readReport = true; push({ outcome: 'completed', report, from, ...(writeLast ? { writeLast } : {}), ...(earlier ? { report_from: { where: earlier.where, ...(earlier.file ? { file: earlier.file } : {}) } } : {}), why: earlier?.where === 'earlier-message' ? t('process ended, report block read from an earlier message (the last message had none)') : earlier ? t('process ended, report block read from a file the worker wrote ({file})', { file: earlier.file ?? '' }) : fromLog ? t('process ended, report block read from the log') : t('process ended, report block read') }); continue; }
     const lastBounce = [...priorEvents].map((e, i) => ({ e, i })).reverse().find(x => x.e.type === 'report-bounced');
@@ -278,6 +280,7 @@ export function findFinishes(project: ProjectConfig, orders: Orders, probes: Pro
 export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, wipOptions?: Pick<SaveWipOptions, 'maxFileBytes' | 'maxTotalBytes' | 'runGit'>): void {
   const before = orders.get(f.tag);
   const storedRun = before.runs.find(r => r.id === f.run);
+  if (!storedRun || storedRun.ended !== undefined) return;
   for (const stale of f.stale ?? []) orders.record(f.tag, 'stale-report', stale);
   const worktree = before.order.worktree ?? storedRun?.cwd;
   const baseEnd: RunEnd = f.end ?? (f.report && !f.missing_report
@@ -302,7 +305,7 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
   }
   if (f.report) {
     const lastFile = orders.get(f.tag).runs.find(r => r.id === f.run)?.last_file;
-    const deliveryText = f.report.delivery_text ?? f.writeLast?.text ?? (lastFile && existsSync(lastFile) ? readFileSync(lastFile, 'utf8') : undefined);
+    const deliveryText = f.report.delivery_text ?? f.writeLast?.text ?? (lastFile && !f.stale?.some(r => r.file === lastFile) && existsSync(lastFile) ? readFileSync(lastFile, 'utf8') : undefined);
     // The run has ended, so the branch HEAD now is the revision it delivered. A report that leaves the field out gets it from git
     // instead of a bounce for one line (`revision_is_head` still catches a revision that is not HEAD).
     if (!f.report.revision && worktree) {

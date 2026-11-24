@@ -97,6 +97,32 @@ test('finish binds reports to the current run and only inherits files from a res
   }
 });
 
+test('a finish collected before the next run cannot close that run or attach its delivery', () => {
+  const { orders, project } = fixture();
+  orders.runStart('T1', { worker: 'demo', extra: { pid: 42, log: 'r1.log' } });
+  const block = '--- alba-report ---\n{"run":"r1","status":"ready","summary":"Done"}\n--- end ---';
+  const finish = findFinishes(project, orders, probes({ tail: () => block }))[0];
+  assert.equal(finish.report?.status, 'ready');
+  orders.runEnd('T1', 'cancelled');
+  orders.runStart('T1', { worker: 'demo' });
+  applyFinish(orders, finish);
+  assert.equal(orders.get('T1').runs.at(-1)?.ended, undefined);
+  assert.deepEqual(orders.get('T1').reports, []);
+});
+
+test('a stale final log block follows missing-report handling', () => {
+  const { orders, project } = fixture();
+  orders.runStart('T1', { worker: 'demo' });
+  orders.runEnd('T1', 'capacity');
+  orders.runStart('T1', { worker: 'demo', extra: { pid: 42, log: 'r2.log' } });
+  const block = '--- alba-report ---\n{"run":"r1","status":"ready","summary":"Done"}\n--- end ---';
+  const finish = findFinishes(project, orders, probes({ tail: () => block }))[0];
+  applyFinish(orders, finish);
+  assert.equal(finish.missing_report, true);
+  assert.equal(orders.get('T1').reports.some(r => r.status === 'ready'), false);
+  assert.equal(orders.store.events({ tag: 'T1' }).find(e => e.type === 'stale-report')?.data?.file, 'r2.log');
+});
+
 test('transient errors are recognised and backed off 1, 5, 15 minutes, three times', () => {
   for (const line of ['ERROR: model at capacity, please retry', 'unexpected status 429 Too Many Requests', 'HTTP 503 Service Unavailable', 'stream disconnected before completion', 'read ECONNRESET', 'Reconnecting... 3/5'])
     assert.ok(isTransientError(line), line);

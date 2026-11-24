@@ -120,10 +120,7 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
       const toolRun = doc.runs.find(r => r.ended === undefined && !r.imported);
       const sent = dispatchedAt(project, tag, names);
       if (known) { /* already recorded */ }
-      else if (toolRun) skip(file, t('run {run} started by this tool is still open; the tick records its end', { run: toolRun.id }));
       else if (!OPEN_FOR_DELIVERY.includes(stage)) skip(file, t('the order is {stage}; a delivery file from an earlier round is not taken as news', { stage }));
-      else if (!sinceAction(lastTime)) skip(file, t('older than the last queue or rework action'));
-      else if (sent && sent > lastTime) skip(file, t('older than the order file or prompt that sent it out; it belongs to an earlier round'));
       else {
         const text = readFileSync(path.join(dir, file), 'utf8');
         const { report, why } = readDelivery(text);
@@ -135,7 +132,10 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
           if (!options.dryRun && !orders.store.events({ tag }).some(e => e.type === 'stale-report' && e.data?.file === rejected.file && e.data?.modified === lastTime && e.data?.run === target.id && e.data?.namedRun === rejected.namedRun)) {
             orders.record(tag, 'stale-report', rejected);
           }
-        } else {
+        } else if (toolRun) skip(file, t('run {run} started by this tool is still open; the tick records its end', { run: toolRun.id }));
+        else if (!sinceAction(lastTime)) skip(file, t('older than the last queue or rework action'));
+        else if (sent && sent > lastTime) skip(file, t('older than the order file or prompt that sent it out; it belongs to an earlier round'));
+        else {
           if (why) result.skipped.push({ tag, file, why: t('the report block is not valid ({why}); recorded as inferred', { why }) });
           change(t('delivered at {time}: {status} ({how}) {summary}', { time: lastTime, status: report.status, how: report.source === 'inferred' ? t('inferred from the first line') : t('report block'), summary: report.summary }));
           delivered = report.status;
@@ -143,8 +143,7 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
             const when = at(lastTime);
             const lastFile = path.join(dir, file).replace(/\\/g, '/');
             if (!open) when.runStart(tag, { worker: doc.order.worker?.trim() || 'unknown', extra: { last_file: lastFile } }, true);
-            // An imported run that was open since the table was read cannot have started after the delivery.
-            else when.patchRun(tag, open.id, { last_file: lastFile, ...(open.started > lastTime ? { started: lastTime } : {}) });
+            else when.patchRun(tag, open.id, { last_file: lastFile });
             when.runEnd(tag, 'completed');
             when.report(tag, { ...report, ...(hasDeliveryChecks(project.checks) ? { delivery_text: text } : {}) }, file, true);
             lintDelivery(project, orders, tag);
