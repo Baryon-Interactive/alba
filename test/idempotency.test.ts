@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { loadProject, type ProjectConfig } from '../src/config.ts';
 import { closeStateStores, stateStore } from '../src/orders/backend.ts';
 import { Orders } from '../src/orders/service.ts';
-import { claimIdempotency, bodyHashOf, IDEMPOTENCY_TTL_MS } from '../src/api/idempotency.ts';
+import { claimIdempotency, clearForeignClaims, completeIdempotency, releaseIdempotency, bodyHashOf, IDEMPOTENCY_TTL_MS } from '../src/api/idempotency.ts';
 import { startServer } from '../src/web/server.ts';
 import type { Probes } from '../src/tick/gather.ts';
 
@@ -59,7 +59,7 @@ async function withServer(backend: 'sqlite' | 'files', fn: (ctx: {
 }) => Promise<void>) {
   const env = makeProject(backend);
   let now = new Date('2026-06-15T10:00:00.000Z');
-  const server = startServer({ projects: [env.project], port: 0, probes: fakeProbes(() => now), background: false });
+  const server = startServer({ instanceId: 'current', projects: [env.project], port: 0, probes: fakeProbes(() => now), background: false });
   await new Promise<void>(resolve => server.once('listening', resolve));
   const port = (server.address() as { port: number }).port;
   const base = `http://127.0.0.1:${port}`;
@@ -72,6 +72,29 @@ async function withServer(backend: 'sqlite' | 'files', fn: (ctx: {
 }
 
 for (const backend of ['sqlite', 'files'] as const) {
+  test(`startup clears foreign claims and late handlers cannot overwrite reclaimed keys (${backend})`, () => {
+    const env = makeProject(backend);
+    try {
+      const store = stateStore(env.project);
+      const request = { key: 'pending', method: 'POST', route: '/demo', bodyHash: 'demo', now: new Date(0), instanceId: 'previous' };
+      assert.equal(claimIdempotency(store, request).outcome, 'claimed');
+      clearForeignClaims(store, 'current');
+      // Using the original owner here distinguishes startup cleanup from claim-time reclamation.
+      assert.equal(claimIdempotency(store, request).outcome, 'claimed');
+      request.instanceId = 'current';
+      const current = claimIdempotency(store, request);
+      assert.ok(current.outcome === 'claimed');
+      clearForeignClaims(store, 'current');
+      request.now = new Date(599_999);
+      assert.equal(claimIdempotency(store, request).outcome, 'in_progress');
+      request.now = new Date(600_000);
+      assert.equal(claimIdempotency(store, request).outcome, 'claimed');
+      completeIdempotency(store, request.key, current.owner, 200, '{}', request.now);
+      releaseIdempotency(store, request.key, current.owner);
+      assert.equal(claimIdempotency(store, request).outcome, 'in_progress');
+    } finally { env.cleanup(); }
+  });
+
   test(`idempotency replay, mismatch, in-progress, expiry, and no-header (${backend})`, async () => {
     await withServer(backend, async ({ base, project, setNow, getNow }) => {
       const orders = new Orders(stateStore(project), () => getNow().toISOString(), 'cli');
@@ -127,7 +150,7 @@ for (const backend of ['sqlite', 'files'] as const) {
       // 4. In-progress request under the same key returns 409 request_in_progress
       const inProgBody = { project: 'demo', action: 'hold', note: 'busy' };
       const claimed = claimIdempotency(stateStore(project), {
-        key: 'in-prog-1',
+        key: 'in-prog-1', instanceId: 'current',
         method: 'POST',
         route: '/api/orders/T2/actions',
         bodyHash: bodyHashOf(inProgBody),

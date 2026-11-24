@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { admit, credentialOf, formToken, fromOtherSite, keyFile, newKey, safeNext, sameSecret, Sessions } from './auth.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -48,6 +48,7 @@ export interface ServerOptions {
   /** Internal renderer mode for the read worker: no listener or refresh timer. */
   listen?: boolean;
   writeToken?: string;
+  instanceId?: string;
   /** Ask for the key (or a browser session from /login) on every /api and /legacy request. Off by default: the board answers only
    *  on 127.0.0.1 and refuses pages of other sites, which is enough on one person's machine. */
   signIn?: boolean;
@@ -307,6 +308,7 @@ export function createBoard(options: ServerOptions): Board {
     resolveLog: (project, key) => resolveLogOf(options.projects, project, key),
   });
   const ctx: ApiContext = {
+    instanceId: options.instanceId ?? randomUUID(),
     projects: options.projects, workers: options.workers, probes: options.probes, slow, token, extraOrigins: options.extraOrigins ?? [],
     get revision() { return revision; },
     snapshot, peek: () => caches.get(currentLang())?.snap, readings: () => latest.get(currentLang()), invalidate, hub, version: options.version ?? '0', loop: options.loop, eventLoopDelay: delay.read,

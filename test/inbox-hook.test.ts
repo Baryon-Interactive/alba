@@ -321,6 +321,7 @@ test('message states: sent, delivered (hook/steer), read by ack, read by later a
   const hub = new Hub([], { ringSize: 16, resolveLog: () => undefined });
   try {
     await handleApi({
+      instanceId: 'fixture',
       projects: [project],
       workers,
       probes,

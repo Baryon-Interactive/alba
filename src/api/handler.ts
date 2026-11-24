@@ -90,7 +90,7 @@ import { pluginsView } from '../plugins/view.ts';
 import { libraryGet, libraryPost } from './library.ts';
 import { overviewAll, overviewProject } from './overview-all.ts';
 import { sendBody, sendJson } from '../web/response.ts';
-import { bodyHashOf, claimIdempotency, completeIdempotency, IDEMPOTENCY_KEY_RE, MUTATING_METHODS, releaseIdempotency } from './idempotency.ts';
+import { type ClaimOwner, bodyHashOf, claimIdempotency, completeIdempotency, IDEMPOTENCY_KEY_RE, MUTATING_METHODS, releaseIdempotency } from './idempotency.ts';
 import { readOrders } from './read-orders.ts';
 import type { Hub } from './hub.ts';
 import { transcriptRuns } from '../run/transcript.ts';
@@ -115,6 +115,7 @@ export class ApiFailure extends Error {
 }
 
 export interface ApiContext {
+  instanceId: string;
   projects: ProjectConfig[];
   workers?: WorkersFile;
   probes: Probes;
@@ -256,7 +257,7 @@ export function langOf(req: IncomingMessage, url: URL): Lang {
 
 export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: ServerResponse, url: URL, port: number): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
-  let claimed: { store: import('../orders/store.ts').OrderStore; key: string } | undefined;
+  let claimed: { store: import('../orders/store.ts').OrderStore; key: string; owner: ClaimOwner } | undefined;
   try {
     await withLang(langOf(req, url), async () => {
       const rawKey = req.headers['idempotency-key'];
@@ -273,7 +274,7 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
         if (project) {
           const store = stateStore(project);
           const claim = claimIdempotency(store, {
-            key: headerKey,
+            key: headerKey, instanceId: ctx.instanceId,
             method,
             route: url.pathname,
             bodyHash: bodyHashOf(body),
@@ -295,7 +296,7 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
             });
             return;
           }
-          claimed = { store, key: headerKey };
+          claimed = { store, key: headerKey, owner: claim.owner };
           capturedResponses.set(res, null);
         }
       }
@@ -304,9 +305,9 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
     if (claimed) {
       const captured = capturedResponses.get(res);
       if (captured && captured.status < 500) {
-        completeIdempotency(claimed.store, claimed.key, captured.status, captured.body, ctx.probes.now());
+        completeIdempotency(claimed.store, claimed.key, claimed.owner, captured.status, captured.body, ctx.probes.now());
       } else {
-        releaseIdempotency(claimed.store, claimed.key);
+        releaseIdempotency(claimed.store, claimed.key, claimed.owner);
       }
     }
   } catch (e) {
@@ -314,9 +315,9 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
     const payload = { error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } } satisfies A.ApiError;
     if (claimed) {
       if (failure.status < 500) {
-        completeIdempotency(claimed.store, claimed.key, failure.status, JSON.stringify(payload), ctx.probes.now());
+        completeIdempotency(claimed.store, claimed.key, claimed.owner, failure.status, JSON.stringify(payload), ctx.probes.now());
       } else {
-        releaseIdempotency(claimed.store, claimed.key);
+        releaseIdempotency(claimed.store, claimed.key, claimed.owner);
       }
     }
     if (res.headersSent) return void res.end();

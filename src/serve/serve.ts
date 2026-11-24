@@ -13,6 +13,8 @@ import type * as A from '../api/types.ts';
 import { newFleetLock } from './fleet.ts';
 import { createNotifier } from '../notify/notifier.ts';
 import { scrubSecrets } from '../notify/channels.ts';
+import { randomUUID } from 'node:crypto';
+import { clearForeignClaims } from '../api/idempotency.ts';
 import { initializeAttentionBaseline } from '../orders/attention-store.ts';
 import { Orders } from '../orders/service.ts';
 import { stateStore, closeStateStores } from '../orders/backend.ts';
@@ -27,6 +29,7 @@ export interface StartedServe extends Serve {
 
 /** HTTP/SSE stay here; the persistent worker owns ticks, finish checks, file polling and the producer session. */
 export function startServe(options: ServeOptions): StartedServe {
+  const instanceId = randomUUID();
   const startedAt = new Date().toISOString();
   const lockReleases: LockRelease[] = [];
   const releases: (() => void)[] = [];
@@ -37,7 +40,11 @@ export function startServe(options: ServeOptions): StartedServe {
       lockReleases.push(rel);
       releases.push(rel);
     }
-    for (const project of options.projects) initializeAttentionBaseline(stateStore(project), options.probes.now());
+    for (const project of options.projects) {
+      const store = stateStore(project);
+      initializeAttentionBaseline(store, options.probes.now());
+      clearForeignClaims(store, instanceId);
+    }
   } catch (error) { unlock(); throw error; }
 
   let exitRecorded = false;
@@ -59,7 +66,7 @@ export function startServe(options: ServeOptions): StartedServe {
 
   const background = options.probes === systemProbes || !!options.probesModule;
   let board: ReturnType<typeof createBoard>;
-  try { board = createBoard({ ...options, background }); } catch (error) { cleanupCrash(); unlock(); throw error; }
+  try { board = createBoard({ ...options, background, instanceId }); } catch (error) { cleanupCrash(); unlock(); throw error; }
 
   const notifier = createNotifier({
     projects: options.projects,
