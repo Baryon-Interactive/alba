@@ -12,6 +12,7 @@ import { Empty, ErrorBox, PageHeader, Section } from '@/components/common';
 import { quoteStateText, quoteStateTone, spentPercent } from '@/lib/library';
 import { ago, dateTime } from '@/lib/format';
 import { errorText, useApproveSpend, useCredits, useProjectId, useSpend } from '@/lib/queries';
+import { UnknownTotal } from '@/components/common';
 import { t } from '@/i18n';
 
 const money = (n: number | null | undefined): string => (n === null ? t('unknown') : n === undefined ? '–' : String(n));
@@ -114,7 +115,7 @@ export function SpendPage() {
   const project = useProjectId();
   const q = useSpend(project);
   const own = useCredits(project);
-  if (q.isError) return <ErrorBox error={q.error} />;
+  if (q.isError) return <UnknownTotal error={q.error} />;
   if (!q.data) return <div className="grid gap-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-64" /></div>;
   const d = q.data;
   const ownQuotes = own.data?.items ?? [];
@@ -137,12 +138,13 @@ export function SpendPage() {
         </details>
       )}
       {d.quotes.length > 0 && <Section title={t('Quote files')} count={d.quotes.length}><div className="grid gap-3">{d.quotes.map(x => <QuoteFile key={x.file} project={project} q={x} />)}</div></Section>}
-      {ownQuotes.length > 0 && (
+      {own.isError && <UnknownTotal error={own.error} />}
+      {!own.isError && ownQuotes.length > 0 && (
         <Section title={t('Quotes on orders')} count={ownQuotes.length}>
           <div className="grid gap-3">{ownQuotes.map(x => <QuoteCard key={x.tag + x.id} project={project} quote={x} />)}</div>
         </Section>
       )}
-      {d.enabled && d.quotes.length === 0 && ownQuotes.length === 0 && d.unreadable.length === 0 && <Empty>{t('No quotes yet.')}</Empty>}
+      {own.isSuccess && d.enabled && d.quotes.length === 0 && ownQuotes.length === 0 && d.unreadable.length === 0 && <Empty>{t('No quotes yet.')}</Empty>}
     </div>
   );
 }

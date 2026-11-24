@@ -3,7 +3,6 @@ import { UsageTile } from '@/components/Usage';
 import type { ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { OverviewAll, OverviewDay, Worker } from '@api';
-import { ErrorBox } from '@/components/common';
 import { Skeleton } from '@/components/ui/misc';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useOverviewAll } from '@/lib/queries';
@@ -12,6 +11,7 @@ import { monitorResultLabel, stepText } from '@/lib/monitoring';
 import { stageLabel } from '@/lib/stages';
 import { attentionLabel, attentionPath, attentionProjects, mergeTotal, orderPath, OVERVIEW_CAPS as CAPS, projectPath, STAGE_ORDER } from '@/lib/overview';
 import { cn } from '@/lib/utils';
+import { UnknownTotal, SectionBoundary } from '@/components/common';
 import { t } from '@/i18n';
 import { LiveCommand } from '@/components/LivePanel';
 import { SERIES_COLORS } from '@/lib/palette';
@@ -26,7 +26,7 @@ function More({ n, to }: { n: number; to: string }) {
   return n > 0 ? <Link className="overview-more" to={to}>{t('+{n} more', { n })}</Link> : null;
 }
 function Panel({ title, to, count, className, children }: { title: string; to: string; count?: number; className?: string; children: ReactNode }) {
-  return <section className={cn('overview-panel', className)}><div className="overview-panel-heading"><Link to={to}>{title}</Link>{count !== undefined && <Link className="text-xs text-muted-foreground tabular-nums" to={to}>{count}</Link>}</div><div className="overview-panel-body">{children}</div></section>;
+  return <section className={cn('overview-panel', className)}><div className="overview-panel-heading"><Link to={to}>{title}</Link>{count !== undefined && <Link className="text-xs text-muted-foreground tabular-nums" to={to}>{count}</Link>}</div><div className="overview-panel-body"><SectionBoundary title={title}>{children}</SectionBoundary></div></section>;
 }
 function LiveRows({ o, cap }: { o: OverviewAll; cap: number }) {
   return <>{o.live.items.slice(0, cap).map(r => <div className="overview-row scanline" key={`${r.project}:${r.tag}`}>
@@ -100,7 +100,7 @@ function greeting(at: string): string {
 export function OverviewPage() {
   const q = useOverviewAll();
   const [params, setParams] = useSearchParams();
-  if (q.isError) return <ErrorBox error={q.error} />;
+  if (q.isError) return <UnknownTotal error={q.error} />;
   if (!q.data) return <Skeleton className="h-96" />;
   const o = q.data;
   const selected = o.attention.find(g => g.kind === params.get('attention'));
@@ -110,7 +110,7 @@ export function OverviewPage() {
         const projects = attentionProjects(g);
         return <Link key={g.kind} className={cn('overview-chip', g.problem ? 'bg-destructive/10 text-destructive' : 'bg-warning/12 text-warning')} to={projects.length === 1 ? projectPath(projects[0]) : `/?attention=${encodeURIComponent(g.kind)}`}>{attentionLabel(g.kind)} <strong>{g.count}</strong></Link>;
       }) : <span className="text-sm text-success">✓ {t('Nothing needs you')}</span>}</div>
-      <UsageTile data={o.usage} />
+      <SectionBoundary title={t('Usage')}><UsageTile data={o.usage} /></SectionBoundary>
       {o.live.items.length > 0 && <Panel title={t('Live runs')} count={o.live.count} to={full('live')} className="overview-live"><LiveRows o={o} cap={CAPS.live} /></Panel>}
       {o.projects.length > 0 && <Panel title={t('Projects')} count={o.projects.length} to={full('projects')} className="overview-projects"><ProjectRows o={o} cap={CAPS.projects} /></Panel>}
       {o.workers.items.length > 0 && <Panel title={t('Workers and quota')} count={o.workers.count} to={full('workers')} className="overview-workers"><Workers o={o} cap={CAPS.workers} /></Panel>}
@@ -126,7 +126,7 @@ export function OverviewListPage() {
   const q = useOverviewAll();
   const { list } = useParams();
   const [params] = useSearchParams();
-  if (q.isError) return <ErrorBox error={q.error} />;
+  if (q.isError) return <UnknownTotal error={q.error} />;
   if (!q.data) return <Skeleton className="h-96" />;
   const o = q.data;
   return <div className="mx-auto max-w-5xl"><Link to="/" className="mb-4 block text-sm text-primary">← {t('Overview')}</Link>

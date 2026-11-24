@@ -26,6 +26,9 @@ import { draftKey, hasDraft } from '@/lib/drafts';
 import { errorText, useAct, useOrder, useOrders, useProjectId, useRoute } from '@/lib/queries';
 import { actionExplain, actionLabel, stageLabel, visibleActions, waitingFor } from '@/lib/stages';
 import { ago, dateTime, duration } from '@/lib/format';
+import { useSeenWhilePresent, MuteMenu } from '@/components/OrderAttention';
+import { RunStatus } from '@/components/RunStatus';
+import { SectionBoundary } from '@/components/common';
 import { t } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { statusColor } from '@/components/StatusPalette';
@@ -297,6 +300,7 @@ export function OrderPage() {
   const [params, setParams] = useSearchParams();
   const [closing, setClosing] = useState(false);
   const q = useOrder(project, tag);
+  useSeenWhilePresent(project, tag, q.data);
   const { hash } = useLocation();
   useEffect(() => {
     if (!q.data || !hash) return;
@@ -323,7 +327,8 @@ export function OrderPage() {
       <div className="mb-1 text-xs text-muted-foreground"><Link className="hover:underline" to={`/p/${encodeURIComponent(project)}/board`}>{t('Board')}</Link> / {d.order.tag}</div>
       <div className="relative mb-5 flex flex-wrap items-start justify-between gap-3 overflow-hidden rounded-2xl border bg-card px-5 pt-5 pb-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)]" style={{ '--stage': statusColor(d.stage) } as React.CSSProperties}>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold text-muted-foreground">{d.order.tag}</span><StageBadge stage={d.stage} waitingFor={d.waitingFor} />{watchHref && <Link className="text-xs font-medium text-primary hover:underline" to={watchHref}>{t('Watch')}</Link>}{d.order.review === 'manual' && <Badge tone="warning">{t('Manual review')}</Badge>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold text-muted-foreground">{d.order.tag}</span><RunStatus {...currentRunning} /><StageBadge stage={d.stage} waitingFor={d.waitingFor} />{watchHref && <Link className="text-xs font-medium text-primary hover:underline" to={watchHref}>{t('Watch')}</Link>}{d.order.review === 'manual' && <Badge tone="warning">{t('Manual review')}</Badge>}</div>
+          <MuteMenu project={project} tag={tag} muted={d.muted} />
           <h1 className="mt-1.5 text-[24px] leading-tight font-semibold tracking-[-0.02em]">{d.order.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{stageLabel(d.stage, d.waitingFor)} — {d.why}</p>
         </div>
@@ -342,7 +347,7 @@ export function OrderPage() {
       {wanted && wanted !== 'close' && d.actions.includes(wanted) && (
         <ActionDialog project={project} tag={tag} action={wanted} open onOpenChange={o => !o && closeAsk()} context={wanted === 'answer' ? [...d.reports].reverse().find(r => r.question)?.question : undefined} noBranch={!d.order.branch} />
       )}
-      {d.stage === 'awaiting-review' && <MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} />}
+      {d.stage === 'awaiting-review' && <SectionBoundary title={t('Review')}><MergeReadinessSection project={project} tag={tag} enabled={!!d.order.branch} /></SectionBoundary>}
       <Tabs value={tab} onValueChange={v => setParams(p => { const n = new URLSearchParams(p); n.set('tab', v); return n; }, { replace: true })}>
         <TabsList>
           <TabsTrigger value="overview">{t('Overview')}</TabsTrigger>
@@ -352,8 +357,8 @@ export function OrderPage() {
           <TabsTrigger value="evidence">{t('Evidence')}</TabsTrigger>
           <TabsTrigger value="review">{t('Review')}{hasDraft(draftKey(project, tag)) && <Badge tone="warning">{t('Draft (unsent)')}</Badge>}</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview"><Overview project={project} d={d} /></TabsContent>
-        <TabsContent value="runs">
+        <TabsContent value="overview"><SectionBoundary title={t('Overview')}><Overview project={project} d={d} /></SectionBoundary></TabsContent>
+        <TabsContent value="runs"><SectionBoundary title={t('Runs')}>
           {d.runs.length === 0 ? <Empty>{t('No runs yet.')}</Empty> : (
             <Card className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -362,15 +367,15 @@ export function OrderPage() {
               </table>
             </Card>
           )}
-        </TabsContent>
-        <TabsContent value="timeline"><Timeline d={d} /></TabsContent>
-        <TabsContent value="check"><CheckPanel project={project} detail={d} /></TabsContent>
-        <TabsContent value="evidence">{tab === 'evidence' && <EvidencePanel project={project} tag={tag} />}</TabsContent>
-        <TabsContent value="review">
+        </SectionBoundary></TabsContent>
+        <TabsContent value="timeline"><SectionBoundary title={t('Timeline')}><Timeline d={d} /></SectionBoundary></TabsContent>
+        <TabsContent value="check"><SectionBoundary title={t('Check')}><CheckPanel project={project} detail={d} /></SectionBoundary></TabsContent>
+        <TabsContent value="evidence"><SectionBoundary title={t('Evidence')}>{tab === 'evidence' && <EvidencePanel project={project} tag={tag} />}</SectionBoundary></TabsContent>
+        <TabsContent value="review"><SectionBoundary title={t('Review')}>
           {tab === 'review' && (hasDiff
             ? <Suspense fallback={<Skeleton className="h-64" />}><ReviewPanel project={project} detail={d} /></Suspense>
             : <Empty>{t('This order has no branch to review yet.')}</Empty>)}
-        </TabsContent>
+        </SectionBoundary></TabsContent>
       </Tabs>
     </div>
   );

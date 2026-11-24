@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Activity, BookOpen, Bell, Factory, Coins, Eraser, Images, Palette, Menu as MenuIcon, Scale, ChevronsUpDown, Command, Cpu, KanbanSquare, Languages, Moon, Play, Plus, Puzzle, Route, Sparkles, Sun, Timer, Check, Files, Wrench } from 'lucide-react';
@@ -9,7 +9,11 @@ import { useNarrow } from '@/lib/media';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip, TooltipProvider } from '@/components/ui/misc';
 import { CommandPalette } from '@/components/CommandPalette';
 import { groupNeedsYou, needsTotal } from '@/lib/needs';
-import { useOverview, useProjectId, useProjects, useSession } from '@/lib/queries';
+import { BrowserNotifications } from './BrowserNotifications';
+import { preferences } from '@/lib/notifications';
+import { ProjectOrders } from './OrderAttention';
+import { presence, tabTitle } from '@/lib/presence';
+import { useOrders, useOverview, useProjectId, useProjects, useSession } from '@/lib/queries';
 import { openStream, type StreamState } from '@/lib/stream';
 import { setTheme, useTheme } from '@/lib/theme';
 import { setMotion, useReducedMotion } from '@/components/motion';
@@ -29,6 +33,11 @@ export function Shell() {
   const projects = useProjects();
   const session = useSession();
   const overview = useOverview(project);
+  const orders = useOrders(project);
+  const byTag = useMemo(() => new Map(orders.data?.items.map(o => [o.tag, o])), [orders.data]);
+  const unread = orders.data?.items.filter(o => o.unread).length ?? 0;
+  useEffect(() => { document.title = tabTitle(unread); return () => { document.title = 'Alba'; }; }, [unread]);
+  useEffect(() => presence.listen(), []);
   const theme = useTheme();
   const still = useReducedMotion();
   const [stream, setStream] = useState<StreamState>('connecting');
@@ -45,7 +54,7 @@ export function Shell() {
     if (!ids.length) return;
     setStream('connecting');
     const states = new Map(ids.map(id => [id, 'connecting' as StreamState]));
-    const handles = ids.map(id => openStream({ project: id, client, onState: state => {
+    const handles = ids.map(id => openStream({ project: id, client, backgroundOrders: () => id === project && (preferences().notify || preferences().sound), onState: state => {
       states.set(id, state);
       setStream([...states.values()].every(s => s === 'live') ? 'live' : 'reconnecting');
     } }));
@@ -73,7 +82,7 @@ export function Shell() {
     { to: base, end: true, icon: Activity, group: 'work', label: t('Overview') },
     { to: `${base}/needs`, end: true, icon: Bell, group: 'work', label: t('Needs you'), badge: needs },
     { to: `${base}/producer`, end: true, icon: Factory, group: 'work', label: t('Producer') },
-    { to: `${base}/board`, icon: KanbanSquare, group: 'work', label: t('Board') },
+    { to: `${base}/board`, icon: KanbanSquare, group: 'work', label: t('Board'), badge: unread },
     { to: `${base}/runs`, icon: Activity, group: 'work', label: t('Runs') },
     { to: `${base}/usage`, icon: Activity, group: 'resources', label: t('Usage') },
     { to: `${base}/roles`, icon: Route, group: 'resources', label: t('Routing') },
@@ -189,6 +198,7 @@ export function Shell() {
                 <span className="hidden sm:inline">{stream === 'live' ? t('Live') : stream === 'connecting' ? t('Connecting…') : t('Reconnecting…')}</span>
               </span>
             </Tip>
+            <BrowserNotifications project={project} orders={orders.data?.items} />
             <Tip text={t('Switch language')}>
               <Button variant="ghost" size="icon" onClick={() => setLang(getLang() === 'zh' ? 'en' : 'zh')} aria-label={t('Switch language')}><Languages /></Button>
             </Tip>
@@ -201,7 +211,7 @@ export function Shell() {
           </header>
           <main className={`min-h-0 flex-1 ${producerWorkspace ? 'overflow-hidden' : 'overflow-auto'}`}>
             <div key={location.pathname.split('/').slice(0, 5).join('/')} className={`page-enter mx-auto w-full ${fullWidth ? '' : 'max-w-[2200px]'} px-3 py-4 sm:px-8 sm:py-6 ${producerWorkspace ? 'h-full' : ''}`}>
-              <Outlet />
+              <ProjectOrders.Provider value={byTag}><Outlet /></ProjectOrders.Provider>
             </div>
           </main>
         </div>

@@ -1,4 +1,7 @@
+import { attentionState } from './attention.ts';
+import { attentionMarks, type AttentionMark } from '../orders/attention-store.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
+import { computePortBase } from '../run/launch.ts';
 import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { producerNotes } from '../producer/notes.ts';
@@ -60,13 +63,29 @@ export function numberedEvents(events: readonly StoredEvent[]): A.OrderEvent[] {
   return events.map((e, i) => ({ id: i + 1, at: e.at, tag: e.tag, type: e.type, ...(e.by ? { by: e.by } : {}), ...(e.data ? { data: e.data } : {}) }));
 }
 
-export function toRun(run: StoredRun, tag: string, env: ViewEnv): A.Run {
-  const alive = run.pid && run.ended === undefined ? env.probes.isAlive(run.pid) : undefined;
+export function livenessOf(alive: boolean | undefined, quietMinutes?: number): A.Liveness {
+  if (alive === false) return 'gone';
+  if ((quietMinutes ?? 0) < 10) return 'active';
+  return alive === true ? 'quiet' : 'unverifiable';
+}
+
+function observeRun(run: StoredRun | undefined, env: ViewEnv, activity?: OrderActivity) {
+  if (!run || run.ended) return {};
+  const alive = run.pid && !run.host && !env.cachedOnly ? env.probes.isAlive(run.pid) : undefined;
+  const times = [activity?.lastCommitAt, activity?.logAt, activity?.receiptAt, run.imported ? undefined : run.started];
+  const latest = Math.max(...times.map(value => value ? Date.parse(value) : -Infinity).filter(Number.isFinite));
+  const quietMinutes = Number.isFinite(latest) ? Math.max(0, Math.floor((env.probes.now().getTime() - latest) / 60_000)) : undefined;
+  return { alive, quietMinutes, liveness: livenessOf(alive, quietMinutes) };
+}
+
+export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: OrderActivity, dispatch?: ProjectConfig['dispatch']): A.Run {
+  const port = dispatch && run.slot !== undefined ? computePortBase(dispatch, run.slot) : undefined;
+  const observation = observeRun(run, env, activity);
   return {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
     ...(run.ended ? { ended: run.ended } : {}), ...(run.outcome ? { outcome: run.outcome } : {}), ...(run.note ? { note: run.note } : {}),
-    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...(alive !== undefined ? { alive } : {}), ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
+    imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...observation, ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(port !== undefined ? { ports: { first: port, last: port + (dispatch?.port_block || 10) - 1 } } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),
     hasLog: !!run.log && existsSync(run.log), usage: usageOf(run, env.workers?.workers ?? [], env.probes),
     ...(run.role ? { role: run.role, role_source: run.role_source, role_effort: run.role_effort, role_reasoning: run.role_reasoning, mcp_servers: run.mcp_servers, role_warnings: run.role_warnings } : {}),
     ...(run.routing ? { routing: run.routing } : {}), ...(run.skills ? { skills: run.skills } : {}),
@@ -107,19 +126,20 @@ export function monitorViewOf(doc: OrderDoc, stage: Stage): A.MonitorView | unde
   return { spec, started: m.started, deadline: m.deadline, checks: m.checks, ...(m.last_at ? { lastCheckAt: m.last_at } : {}), ...(m.last_result ? { lastResult: m.last_result } : {}), ...(m.tail ? { tail: m.tail } : {}) };
 }
 
-export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport): A.OrderSummary {
+export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: AttentionMark): A.OrderSummary {
   const open = doc.runs.find(r => r.ended === undefined);
-  const newest = open && activity ? [activity.lastCommitAt, open.imported ? undefined : open.started, activity.logAt].filter((x): x is string => !!x).sort().pop() : undefined;
+  const observation = observeRun(open, env, activity);
   const spend = spendOf(doc, env);
   const o = doc.order;
   return {
+    ...attentionState(doc, mark),
     ...(open && liveRuns.peek(open) ? { live: liveRuns.peek(open) } : {}), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}),
     ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
     ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}),
     project: project.id, review: o.review ?? project.review, tag: o.tag, title: o.title, kind: effectiveKind(o), ...(o.heavy ? { heavy: o.heavy } : {}), stage: stage.stage, why: stage.why,
     ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}), ...(o.worker ? { worker: o.worker } : {}), ...(o.tags?.length ? { tags: o.tags } : {}), ...(o.routing ? { routing: toRouting(o.routing) } : {}), needs: o.needs, updated: o.updated, ...(report ? { report: toReport(report) } : {}),
-    ...(open ? { run: { id: open.id, key: runKey(o.tag, open.id), worker: open.worker, started: open.started, imported: !!open.imported, ...(open.pid && !env.cachedOnly ? { alive: env.probes.isAlive(open.pid) } : {}) } } : {}),
-    ...(newest ? { quietMinutes: Math.max(0, Math.round((env.probes.now().getTime() - Date.parse(newest)) / 60000)) } : {}),
+    ...(open ? { run: { id: open.id, key: runKey(o.tag, open.id), worker: open.worker, started: open.started, imported: !!open.imported, alive: observation.alive } } : {}),
+    quietMinutes: observation.quietMinutes, liveness: observation.liveness,
     ...(activity?.openCommand ? { openCommand: activity.openCommand } : {}),
     ...(open && (liveRuns.peek(open)?.plan ?? activity?.progress) ? { progress: liveRuns.peek(open)?.plan ?? activity?.progress } : {}),
     ...(spend ? { spend } : {}), ...(o.uses?.length ? { uses: o.uses } : {}), ...(o.branch ? { branch: o.branch } : {}), ...(monitorViewOf(doc, stage.stage) ? { monitor: monitorViewOf(doc, stage.stage) } : {}), actions: actionsFor(stage.stage, env, stage.waitingFor).allowed,
@@ -130,6 +150,7 @@ export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageRes
 export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSummary[] {
   const docs = view.orders.all();
   const merged = view.orders.mergedSet(docs);
+  const marks = attentionMarks(view.orders.store);
   return docs.map(doc => {
     const stage = view.orders.stage(doc, merged);
     const row = view.rows?.find(r => r.tag === doc.order.tag);
@@ -137,17 +158,19 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
     if (listOnly) {
       const o = doc.order, open = doc.runs.find(r => !r.ended);
       const monitor = monitorViewOf(doc, stage.stage);
-      const newest = open && row?.activity ? [row.activity.lastCommitAt, open.imported ? undefined : open.started, row.activity.logAt].filter((x): x is string => !!x).sort().pop() : undefined;
-      return { ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      const observation = observeRun(open, env, row?.activity);
+      const waitingQuestion = (stage.stage === 'awaiting-user' || stage.stage === 'blocked') && stage.waitingFor !== 'card' && latest?.question
+        ? { text: latest.question, options: latest.options && toOptions(latest.options) } : undefined;
+      return { ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
-        ...(newest ? { quietMinutes: Math.max(0, Math.round((env.probes.now().getTime() - Date.parse(newest)) / 60000)) } : {}), ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
+        quietMinutes: observation.quietMinutes, liveness: observation.liveness, ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
         ...(o.worker ? { worker: o.worker } : {}), ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}), ...(o.branch ? { branch: o.branch } : {}), ...(o.uses?.length ? { uses: o.uses } : {}),
-        ...(open ? { run: { id: open.id, key: runKey(o.tag, open.id), worker: open.worker, started: open.started, imported: !!open.imported } } : {}),
+        ...(open ? { run: { id: open.id, key: runKey(o.tag, open.id), worker: open.worker, started: open.started, imported: !!open.imported, alive: observation.alive } } : {}),
         ...(open && row?.activity?.progress ? { progress: row.activity.progress } : {}),
         ...(monitor ? { monitor: { started: monitor.started, deadline: monitor.deadline, checks: monitor.checks, lastCheckAt: monitor.lastCheckAt, lastResult: monitor.lastResult } } : {}), actions: actionsFor(stage.stage, env, stage.waitingFor).allowed };
     }
-    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined);
+    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks.get(doc.order.tag));
   }).sort((a, b) => (a.tag < b.tag ? -1 : 1));
 }
 
@@ -171,7 +194,7 @@ export function runList(view: View, env: ViewEnv, query: { since?: string; worke
   }
   const page = rows.slice(from, from + query.limit);
   const last = page[page.length - 1];
-  const items = page.map(r => ({ ...toRun(r.run, r.doc.order.tag, env), project: view.config.id, tag: r.doc.order.tag, title: r.doc.order.title, stage: view.orders.stage(r.doc, merged).stage }));
+  const items = page.map(r => ({ ...toRun(r.run, r.doc.order.tag, env, view.rows?.find(row => row.tag === r.doc.order.tag)?.activity, view.config.dispatch), project: view.config.id, tag: r.doc.order.tag, title: r.doc.order.title, stage: view.orders.stage(r.doc, merged).stage }));
   return { project: view.config.id, count: items.length, items, ...(page.length === query.limit && from + query.limit < rows.length && last ? { next: `${last.started}|${last.key}` } : {}) };
 }
 
@@ -317,6 +340,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const nudge = open ? readNudges(view.config)[nudgeKey(o.tag, open.id)] : undefined;
   const firstPass = currentFirstPass(view.orders, doc);
   return {
+    ...attentionState(doc, attentionMarks(view.orders.store).get(o.tag)),
     producerNotes: { project: producerNotes(view.config), order: producerNotes(view.config, o.tag) },
     ...(doc.reroutes?.length ? { reroutes: doc.reroutes.slice(-10).map(r => ({ id: r.id, at: r.at, from: r.from, to: r.to, note: r.note, brief: doc.runs.find(run => run.reroute === r.id)?.previous_attempts ?? r.brief })) } : {}),
     project: view.config.id,
@@ -330,7 +354,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
     stage: stage.stage, why: stage.why, ...(stage.waitingFor ? { waitingFor: stage.waitingFor } : {}),
     needsStatus: o.needs.map(n => { try { return { tag: n, stage: view.orders.stage(view.orders.get(n), merged).stage }; } catch { return { tag: n }; } }),
     actions: actions.allowed, unavailable: actions.unavailable,
-    runs: doc.runs.map(r => toRun(r, o.tag, env)), reports: doc.reports.map(toReport),
+    runs: doc.runs.map(r => toRun(r, o.tag, env, row?.activity, view.config.dispatch)), reports: doc.reports.map(toReport),
     referencedDecisions: referencedDecisions(view.config, doc, file?.markdown), questions: (doc.questions ?? []).map(toQuestion), quotes: (doc.quotes ?? []).map(q => toQuote(view.config.id, o.tag, q)), lessons: lessonsForOrder(view.config, doc),
     decisions: doc.actions.map(a => ({ seq: a.seq, at: a.at, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.imported ? { imported: true } : {}), ...(a.override ? { override: true } : {}) })),
     ...(check ? { lastCheck: check } : {}), ...(deliveryLint ? { deliveryLint } : {}), ...(verify ? { verify } : {}), ...(spend ? { spend } : {}),

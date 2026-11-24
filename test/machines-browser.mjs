@@ -1,4 +1,4 @@
-import { zh } from '../ui/src/i18n/zh.ts';
+import { DevTools, until } from './browser-devtools.mjs';
 import { machinesZh } from '../ui/src/i18n/machines.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -13,26 +13,7 @@ import { systemProbes } from '../src/tick/gather.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 
 if (!process.env.ALBA_BROWSER) { console.log('Skipped: ALBA_BROWSER is unset.'); process.exit(0); }
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function until(fn, label) {
-  const end = Date.now() + 20000;
-  while (Date.now() < end) { if (await fn()) return; await pause(80); }
-  throw new Error(`Timed out: ${label}`);
-}
-class DevTools {
-  id = 0; pending = new Map(); errors = [];
-  async connect(url) {
-    this.socket = new WebSocket(url);
-    this.socket.onmessage = event => {
-      const message = JSON.parse(event.data);
-      if (message.id) { const waiter = this.pending.get(message.id); this.pending.delete(message.id); if (message.error) waiter.reject(new Error(JSON.stringify(message.error))); else waiter.resolve(message.result); }
-      if (message.method === 'Runtime.exceptionThrown') this.errors.push(message.params.exceptionDetails.text);
-    };
-    await new Promise((resolve, reject) => { this.socket.onopen = resolve; this.socket.onerror = reject; });
-  }
-  call(method, params = {}) { return new Promise((resolve, reject) => { const id = ++this.id; this.pending.set(id, { resolve, reject }); this.socket.send(JSON.stringify({ id, method, params })); }); }
-  async js(expression) { const result = await this.call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value; }
-}
+
 const evidence = path.resolve('.alba/machines-evidence'); mkdirSync(evidence, { recursive: true });
 const dir = mkdtempSync(path.join(evidence, 'fixture-'));
 const project = loadProject(projectDir(dir, 'machines: machines.yaml\n'));
@@ -41,11 +22,11 @@ writeFileSync(project.machines, stringify({ machines: [
   { id: 'sim-linux', name: 'Simulation box', os: 'linux', connect: { ssh: 'sim-linux' }, roles: ['sim'], services: [{ id: 'gateway', check: { process: 'model-gateway' }, start_hint: 'Start the model gateway.' }] },
 ] }));
 let now = new Date(Date.now() - 12 * 3600000), free = 24;
-const probes = { ...systemProbes, now: () => now, runCommand: argv => {
+const probes = { ...systemProbes, now: () => now, runCommandAsync: async argv => {
   if (argv.includes('sim-linux')) throw new Error('Unreachable synthetic machine.');
   return JSON.stringify({ free_mem_gb: free, total_mem_gb: 64, load: 0.25, uptime_seconds: 7200, disks: [{ mount: 'system', free_gb: 60, total_gb: 200 }], services: [{ id: 'compile-agent', up: false }] });
 }, worktrees: () => [], freeRamGb: () => 32 };
-for (let i = 0; i < 13; i++) { free = 24 + i % 4; probeMachines(project, probes, { force: true }); now = new Date(now.getTime() + 3600000); }
+for (let i = 0; i < 13; i++) { free = 24 + i % 4; await probeMachines(project, probes, { force: true }); now = new Date(now.getTime() + 3600000); }
 now = new Date();
 const workers = validateWorkers({ workers: [{ id: 'sample-worker', engine: 'fake' }] }, path.join(dir, 'workers.yaml'));
 const board = createBoard({ projects: [project], workers, probes, port: 0, uiDir: path.resolve('ui/dist'), hubCheckMs: 100000 });
@@ -68,7 +49,7 @@ try {
   await cdp.call('Page.navigate', { url: `${base}/login?key=${board.ctx.token}&next=${encodeURIComponent('/p/demo/machines')}` });
   for (const lang of ['en', 'zh']) {
     if (lang === 'zh') { await cdp.js("localStorage.setItem('alba-lang','zh')"); await cdp.call('Page.reload'); }
-    await until(() => cdp.js(`document.querySelectorAll('[data-machine]').length===2&&document.querySelector('h1')?.textContent.includes(${JSON.stringify(lang === 'en' ? 'Machines' : zh['Machines'])})`), `${lang} page`);
+    await until(() => cdp.js(`document.querySelectorAll('[data-machine]').length===2&&document.querySelector('h1')?.textContent.includes(${JSON.stringify(lang === 'en' ? 'Machines' : machinesZh['Machines'])})`), `${lang} page`);
     assert.ok(await cdp.js(`document.body.innerText.includes(${JSON.stringify(lang === 'en' ? 'Unreachable' : machinesZh['Unreachable'])})&&document.body.innerText.includes(${JSON.stringify(lang === 'en' ? 'Down' : machinesZh['Down'])})`));
     assert.ok(await cdp.js("document.querySelector('[data-machine=build-box]').innerText.includes('Open the compile helper application.')"));
     assert.equal(await cdp.js("document.querySelectorAll('[data-memory-history] circle').length"), 13);

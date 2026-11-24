@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -58,7 +59,7 @@ function renderRun(): string {
     createElement(
       MemoryRouter,
       { initialEntries: ['/p/demo/orders/ORD1/runs/r1'] },
-      createElement(Routes, null, createElement(Route, { path: '/p/:project/orders/:tag/runs/:runId', element: createElement(RunPage) })),
+      createElement(Routes, null, createElement(Route, { path: '/p/:project/orders/:tag/runs/:runId', element: createElement(QueryClientProvider, { client: new QueryClient() }, createElement(RunPage)) })),
     ),
   );
 }

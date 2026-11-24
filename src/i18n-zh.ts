@@ -4,6 +4,9 @@
 // A text with no entry here comes back in English.
 
 export const zh: Record<string, string> = {
+  '"muted" must be boolean.': '“muted”必须是布尔值。',
+  '"at" must be a timestamp with a timezone.': '“at”必须是带时区的时间戳。',
+  'Run {id} ended': '派工 {id} 已结束',
   '{file}: "{key}" expects {expected}.': '{file}：“{key}”需要{expected}。',
   'a mapping': '映射',
   'a list': '列表',

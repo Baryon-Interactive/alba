@@ -97,7 +97,7 @@ export function exportState(stateDir: string, outDir: string): StateCounts {
     writeFileAtomic(path.join(outDir, 'quota-history.jsonl'), quota.map(q => JSON.stringify(q) + '\n').join(''));
     for (const row of store.db.prepare('SELECT name, value FROM meta ORDER BY name').all()) {
       const name = row.name as string;
-      const value = name === 'usage' ? store.readMeta(name) : JSON.parse(row.value as string);
+      const value = name === 'usage' || name === 'order-attention' ? store.readMeta(name) : JSON.parse(row.value as string);
       const rel = name.startsWith('file:') ? name.slice(5) : `_${name}.json`;
       const dest = path.resolve(outDir, rel);
       if (path.relative(path.resolve(outDir), dest).startsWith('..') || path.isAbsolute(rel)) fail('Invalid metadata path {file}.', { file: rel });

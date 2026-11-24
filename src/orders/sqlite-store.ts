@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { t } from '../i18n.ts';
+import type { AttentionMark } from './attention-store.ts';
 import type { OrderDoc, OrderEvent } from './model.ts';
 import { StaleWrite, type OrderStore, revisionOf, withRevision, validateTag } from './store.ts';
 import type { QuotaReading } from '../workers/quota.ts';
@@ -54,13 +55,13 @@ export class SqliteStore implements OrderStore {
     if (this.db.prepare('PRAGMA journal_mode').get()?.journal_mode !== 'wal') this.db.exec('PRAGMA journal_mode=WAL');
     const schema = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get();
     const version = schema ? this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version as number | null : undefined;
-    if (version && version > 8) { this.db.close(); throw new Error(t('State schema {version} is newer than this program supports.', { version })); }
-    if (version !== undefined && version !== null && version >= 6 && version <= 8) return;
+    if (version && version > 9) { this.db.close(); throw new Error(t('State schema {version} is newer than this program supports.', { version })); }
+    if (version !== undefined && version !== null && version >= 6 && version <= 9) return;
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
       const current = this.db.prepare('SELECT MAX(version) AS version FROM schema_version').get()?.version as number | null;
-      if (current && current > 8) throw new Error(t('State schema {version} is newer than this program supports.', { version: current }));
+      if (current && current > 9) throw new Error(t('State schema {version} is newer than this program supports.', { version: current }));
       if (!current) {
         this.db.exec(`
           CREATE TABLE orders (tag TEXT PRIMARY KEY, document TEXT NOT NULL, updated TEXT NOT NULL, version INTEGER NOT NULL);
@@ -300,6 +301,27 @@ export class SqliteStore implements OrderStore {
     this.db.prepare('DELETE FROM idempotency_receipts WHERE idempotency_key = ?').run(key);
   }
 
+  ensureAttentionSchema(): void {
+    if (this.hasAttentionSchema()) return;
+    this.transaction(() => {
+      if (this.hasAttentionSchema()) return;
+      this.ensureDesignDocsSchema();
+      this.db.exec(`CREATE TABLE order_attention (tag TEXT PRIMARY KEY, seen_at TEXT, muted INTEGER NOT NULL DEFAULT 0);
+        INSERT OR IGNORE INTO meta(name, value) VALUES ('order-attention', '[]');
+        INSERT INTO schema_version SELECT 9 WHERE COALESCE((SELECT MAX(version) FROM schema_version), 0) < 9`);
+    });
+  }
+
+  attentionRows(): AttentionMark[] {
+    if (!this.hasAttentionSchema()) return [];
+    return this.db.prepare('SELECT tag, seen_at, muted FROM order_attention ORDER BY rowid').all()
+      .map(row => ({ tag: String(row.tag), muted: !!row.muted, ...(typeof row.seen_at === 'string' && { seen_at: row.seen_at }) }));
+  }
+
+  private hasAttentionSchema(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'order_attention'").get();
+  }
+
   counts(): { orders: number; events: number; meta: number; 'quota-history': number } {
     const row = this.db.prepare('SELECT (SELECT COUNT(*) FROM orders) AS orders, (SELECT COUNT(*) FROM events) AS events, (SELECT COUNT(*) FROM meta) AS meta, (SELECT COUNT(*) FROM quota_history) AS quota').get()!;
     return { orders: Number(row.orders), events: Number(row.events), meta: Number(row.meta), 'quota-history': Number(row.quota) };
@@ -393,11 +415,21 @@ export class SqliteStore implements OrderStore {
     return { at: row.at as string, tag: row.tag as string, type: row.type as string, ...(row.by_actor !== null ? { by: row.by_actor as string } : {}), ...(row.data !== null ? { data: JSON.parse(row.data as string) } : {}) };
   }
   readMeta(name: string): unknown {
+    if (name === 'order-attention') return this.attentionRows();
     if (name === 'usage' && this.db.prepare("SELECT name FROM sqlite_master WHERE name = 'usage'").get()) return this.db.prepare('SELECT row FROM usage ORDER BY at, run, turn').all().map(r => JSON.parse(r.row as string));
     const row = this.db.prepare('SELECT value FROM meta WHERE name = ?').get(name);
     return row ? JSON.parse(row.value as string) : undefined;
   }
   writeMeta(name: string, value: unknown): void {
+    if (name === 'order-attention') {
+      this.transaction(() => {
+        this.ensureAttentionSchema();
+        this.db.exec('DELETE FROM order_attention');
+        const put = this.db.prepare('INSERT INTO order_attention(tag, seen_at, muted) VALUES (?, ?, ?)');
+        for (const row of value as AttentionMark[]) put.run(row.tag, row.seen_at ?? null, Number(!!row.muted));
+      });
+      return;
+    }
     if (name === 'usage') {
       this.transaction(() => {
         this.db.exec('DELETE FROM usage');

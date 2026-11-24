@@ -1,3 +1,5 @@
+import { attentionState } from './attention.ts';
+import { attentionMarks, saveAttentionMarks } from '../orders/attention-store.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
 import { hasLegacyRoles, migrateRoles } from '../roles/migrate.ts';
 import { editConfig, EDITABLE, readEditable, type ConfigEdit } from '../config-edit.ts';
@@ -995,6 +997,29 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       return { project: view.config, orders: view.orders, workers: ctx.workers, probes: ctx.probes };
     };
     const done = <T>(status: number, value: T): void => { ctx.invalidate(); json(res, status, value); };
+    if (parts[0] === 'seen' && parts.length === 1) {
+      const tags = strList(body, 'tags');
+      const docs = tags ? [...new Set(tags)].map(tag => view.orders.get(tag)) : view.orders.all();
+      saveAttentionMarks(view.orders.store, docs.flatMap(doc => {
+        const point = attentionState(doc).attention;
+        return point ? [{ tag: doc.order.tag, seen_at: point.at }] : [];
+      }));
+      ctx.hub.publish(view.config.id, 'attention.changed', { project: view.config.id });
+      return done(200, { ok: true });
+    }
+    if (parts[0] === 'orders' && parts.length === 3 && (parts[2] === 'seen' || parts[2] === 'mute')) {
+      const tag = view.orders.get(parts[1]).order.tag;
+      if (parts[2] === 'mute') {
+        if (typeof body.muted !== 'boolean') throw new ApiFailure(400, 'bad_request', t('"muted" must be boolean.'));
+        saveAttentionMarks(view.orders.store, [{ tag, muted: body.muted }]);
+      } else {
+        const at = str(body, 'at', true)!;
+        if (!/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/i.test(at) || !Number.isFinite(Date.parse(at))) throw new ApiFailure(400, 'bad_request', t('"at" must be a timestamp with a timezone.'));
+        saveAttentionMarks(view.orders.store, [{ tag, seen_at: new Date(at).toISOString() }]);
+      }
+      ctx.hub.publish(view.config.id, 'attention.changed', { project: view.config.id, tag });
+      return done(200, { ok: true });
+    }
     const producerEnv = () => {
       const file = process.env.ALBA_WORKERS ?? view.config.workers;
       const workers = ctx.workers ?? (file ? loadWorkers(file) : undefined);
@@ -1075,7 +1100,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (fields.check !== undefined && fields.check !== 'independent' && fields.check !== 'none') throw new ApiFailure(400, 'bad_request', '"check" is independent or none.');
       if (fields.review !== undefined && fields.review !== 'manual' && fields.review !== 'auto') throw new ApiFailure(400, 'bad_request', '"review" is manual or auto.');
       const doc = editOrderFields(view.config, view.orders, ctx.workers, parts[1], fields as OrderFields);
-      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env()));
+      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionMarks(view.orders.store).get(doc.order.tag)));
     }
     if (parts[0] === 'orders' && parts[2] === 'body' && parts.length === 3) {
       const text = str(body, 'text', true)!;

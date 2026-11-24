@@ -63,7 +63,7 @@ export interface Fixture {
   put(p: string, body: unknown): Promise<{ status: number; body: any }>;
 }
 
-export async function fixture(options: { populate?: boolean; uiDir?: string; extraOrigins?: string[]; second?: boolean; signIn?: boolean; project?: (dir: string, root: string) => Record<string, unknown> } = {}): Promise<Fixture> {
+export async function fixture(options: { now?: () => Date; populate?: boolean; uiDir?: string; extraOrigins?: string[]; second?: boolean; signIn?: boolean; project?: (dir: string, root: string) => Record<string, unknown> } = {}): Promise<Fixture> {
   const { dir } = tempOrders();
   const root = path.join(dir, 'game');
   mkdirSync(path.join(root, 'orders'), { recursive: true });
@@ -77,10 +77,11 @@ export async function fixture(options: { populate?: boolean; uiDir?: string; ext
     id: 'demo', name: 'Demo', root, work_orders: path.join(root, 'orders'), state_dir: path.join(dir, 'state'),
     dispatch: { min_free_ram_gb: 4, worktree_parent: dir, base_ref: 'refs/heads/main' }, checks: { protected_paths: ['orders/**'] }, ...(options.project?.(dir, root) ?? {}),
   }, path.join(dir, 'alba.yaml'));
-  const orders = new Orders(testStore(config.state_dir));
+  const now = options.now ?? (() => new Date());
+  const orders = new Orders(testStore(config.state_dir), () => now().toISOString());
   const spawned: { program: string; args: string[] }[] = [];
   const probes = {
-    now: () => new Date(), runCommand: () => '[]', freeRamGb: () => 32, worktrees: () => [{ path: root, branch: 'main' }, { path: worktree, branch: 'game-r1' }], gitActivity: () => ({}), fileTime: () => undefined,
+    now, runCommand: () => '[]', freeRamGb: () => 32, worktrees: () => [{ path: root, branch: 'main' }, { path: worktree, branch: 'game-r1' }], gitActivity: () => ({}), fileTime: () => undefined,
     isAlive: () => false, tail: (file: string, bytes: number) => { try { const t = readFileSync(file, 'utf8'); return t.slice(-bytes); } catch { return ''; } }, readText: () => undefined,
     spawnDetached: (program: string, args: string[]) => { spawned.push({ program, args }); return 4242; },
   } as unknown as Probes;

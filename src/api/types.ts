@@ -242,7 +242,12 @@ export interface Report {
   monitor?: MonitorSpec;
 }
 
+export type Liveness = 'active' | 'quiet' | 'unverifiable' | 'gone';
+
 export interface Run {
+  ports?: { first: number; last: number };
+  liveness?: Liveness;
+  quietMinutes?: number;
   role?: string;
   role_source?: 'explicit' | 'kind' | 'default' | 'none';
   role_effort?: string;
@@ -349,7 +354,16 @@ export interface VerifyItem { name: string; status: 'pass' | 'fail' | 'warn'; re
 export interface VerifyResult { tag: string; at: string; run?: string; results: VerifyItem[]; ok: boolean; exitCode: 0 | 1 }
 
 /** The line of an order in lists and on the overview. */
-export interface OrderSummary {
+export interface AttentionState {
+  attention?: { at: string; reason: 'stage' | 'question' | 'run-ended'; text: string };
+  seen?: string;
+  muted?: boolean;
+  unread?: boolean;
+}
+
+export interface OrderSummary extends AttentionState {
+  liveness?: Liveness;
+  waitingQuestion?: { text: string; options?: QuestionOption[] };
   nextWorker?: string;
   review?: 'manual' | 'auto';
   lintBounced?: boolean;
@@ -573,7 +587,7 @@ export interface OrderSkills {
 }
 
 /** `GET /api/orders/:tag` */
-export interface OrderDetail {
+export interface OrderDetail extends AttentionState {
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];
   producerNotes?: { project: string; order: string };
   acceptance?: import('../review/acceptance.ts').AcceptanceCard;
@@ -1017,6 +1031,7 @@ export interface CheckRequest { project?: string; results?: string[]; worktree?:
  * See docs/console/010-api.md for replay (`Last-Event-ID`) and the `logs` parameter.
  */
 export interface StreamEvents {
+  'attention.changed': { project: string; tag?: string };
   'run.activity': { project: string; tag: string; key: string; live: import('./live-types.ts').LiveState };
   /** First message of every connection. */
   hello: { boot: string; project: string; at: string; replayed: number };
