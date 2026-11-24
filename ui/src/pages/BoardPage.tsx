@@ -21,7 +21,7 @@ import { t } from '@/i18n';
 
 import { RunPeek } from '@/components/RunPeek';
 import { OrderQuestion } from '@/components/OrderQuestion';
-import { MarkAllRead, MuteMenu, UnreadDot } from '@/components/OrderAttention';
+import { MarkAllRead, MuteMenu, NewPill } from '@/components/OrderAttention';
 
 const ALL = '';
 const DONE_LIMIT = 12;
@@ -50,21 +50,21 @@ function useOverlapTags(project: string, items: OrderSummary[]): Map<string, str
   return map;
 }
 
-function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; overlapTags?: string[] }) {
+export function BoardCard({ project, o, overlapTags }: { project: string; o: OrderSummary; overlapTags?: string[] }) {
   const quiet = o.quietMinutes;
   return (
     <article
-      className={`${o.stage === 'running' && o.liveness === 'active' ? 'scanline live-glow ' : ''}relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]`}
+      className={`${o.unread ? 'order-unread ' : ''}${o.stage === 'running' && o.liveness === 'active' ? 'scanline live-glow ' : ''}relative block min-w-0 overflow-hidden rounded-xl border bg-card p-3.5 pt-4 transition-[transform,box-shadow,border-color] before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-[var(--stage)] hover:-translate-y-px hover:border-[color-mix(in_oklab,var(--stage)_45%,var(--border))] hover:shadow-[0_6px_18px_-8px_rgb(20_24_58/0.35)]`}
       style={{ '--stage': statusColor(o.stage) } as React.CSSProperties}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1 font-mono text-[13px] font-semibold">
-          <Link className="truncate hover:underline after:absolute after:inset-0" to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}`}>{o.tag}<span className="sr-only"> {o.title}</span></Link><UnreadDot unread={o.unread} />
+          <Link className="truncate hover:underline after:absolute after:inset-0" to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}`}>{o.tag}<span className="sr-only"> {o.title}</span></Link><NewPill unread={o.unread} />
           {overlapTags && overlapTags.length > 0 && <OverlapWarning tags={overlapTags} />}
         </span>
         <div className="relative flex items-center gap-1"><RunStatus {...o} /><StageBadge stage={o.stage} waitingFor={o.waitingFor} /><MuteMenu project={project} tag={o.tag} muted={o.muted} /></div>
       </div>
-      <div className="mt-1 line-clamp-2 min-h-10 text-sm break-words">{o.title}</div>
+      <div className="order-title mt-1 line-clamp-2 min-h-10 text-sm break-words">{o.title}</div>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
         {o.lintBounced && <Badge tone="warning">{t('Lint rework')}</Badge>}
         {o.kind && <Badge tone="outline">{o.kind}</Badge>}
@@ -145,12 +145,12 @@ export function BoardPage() {
           if (col.id === 'plan' && !showPlan && !filters.stage) return <button key={col.id} onClick={() => setShowPlan(true)} aria-expanded={false} className="flex w-32 shrink-0 items-center gap-2 rounded-lg border bg-muted/50 p-3 text-left text-xs text-muted-foreground"><ChevronRight className="size-4 shrink-0" /><span>{col.title()}<strong className="mt-1 block text-lg tabular-nums">{all.length}</strong></span></button>;
           return (
             <div key={col.id} className="flex min-w-[248px] flex-1 basis-[268px] flex-col overflow-hidden rounded-2xl border border-dashed border-border/70 bg-muted/35 p-2.5">
-              <div className="mb-2.5 flex items-center justify-between gap-2 px-1.5 pt-0.5">
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 px-1.5 pt-0.5">
                 <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold"><span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: statusColor(col.stages[0]) }} />{col.id === 'plan' ? <button className="flex items-center gap-1" onClick={() => { setShowPlan(false); if (filters.stage) set('stage', ''); }} aria-expanded={true}><ChevronDown className="size-4" />{col.title()}</button> : col.title()}</h2>
                 <span className="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">{all.length}</span>
               </div>
               <div className="grid min-w-0 content-start gap-2">
-                {rows.map(o => <SectionBoundary key={o.tag} title={o.tag}><Card project={project} o={o} overlapTags={(o.stage === 'running' || o.stage === 'awaiting-review') ? overlapByTag.get(o.tag) : undefined} /></SectionBoundary>)}
+                {rows.map(o => <SectionBoundary key={o.tag} title={o.tag}><BoardCard project={project} o={o} overlapTags={(o.stage === 'running' || o.stage === 'awaiting-review') ? overlapByTag.get(o.tag) : undefined} /></SectionBoundary>)}
                 {all.length === 0 && <div className="px-2 py-2 text-xs text-muted-foreground">{t('Empty')}</div>}
                 {col.id === 'done' && all.length > DONE_LIMIT && (
                   <button onClick={() => setShowAllDone(s => !s)} className="py-1 text-xs text-primary hover:underline">

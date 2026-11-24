@@ -1,4 +1,4 @@
-import { UnreadDot } from '@/components/OrderAttention';
+import { NewPill } from '@/components/OrderAttention';
 import { AnswerForm, OrderQuestion } from '@/components/OrderQuestion';
 import { Link } from 'react-router';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, GitPullRequest, HelpCircle, Hand, Images, MousePointerClick, OctagonAlert } from 'lucide-react';
@@ -30,10 +30,10 @@ function Meta({ o }: { o: OrderSummary }) {
 /** The question in words, with the answer box beside it: sending it opens the confirmation. */
 function AnswerCard({ project, o }: { project: string; o: OrderSummary }) {
   return (
-    <Card className="border-warning/35 p-4">
+    <Card className="attention-row border-warning/35 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
-        <span className="font-medium">{o.title}</span>
+        <NewPill tag={o.tag} /><TagLink project={project} tag={o.tag} />
+        <span className="order-title font-medium">{o.title}</span>
         <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
       </div>
       <Meta o={o} />
@@ -46,11 +46,11 @@ function AnswerCard({ project, o }: { project: string; o: OrderSummary }) {
 /** An order that waits for a click on a card in a session of its own: nothing to type here, so no answer box. */
 function CardWaitCard({ project, o }: { project: string; o: OrderSummary }) {
   return (
-    <Card className="border-warning/35 p-4">
+    <Card className="attention-row border-warning/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
-          <span className="font-medium">{o.title}</span>
+          <NewPill tag={o.tag} /><TagLink project={project} tag={o.tag} />
+          <span className="order-title font-medium">{o.title}</span>
           <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
         </div>
         <div className="flex items-center gap-2">
@@ -67,11 +67,11 @@ function CardWaitCard({ project, o }: { project: string; o: OrderSummary }) {
 
 function ReviewCard({ project, o }: { project: string; o: OrderSummary }) {
   return (
-    <Card className="border-warning/35 p-4">
+    <Card className="attention-row border-warning/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
-          <span className="font-medium">{o.title}</span>
+          <NewPill tag={o.tag} /><TagLink project={project} tag={o.tag} />
+          <span className="order-title font-medium">{o.title}</span>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild size="sm" variant="ghost"><Link to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}?tab=review`}><GitPullRequest />{t('Review the diff')}</Link></Button>
@@ -88,11 +88,11 @@ function ReviewCard({ project, o }: { project: string; o: OrderSummary }) {
 
 function StuckRow({ project, o }: { project: string; o: OrderSummary }) {
   return (
-    <Card className="flex flex-wrap items-start justify-between gap-3 p-3.5">
+    <Card className="attention-row flex flex-wrap items-start justify-between gap-3 p-3.5">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <UnreadDot tag={o.tag} /><TagLink project={project} tag={o.tag} />
-          <span className="font-medium">{o.title}</span>
+          <NewPill tag={o.tag} /><TagLink project={project} tag={o.tag} />
+          <span className="order-title font-medium">{o.title}</span>
           <StageBadge stage={o.stage} waitingFor={o.waitingFor} />
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{o.report?.summary ?? o.why}</p>
@@ -117,8 +117,8 @@ function Group({ project, g }: { project: string; g: NeedsGroup }) {
         <Section title={<><Images className="size-4 text-primary" />{t('Waiting for a pick')}</>} count={g.count}>
           <div className="grid gap-2">
             {(g.picks ?? []).map(p => (
-              <Card key={p.id} className="flex flex-wrap items-center justify-between gap-3 p-3.5">
-                <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold">{p.id}</span><span className="font-medium">{p.title}</span><UnreadDot tag={p.order} />{p.order && <TagLink project={project} tag={p.order} className="text-xs" />}<Badge tone="outline">{t('{n} options', { n: p.options })}</Badge></div>
+              <Card key={p.id} className="attention-row flex flex-wrap items-center justify-between gap-3 p-3.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold">{p.id}</span><span className="order-title font-medium">{p.title}</span><NewPill tag={p.order} />{p.order && <TagLink project={project} tag={p.order} className="text-xs" />}<Badge tone="outline">{t('{n} options', { n: p.options })}</Badge></div>
                 <Button asChild size="sm" variant="outline"><Link to={`${base}/picks#${encodeURIComponent(p.id)}`}>{t('Look and choose')}</Link></Button>
               </Card>
             ))}
@@ -132,8 +132,8 @@ function Group({ project, g }: { project: string; g: NeedsGroup }) {
         <Section title={<><Hand className="size-4 text-primary" />{t('Cards: start a session by hand')}</>} count={g.count}>
           <div className="grid gap-2">
             {g.cards.map(c => (
-              <Card key={c.tag} className="flex items-center justify-between gap-3 p-3.5">
-                <div className="flex items-center gap-2"><UnreadDot tag={c.tag} /><TagLink project={project} tag={c.tag} /><span className="text-sm text-muted-foreground">{t('is ready; the tick can only offer it to you, to start in {worker}', { worker: c.worker })}</span></div>
+              <Card key={c.tag} className="attention-row flex items-center justify-between gap-3 p-3.5">
+                <div className="flex items-center gap-2"><NewPill tag={c.tag} /><TagLink project={project} tag={c.tag} /><span className="order-title text-sm text-muted-foreground">{t('is ready; the tick can only offer it to you, to start in {worker}', { worker: c.worker })}</span></div>
                 <Button asChild size="sm" variant="outline"><Link to={`${base}/orders/${encodeURIComponent(c.tag)}`}>{t('Open order')}</Link></Button>
               </Card>
             ))}
@@ -147,10 +147,10 @@ function Group({ project, g }: { project: string; g: NeedsGroup }) {
         <Section title={<><AlertTriangle className="size-4 text-warning" />{t('Problems')}</>} count={g.count}>
           <div className="grid gap-2">
             {g.problems.map((p, i) => (
-              <Card key={i} className="border-warning/40 p-3 text-sm">
+              <Card key={i} className="attention-row border-warning/40 p-3 text-sm">
                 <div className="flex items-center gap-2">
-                  <UnreadDot tag={p.tag} />{p.tag && <TagLink project={project} tag={p.tag} />}
-                  <span>{p.tag ? p.text.replace(new RegExp(`^${p.tag}: `), '') : p.text}</span>
+                  <NewPill tag={p.tag} />{p.tag && <TagLink project={project} tag={p.tag} />}
+                  <span className="order-title">{p.tag ? p.text.replace(new RegExp(`^${p.tag}: `), '') : p.text}</span>
                   <Badge tone="outline" className="ml-auto">{p.kind}</Badge>
                 </div>
                 {p.evidence && p.evidence.length > 0 && <ul className="mt-1.5 grid gap-0.5 rounded-md bg-muted px-3 py-1.5 font-mono text-xs">{p.evidence.map((line, j) => <li key={j} className="break-words">{line}</li>)}</ul>}
@@ -183,9 +183,9 @@ export function NeedsPage() {
         <Section title={t('Running')} count={o.running.items.length}>
           <Card className="divide-y">
             {o.running.items.map(r => (
-              <div key={r.tag} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-                <UnreadDot tag={r.tag} /><TagLink project={project} tag={r.tag} />
-                <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span><OrderQuestion project={project} o={r} />
+              <div key={r.tag} className="attention-row flex flex-wrap items-center gap-3 px-4 py-2.5">
+                <NewPill tag={r.tag} /><TagLink project={project} tag={r.tag} />
+                <span className="order-title min-w-0 flex-1 truncate text-sm">{r.title}</span><OrderQuestion project={project} o={r} />
                 <span className="text-xs text-muted-foreground">{r.run?.worker}</span>
                 {stepText(r.progress) && <Badge tone="outline" title={r.progress?.current}>{stepText(r.progress)}</Badge>}
                 <span className="text-xs text-muted-foreground tabular-nums">{r.run ? t('started {ago}', { ago: ago(r.run.started) }) : ''}</span>

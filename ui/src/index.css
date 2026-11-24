@@ -384,3 +384,14 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] ::before, html[data-m
   animation-iteration-count: 1 !important;
   transition-duration: 1ms !important;
 }
+
+.order-unread,
+.attention-row:has(.new-pill) {
+  border-left: 3px solid var(--primary);
+}
+
+.order-unread .order-title,
+.attention-row:has(.new-pill) .order-title,
+.attention-row.order-title:has(.new-pill) {
+  font-weight: 700;
+}

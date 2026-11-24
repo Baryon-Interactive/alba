@@ -11,17 +11,17 @@ import { t } from '@/i18n';
 
 export const ProjectOrders = createContext<ReadonlyMap<string, OrderSummary>>(new Map());
 
-export function UnreadDot({ tag, unread }: { tag?: string; unread?: boolean }) {
+export function NewPill({ tag, unread }: { tag?: string; unread?: boolean }) {
   const orders = useContext(ProjectOrders);
   if (!(unread ?? orders.get(tag ?? '')?.unread)) return null;
-  return <span className="inline-flex items-center" title={t('New')}><span aria-hidden className="mx-1 inline-block size-2 rounded-full bg-primary" /><span className="sr-only">{t('New')}</span></span>;
+  return <span className="new-pill mx-1 inline-flex shrink-0 items-center rounded-full bg-primary px-1.5 py-0.5 font-sans text-[10px] leading-none font-semibold text-primary-foreground"><span aria-hidden>{t('New')}</span><span className="sr-only">{t('New')}</span></span>;
 }
 
 function useAttentionWrite(project: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (write: () => Promise<unknown>) => write(),
-    onSuccess: () => Promise.all([keys.orders(project), ['order', project], keys.projectOverview(project)].map(queryKey => client.invalidateQueries({ queryKey }))),
+    onSuccess: () => Promise.all([keys.orders(project), ['order', project], keys.overview(project), keys.projectOverview(project)].map(queryKey => client.invalidateQueries({ queryKey }))),
     onError: error => toast.error(error.message),
   });
 }
