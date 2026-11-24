@@ -95,6 +95,7 @@ export interface Run {
   worktree_fingerprint?: string;
   remote_phase_check?: string;
   plan_file?: string;
+  plan_from?: string;
   host?: string;
   remote_worktree?: string;
   previous_attempts?: string;

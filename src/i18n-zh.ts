@@ -4,6 +4,7 @@
 // A text with no entry here comes back in English.
 
 export const zh: Record<string, string> = {
+  'Independent checks require the write phase delivery.': '独立检查需要写入阶段的交付报告。',
   'Use alba run for a read-only phase so the engine enforces its restrictions.': '请使用 alba run 启动只读阶段，以便引擎强制执行只读限制。',
   'orders set needs --branch, --worktree, --base-ref, --sparse, --uses, --tools, --role, --worker, --run-model or --phases.': 'orders set 需要 --branch、--worktree、--base-ref、--sparse、--uses、--tools、--role、--worker、--run-model 或 --phases。',
   'Order phases': '工单执行阶段',

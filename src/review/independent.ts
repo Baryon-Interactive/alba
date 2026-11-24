@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -137,6 +138,7 @@ function deliveryInputs(project: ProjectConfig, orders: Orders, tag: string) {
   const doc = orders.get(tag), report = doc.reports.at(-1);
   if (!report || !doc.order.branch) throw new Error('Independent check requires a delivery report and a recorded branch.');
   const delivery = doc.runs.find(r => r.id === report.run) ?? doc.runs.at(-1);
+  if (delivery?.next_phase) throw new Error(t('Independent checks require the write phase delivery.'));
   if (!delivery?.worker) throw new Error('Independent check refuses a delivery with no known delivering worker.');
   const body = readFileSync(findOrderFile(project.work_orders, doc.order.tag), 'utf8');
   const lines = body.split(/\r?\n/), heading = lines.findIndex(l => /^##\s+Acceptance\s*$/i.test(l));

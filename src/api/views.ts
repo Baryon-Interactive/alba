@@ -84,7 +84,7 @@ export function toRun(run: StoredRun, tag: string, env: ViewEnv, activity?: Orde
   const observation = observeRun(run, env, activity);
   return {
     ...(liveRuns.peek(run) ? { live: liveRuns.peek(run) } : {}), ...(run.live_summary ? { liveSummary: run.live_summary } : {}),
-    ...(run.phase ? { phase: run.phase, model: run.model } : {}),
+    ...(run.phase ? { phase: run.phase, model: run.model, planFrom: run.plan_from } : {}),
     id: run.id, key: runKey(tag, run.id), seq: run.seq, worker: run.worker, ...(run.session ? { session: run.session } : {}), started: run.started,
     ...(run.ended ? { ended: run.ended } : {}), ...(run.outcome ? { outcome: run.outcome } : {}), ...(run.note ? { note: run.note } : {}),
     imported: !!run.imported, ...(run.pid ? { pid: run.pid } : {}), ...observation, ...(run.slot !== undefined ? { slot: run.slot } : {}), ...(port !== undefined ? { ports: { first: port, last: port + (dispatch?.port_block || 10) - 1 } } : {}), ...(run.attempt ? { attempt: run.attempt } : {}),

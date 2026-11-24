@@ -22,7 +22,7 @@ export function PhaseStrip({ phases }: { phases: OrderPhase[] }) {
         <div className="min-w-0 break-words">
           <span className={p.state === 'current' ? 'font-semibold text-primary' : 'font-medium'}>{p.id}</span>
           <span className="ml-2 text-xs text-muted-foreground">{p.state === 'done' ? t('Phase complete') : p.state === 'current' ? t('Current phase') : t('Upcoming phase')}</span>
-          {p.worker && <div className="text-xs text-muted-foreground">{[p.worker, p.model].filter(Boolean).join(' · ')}</div>}
+          <div className="text-xs text-muted-foreground">{p.worker ? [p.worker, p.model ?? t('Worker default model')].join(' · ') : t('Awaiting worker assignment')}</div>
         </div>
       </li>)}
     </ol>

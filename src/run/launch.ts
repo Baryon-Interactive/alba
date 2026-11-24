@@ -408,7 +408,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const remotePhaseCheck = readOnly && remote ? path.join(runsDir, `${doc.order.tag}-${runId}.worktree-check`) : undefined;
   const phaseFacts: Partial<Run> = phases && phase ? {
     phase: phase.id, final_phase: !readOnly, next_phase: phases.list[phases.index + 1]?.id,
-    phase_timeout_minutes: phase.timeout_minutes,
+    phase_timeout_minutes: phase.timeout_minutes, plan_from: phases.previousPlan()?.run.id,
     ...(readOnly ? { worktree_fingerprint: worktreeFingerprint(plan.path), remote_phase_check: remotePhaseCheck,
       plan_file: path.join(runsDir, `${doc.order.tag}-${runId}.plan.md`) } : {}),
   } : {};

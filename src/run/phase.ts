@@ -7,7 +7,7 @@ import { fenceUntrusted } from './fence.ts';
 
 export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
   if (!phases) return '';
-  const latest = phases.list.slice(0, phases.index).map(phases.planOf).findLast(plan => plan !== undefined);
+  const latest = phases.previousPlan();
   const sections = latest ? [
     `## Plan from phase ${latest.run.phase} (${latest.run.worker}, ${latest.run.model ?? 'default'})`,
     fenceUntrusted('phase plan', latest.text, 24 * 1024),

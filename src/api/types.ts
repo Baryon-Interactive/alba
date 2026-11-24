@@ -247,6 +247,7 @@ export type Liveness = 'active' | 'quiet' | 'unverifiable' | 'gone';
 
 export interface Run {
   phase?: string;
+  planFrom?: string;
   model?: string;
   ports?: { first: number; last: number };
   liveness?: Liveness;

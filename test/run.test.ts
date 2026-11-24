@@ -13,6 +13,7 @@ import { backoffMinutes, isLostSessionError, isTransientError } from '../src/run
 import type { Run } from '../src/orders/model.ts';
 import { baseRefOf, branchIsMerged, planWorktree } from '../src/run/worktree.ts';
 import { tick, type Probes } from '../src/tick/gather.ts';
+import { startIndependentCheck } from '../src/review/independent.ts';
 import { humanAction } from '../src/service/actions.ts';
 import { planTick, type TickInput, type TickOrder } from '../src/tick/plan.ts';
 import { validateWorkers } from '../src/workers/config.ts';
@@ -91,7 +92,9 @@ test('phase routing, guarded plans, rotation and rework follow the run history',
   finish(read, guidance);
   assert.equal(readFileSync(read.plan_file!, 'utf8'), guidance);
   assert.deepEqual(orders.stage(orders.get('T1')), { stage: 'queued', why: 'plan ready, next phase: implement' });
+  assert.throws(() => startIndependentCheck(ctx, 'T1'), /write phase delivery/);
   const write = start();
+  assert.equal(write.plan_from, read.id);
   assert.deepEqual([write.phase, write.worker, write.role, write.final_phase], ['implement', 'builder', 'writer', true]);
   assert.match(readFileSync(write.prompt_file!, 'utf8'), /Plan from phase plan \(coder, planning-model\)/);
   assert.ok(readFileSync(write.prompt_file!, 'utf8').includes(guidance));

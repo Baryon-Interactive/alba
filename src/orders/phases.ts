@@ -35,5 +35,6 @@ export function orderPhases(project: ProjectConfig, doc: OrderDoc, kind = doc.or
     const report = source && doc.reports.findLast(r => r.run === source.id);
     return source && report?.status === 'ready' && report.plan ? { run: source, text: report.plan } : undefined;
   };
-  return { list, index, current: list[index]!, planOf, runsOf };
+  const previousPlan = () => list.slice(0, index).map(planOf).findLast(plan => plan !== undefined);
+  return { list, index, current: list[index]!, planOf, runsOf, previousPlan };
 }
