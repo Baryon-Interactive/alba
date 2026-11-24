@@ -20,9 +20,10 @@
       "additionalProperties": false
     },
     "phases": {
+      "description": "Order kinds mapped to one or more read-only phases followed by one final write phase. Phase ids are unique within each kind.",
       "type": "object",
       "additionalProperties": {
-        "type": "array", "minItems": 2,
+        "type": "array", "minItems": 2, "uniqueItems": true,
         "contains": { "properties": { "mode": { "const": "write" } } }, "minContains": 1, "maxContains": 1,
         "items": {
           "type": "object", "required": ["id", "mode"], "additionalProperties": false,

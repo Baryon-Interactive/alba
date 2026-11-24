@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Order kinds can run [read-only planning phases followed by implementation](docs/workflow/044-phases.md) on different workers. The console and CLI show phase progress, and reviewers can restart a chosen phase.
+
 - The console shows [unread order changes](docs/console/022-project-overview.md#order-attention), shared read and mute state, optional browser alerts, inline questions, live run previews and process liveness. Run details include slot ports, quota windows show reset countdowns, and failed totals and panels expose errors and recovery controls.
 - Recurring orders support [prechecks, missed-fire history and seven-day spend](docs/workflow/042-schedules.md). Workers can [bind a delivery to its run](docs/workflow/002-orders-and-stages.md#4-structured-report), and operators can [preview or send one message to a group of orders](docs/workers/041-live-message-delivery.md#send-to-a-group) from the CLI or API.
 
