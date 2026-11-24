@@ -5,6 +5,7 @@ import { ownerOf } from '../usage/spend.ts';
 import type { Probes } from '../tick/gather.ts';
 import { sayDeliveryMode } from '../workers/config.ts';
 import { appendInbox, type SayDeliveryMode } from './inbox.ts';
+import { requeueUndeliveredInbox } from './messages.ts';
 import { startRun, type RunContext, type StartResult } from './launch.ts';
 import { runProcessMatches } from './kill-tree.ts';
 
@@ -69,6 +70,7 @@ export function sayToOrder(ctx: RunContext, tag: string, text: string | undefine
   }
   const prev = open.id;
   orders.runEnd(doc.order.tag, 'cancelled');
+  requeueUndeliveredInbox(orders, doc.order.tag, open);
   orders.act(doc.order.tag, 'message', { note: body });
   const worker = doc.order.next_worker ? workers.workers.find(w => w.id === doc.order.next_worker) : ownerOf(workers.workers, open.worker);
   const after = orders.stage(orders.get(tag));

@@ -200,6 +200,8 @@ export interface Action {
   at: string;
   kind: ActionKind;
   note?: string;
+  author?: string;           // original author when preserved (e.g. a requeued inbox message)
+  requeued_from?: string;    // inbox message id that this queued message action was requeued from
   commit?: string;
   choice?: number;           // an answer that picked option N of the waiting report
   imported?: boolean;

@@ -9,6 +9,7 @@ import { withCost, type RunUsage } from '../usage/usage.ts';
 import { liveRuns, liveSummary } from './live.ts';
 import { parseStreamLog } from '../workers/adapters/index.ts';
 import { saveWipSnapshot } from './wip.ts';
+import { requeueUndeliveredInbox } from './messages.ts';
 
 /** Which per-run limit a run went over, and the line that says so; undefined while it is inside all of them. */
 export function runCapExceeded(run: Pick<Run, 'started'>, worker: Pick<WorkerConfig, 'max_tokens_per_run' | 'max_minutes_per_run' | 'max_usd_per_run' | 'price'> | undefined, usage: RunUsage | undefined, now: Date): { cap: 'tokens' | 'minutes' | 'usd'; limit: number; value: number; summary: string } | undefined {
@@ -55,6 +56,7 @@ export function stopTokenCappedRuns(project: ProjectConfig, orders: Orders, work
     orders.runEnd(doc.order.tag, 'failed', { kind: 'killed-by-alba', detail: 'stopped by alba (token-cap-stopped)', why: over.summary, ...wip });
     orders.report(doc.order.tag, { status: 'failed', summary: over.summary, evidence: file ? [file] : [], commits: [] }, 'tick');
     orders.record(doc.order.tag, 'token-cap-stopped', { run: run.id, cap: over.limit, kind: over.cap, value: over.value, ...(over.cap === 'tokens' ? { total_tokens: over.value } : {}) });
+    requeueUndeliveredInbox(orders, doc.order.tag, run);
     done.push(`${doc.order.tag}: ${over.summary}`);
   }
   return done;

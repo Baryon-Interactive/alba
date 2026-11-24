@@ -7,6 +7,7 @@ import { t } from '../i18n.ts';
 import { findLoops, isLongCommand, lastCommand, parseActions, type LoopFinding } from './loops.ts';
 import { readStateJson, writeStateFile, stateTransaction } from '../orders/state-files.ts';
 import { saveWipSnapshot } from './wip.ts';
+import { requeueUndeliveredInbox } from './messages.ts';
 
 /** What the tick saw of a run's log the last time commands were counted: used to tell "output still grows, nothing new is done". */
 interface Seen { execs: number; bytes: number; changed_at: string }
@@ -72,6 +73,7 @@ export function stopLoopingRun(_project: ProjectConfig, orders: Orders, probes: 
   orders.runEnd(tag, 'stalled', { kind: 'killed-by-alba', detail: 'stopped by alba (loop-stopped)', why: cleanSummary, ...wip });
   orders.report(tag, { status: 'failed', summary: cleanSummary, evidence: run.log ? [run.log] : [], commits: [] }, 'tick');
   orders.record(tag, 'loop-stopped', { run: run.id, evidence });
+  requeueUndeliveredInbox(orders, tag, run);
   return t('{tag}: stopped run {run} (going round in circles)', { tag, run: run.id });
 }
 
@@ -99,8 +101,10 @@ export function stopStalledRun(_project: ProjectConfig, orders: Orders, probes: 
   orders.record(tag, 'stall-stopped', { run: run.id, after_action: lastPerson, continued: !again, ...(wip.wip_ref ? { wip_ref: wip.wip_ref } : {}) });
   if (again) {
     orders.report(tag, { status: 'failed', summary: `${summary}; it had already been continued once after a stall.`, evidence: run.log ? [run.log] : [], commits: [] }, 'tick');
+    requeueUndeliveredInbox(orders, tag, run);
     return t('{tag}: stopped run {run} (stalled again; a person decides)', { tag, run: run.id });
   }
+  requeueUndeliveredInbox(orders, tag, run);
   orders.act(tag, 'message', { note: STALL_CONTINUATION, force: true, bounce: true });
   return t('{tag}: stopped run {run} (stalled) and queued one continuation', { tag, run: run.id });
 }

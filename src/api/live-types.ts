@@ -2,7 +2,7 @@ import type { ProgressView } from './types.ts';
 export type { RunTranscript, TranscriptEdit, TranscriptEntry, TranscriptEntryKind, TranscriptEntryState, TranscriptPlanStep } from './types.ts';
 
 export type DeliveryVia = 'hook' | 'steer' | 'turn';
-export type InboxDeliveryState = 'sent' | 'delivered' | 'read' | 'answered';
+export type InboxDeliveryState = 'sent' | 'delivered' | 'read' | 'answered' | 'requeued' | 'dropped';
 export type SayDeliveryMode = 'live' | 'steer' | 'file';
 
 export interface LiveActivity { at: string; kind: string; summary: string; exit_code?: number; duration_seconds?: number; output_tail?: string }
@@ -22,4 +22,4 @@ export interface OutboxEntry {
   /** When alba picked the entry up (its own clock; `at` is what the worker wrote, which may be off). */
   received?: string;
 }
-export interface ThreadEntry { id: string; at: string; kind: string; text: string; options?: string[]; reply?: string; delivery?: InboxDeliveryState; delivered_at?: string; via?: DeliveryVia; seen?: string }
+export interface ThreadEntry { id: string; at: string; kind: string; text: string; options?: string[]; reply?: string; delivery?: InboxDeliveryState; delivered_at?: string; via?: DeliveryVia; seen?: string; requeued_at?: string; action_seq?: number; dropped_at?: string; drop_reason?: string }

@@ -31,6 +31,7 @@ import { verifyOrder } from '../verify/verify.ts';
 import { intakeProducer } from '../producer/producer.ts';
 import { MONITOR_CONTINUATION } from './prompt.ts';
 import { classifyEndpoint, unreachableWhy } from './endpoint.ts';
+import { requeueUndeliveredInbox } from './messages.ts';
 
 function headOf(worktree: string): string | undefined {
   if (!existsSync(worktree)) return undefined;
@@ -266,6 +267,7 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
   if (f.report_from) { orders.patchRun(f.tag, f.run, { report_from: f.report_from.where }); orders.record(f.tag, 'report-from-earlier', { run: f.run, ...f.report_from }); }
   if (f.session || f.usage || f.limit || f.lost_session) orders.patchRun(f.tag, f.run, { ...(f.session ? { session: f.session } : {}), ...(f.usage ? { usage: f.usage } : {}), ...(f.limit ? { limit: f.limit } : {}), ...(f.lost_session ? { lost_session: true } : {}) });
   orders.runEnd(f.tag, f.outcome, end);
+  try {
   if (f.writeLast) writeFileSync(f.writeLast.file, f.writeLast.text, 'utf8');
   if (f.bounce) {
     orders.record(f.tag, 'report-bounced', { run: f.run, ...(f.bounce.error ? { error: f.bounce.error } : {}), ...(f.bounce.final_message ? { final_message: true } : {}) });
@@ -337,5 +339,8 @@ export function applyFinish(orders: Orders, f: Finish, project?: ProjectConfig, 
       lintDelivery(project, orders, f.tag);
       if (orders.stage(orders.get(f.tag)).stage === 'awaiting-review') verifyOrder(project, orders, f.tag);
     }
+  }
+  } finally {
+    requeueUndeliveredInbox(orders, f.tag, storedRun);
   }
 }

@@ -117,8 +117,9 @@ function main() {
   const ackIds = readAckIds(path.join(albaDir, 'inbox-ack'));
   const deliveredFile = path.join(albaDir, 'inbox-delivered');
   const deliveredIds = readDeliveredIds(deliveredFile);
+  const disposedIds = readDeliveredIds(path.join(albaDir, 'inbox-requeued'));
 
-  const waiting = entries.filter(m => !m.seen && !ackIds.has(m.id) && !deliveredIds.has(m.id));
+  const waiting = entries.filter(m => !m.seen && !ackIds.has(m.id) && !deliveredIds.has(m.id) && !disposedIds.has(m.id));
   if (waiting.length === 0) {
     // When nothing new is waiting (including stop_hook_active), never block.
     if (engine === 'agy' && event === 'stop') process.stdout.write('{}\n');

@@ -1,13 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { excludeLocally } from '../skills/mount.ts';
 import { LiveFold } from '../workers/adapters/activity.ts';
 
 export type DeliveryVia = 'hook' | 'steer' | 'turn';
-export type InboxDeliveryState = 'sent' | 'delivered' | 'read' | 'answered';
+export type InboxDeliveryState = 'sent' | 'delivered' | 'read' | 'answered' | 'requeued' | 'dropped';
 export type SayDeliveryMode = 'live' | 'steer' | 'file';
 
 export interface InboxDeliveryRecord {
@@ -15,6 +15,15 @@ export interface InboxDeliveryRecord {
   at: string;
   via: DeliveryVia;
   event?: string;
+}
+
+export interface InboxDispositionRecord {
+  id: string;
+  state: 'requeued' | 'dropped';
+  at: string;
+  run?: string;
+  action_seq?: number;
+  reason?: string;
 }
 
 export interface ReadInboxOptions {
@@ -32,6 +41,10 @@ export interface InboxMessage {
   delivery?: InboxDeliveryState;
   delivered_at?: string;
   via?: DeliveryVia;
+  requeued_at?: string;
+  action_seq?: number;
+  dropped_at?: string;
+  drop_reason?: string;
   at: string;
   author: string;
   text: string;
@@ -42,12 +55,13 @@ export interface InboxMessage {
 const HEADER = /^## (\S+) (\S+) (\S+)$/;
 const SEEN = /^seen (\S+)$/;
 const VALID_VIA = new Set<string>(['hook', 'steer', 'turn']);
-const INBOX_EXCLUDES = ['.alba/inbox.md', '.alba/inbox-ack', '.alba/inbox-delivered', '.alba/inbox-claimed/', '.alba/outbox.jsonl'];
+const INBOX_EXCLUDES = ['.alba/inbox.md', '.alba/inbox-ack', '.alba/inbox-delivered', '.alba/inbox-requeued', '.alba/inbox-claimed/', '.alba/outbox.jsonl'];
 const MAX_PAYLOAD_BYTES = 16 * 1024;
 const TRUNC_NOTE = '\n... [truncated; full message is in .alba/inbox.md]';
 
 export const inboxPath = (worktree: string): string => path.join(worktree, '.alba', 'inbox.md');
 export const deliveredPath = (worktree: string): string => path.join(worktree, '.alba', 'inbox-delivered');
+export const requeuedPath = (worktree: string): string => path.join(worktree, '.alba', 'inbox-requeued');
 
 /** Reads the inbox. A message is seen when a `seen <time>` line appears before the next header. */
 export function parseInbox(text: string): InboxMessage[] {
@@ -98,6 +112,59 @@ export function appendDelivered(worktree: string, record: InboxDeliveryRecord): 
   const file = deliveredPath(worktree);
   mkdirSync(path.dirname(file), { recursive: true });
   appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
+  excludeLocally(worktree, INBOX_EXCLUDES);
+}
+
+/** Reads `.alba/inbox-ack` message ids acknowledged by the worker. */
+export function readAckIds(worktree: string): Set<string> {
+  const ack = path.join(worktree, '.alba', 'inbox-ack');
+  return new Set(existsSync(ack) ? readFileSync(ack, 'utf8').split(/\s+/).filter(Boolean) : []);
+}
+
+/** Reads `.alba/inbox-requeued` JSONL disposition records (`requeued` or `dropped`), keeping the first valid record per message id. */
+export function readDisposed(worktree: string): Map<string, InboxDispositionRecord> {
+  const out = new Map<string, InboxDispositionRecord>();
+  const file = requeuedPath(worktree);
+  if (!existsSync(file)) return out;
+  try {
+    for (const raw of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      try {
+        const v = JSON.parse(line) as Record<string, unknown>;
+        if (typeof v.id !== 'string' || !v.id || typeof v.at !== 'string' || !Number.isFinite(Date.parse(v.at))) continue;
+        if (v.state !== 'requeued' && v.state !== 'dropped') continue;
+        if (!out.has(v.id)) {
+          out.set(v.id, {
+            id: v.id,
+            state: v.state,
+            at: v.at,
+            ...(typeof v.run === 'string' ? { run: v.run } : {}),
+            ...(typeof v.action_seq === 'number' && Number.isInteger(v.action_seq) ? { action_seq: v.action_seq } : {}),
+            ...(typeof v.reason === 'string' ? { reason: v.reason } : {}),
+          });
+        }
+      } catch { /* ignore malformed lines */ }
+    }
+  } catch { /* unreadable disposition log */ }
+  return out;
+}
+
+/**
+ * Records a terminal inbox disposition (`requeued` or `dropped`) in `.alba/inbox-requeued` and claims the entry
+ * in `.alba/inbox-claimed/` so neither hooks nor `codex-app` deliver the old inbox entry again in a later run.
+ */
+export function appendDisposed(worktree: string, record: InboxDispositionRecord): void {
+  const file = requeuedPath(worktree);
+  mkdirSync(path.dirname(file), { recursive: true });
+  appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
+  const claimDir = path.join(worktree, '.alba', 'inbox-claimed');
+  mkdirSync(claimDir, { recursive: true });
+  const claimFile = path.join(claimDir, `${createHash('sha256').update(record.id).digest('hex')}.claim`);
+  try {
+    const fd = openSync(claimFile, 'wx');
+    closeSync(fd);
+  } catch { /* already claimed */ }
   excludeLocally(worktree, INBOX_EXCLUDES);
 }
 
@@ -160,15 +227,26 @@ export function readInbox(worktree: string, openedOrOpts?: string | ReadInboxOpt
   const opts: ReadInboxOptions = typeof openedOrOpts === 'string' ? { openedAt: openedOrOpts } : (openedOrOpts ?? {});
   const openedAt = opts.openedAt;
   const file = inboxPath(worktree);
-  const ack = path.join(worktree, '.alba', 'inbox-ack');
-  const ids = new Set(existsSync(ack) ? readFileSync(ack, 'utf8').split(/\s+/).filter(Boolean) : []);
+  const ids = readAckIds(worktree);
   const delivered = readDelivered(worktree);
+  const disposed = readDisposed(worktree);
   const activityTimes: string[] = opts.activityAt !== undefined
     ? (typeof opts.activityAt === 'string' ? [opts.activityAt] : [...opts.activityAt])
     : opts.eventsFile ? activityTimesFromEvents(opts.eventsFile) : [];
   return (existsSync(file) ? parseInbox(readFileSync(file, 'utf8')) : []).map(m => {
     const del = delivered.get(m.id);
-    const explicitSeen = m.seen ?? (m.id && ids.has(m.id) ? m.at : openedAt && openedAt >= m.at ? openedAt : undefined);
+    const disp = disposed.get(m.id);
+    const directSeen = m.seen ?? (m.id && ids.has(m.id) ? m.at : undefined);
+    if (!directSeen && !del && disp) {
+      return {
+        ...m,
+        ...(disp.state === 'requeued'
+          ? { requeued_at: disp.at, ...(disp.action_seq !== undefined ? { action_seq: disp.action_seq } : {}) }
+          : { dropped_at: disp.at, ...(disp.reason ? { drop_reason: disp.reason } : {}) }),
+        delivery: disp.state,
+      };
+    }
+    const explicitSeen = directSeen ?? (openedAt && openedAt >= m.at ? openedAt : undefined);
     const activitySeen = !explicitSeen && del ? firstActivityAfter(activityTimes, del.at) : undefined;
     const seen = explicitSeen ?? activitySeen;
     const delivery: InboxDeliveryState = seen ? 'read' : del ? 'delivered' : 'sent';

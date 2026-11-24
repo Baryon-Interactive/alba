@@ -28,10 +28,11 @@ export function findOrderFile(workOrders: string, tag: string): string {
 }
 
 /** A note that is still waiting for a run that really works through it. */
-export interface PendingNote { kind: 'rework' | 'answer' | 'monitor' | 'message'; text: string; seq: number; at: string; question?: string; bounce?: boolean }
+export interface PendingNote { kind: 'rework' | 'answer' | 'monitor' | 'message'; text: string; seq: number; at: string; question?: string; bounce?: boolean; requeued?: boolean; author?: string }
 
 export const MISSING_REPORT_REMINDER = 'The previous run ended without a report block; end this run with one.';
 export const MONITOR_CONTINUATION = 'Use the monitor result to continue the order\'s remaining work, including its acceptance checks. A progress report alone does not finish the order.';
+export const REQUEUED_NOTE_NOTICE = 'This message arrived during the previous run and may already be handled; check before redoing anything.';
 
 export interface PromptParts { roleRules?: string; orderFile: string; /** The skills put into the worktree for this order (name, what for, file): a list for engines that do not show them. */ skills?: readonly OrderSkill[]; /** Lessons (or a ranked selection) that match the order's tags: id, title and rule go into the prompt. */ lessons?: PromptLessons; rework?: string; /** What the monitor found (the worker handed a long job to it): the result, the end of the check's output and the worker's own note. */ monitor?: string; /** The answer to the worker's own question, with the question. */ answer?: { text: string; question?: string }; /** Every note still waiting, oldest first. When set, this replaces the single rework, monitor and answer sections. */ notes?: readonly PendingNote[]; missingReport?: boolean; recovery: boolean; /** A long lesson rule is cut to this many lines. */ lessonLines?: number }
 
@@ -73,6 +74,7 @@ const NOTE_TITLE: Record<PendingNote['kind'], string> = {
 function oneNote(n: PendingNote): string[] {
   const head = [`## ${NOTE_TITLE[n.kind]}`, ''];
   if (n.kind === 'answer' && n.question) head.push(`You asked: ${n.question}`, '');
+  if (n.requeued) head.push(REQUEUED_NOTE_NOTICE, '');
   return [...head, n.text.trim(), ...(n.kind === 'monitor' ? ['', MONITOR_CONTINUATION] : []), '', `Sent ${n.at}.`];
 }
 
@@ -83,6 +85,7 @@ export function notesSection(notes: readonly PendingNote[]): string[] {
   for (const n of notes) {
     out.push(`### ${n.at} — ${n.kind}`, '');
     if (n.question) out.push(`You asked: ${n.question}`, '');
+    if (n.requeued) out.push(REQUEUED_NOTE_NOTICE, '');
     out.push(n.text.trim(), ...(n.kind === 'monitor' ? ['', MONITOR_CONTINUATION] : []), '');
   }
   return out;
@@ -198,7 +201,7 @@ export function pendingNotes(doc: OrderDoc): PendingNote[] {
     // or after the repair was queued. In both cases it takes precedence over report-only instructions.
     const failedRun = a.bounce ? [...doc.runs].filter(r => r.seq < a.seq).sort((x, y) => y.seq - x.seq)[0] : undefined;
     const continueWork = a.bounce && pending.some(n => !n.bounce && (n.kind === 'monitor' || n.seq > (failedRun?.seq ?? 0)));
-    return { kind: (a.kind === 'queue' ? 'message' : a.kind) as PendingNote['kind'], text: continueWork ? MISSING_REPORT_REMINDER : a.note!, seq: a.seq, at: a.at, ...(a.bounce ? { bounce: true } : {}), ...(asked?.question ? { question: asked.question } : {}) };
+    return { kind: (a.kind === 'queue' ? 'message' : a.kind) as PendingNote['kind'], text: continueWork ? MISSING_REPORT_REMINDER : a.note!, seq: a.seq, at: a.at, ...(a.bounce ? { bounce: true } : {}), ...(a.requeued_from ? { requeued: true } : {}), ...(a.author ? { author: a.author } : {}), ...(asked?.question ? { question: asked.question } : {}) };
   });
 }
 
@@ -218,7 +221,10 @@ export function answerPrompt(answer: { text: string; question?: string; at?: str
   return ['The person has answered your question. Carry on from where you stopped; you do not need to read the order again.', '', ...(answer.question ? [`You asked: ${answer.question}`, ''] : []), 'Answer:', '', answer.text.trim(), ...(answer.at ? ['', `Sent ${answer.at}.`] : []), '', readTemplate('report-footer.md').trim()].join('\n') + '\n';
 }
 
-/** What a continued session is told when a person stopped the run to send a message. Every note still waiting is included. */
+/** What a continued session is told when a person stopped the run to send a message (or a previous run left a requeued message). Every note still waiting is included. */
 export function messagePrompt(notes: readonly PendingNote[]): string {
-  return ['The person stopped the run to send you a message. Carry on from where you stopped; you do not need to read the order again.', '', ...notesSection(notes), '', readTemplate('report-footer.md').trim()].join('\n') + '\n';
+  const lead = notes.length > 0 && notes.every(n => n.requeued)
+    ? 'Carry on from where you stopped; you do not need to read the order again.'
+    : 'The person stopped the run to send you a message. Carry on from where you stopped; you do not need to read the order again.';
+  return [lead, '', ...notesSection(notes), '', readTemplate('report-footer.md').trim()].join('\n') + '\n';
 }

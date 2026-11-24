@@ -1136,6 +1136,7 @@ export const zh: Record<string, string> = {
   'Run {key} has no transcript.': '派工 {key} 没有过程记录。',
   '"after" must be a whole number >= 0.': '"after" 必须是大于等于 0 的整数。',
   '"limit" must be a positive number.': '"limit" 必须是正数。',
+  'Messages:': '消息：',
 };
 
 /** Localized textual conventions; these classify content, never detect its language. */
