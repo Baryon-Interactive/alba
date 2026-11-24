@@ -14,6 +14,7 @@ import { Empty, ErrorBox, StageBadge, UsageText } from '@/components/common';
 import { useOrder, useProjectId } from '@/lib/queries';
 import { dateTime, duration, tokens } from '@/lib/format';
 import { useSeenWhilePresent } from '@/components/OrderAttention';
+import { RunStatus } from '@/components/RunStatus';
 import { t } from '@/i18n';
 
 const SILENT_END_KINDS: ReadonlySet<EndKind> = new Set(['stream-cut-mid-turn', 'vanished', 'output-limit', 'context-limit']);
@@ -60,7 +61,7 @@ export function RunPage() {
         <span className="font-mono">{tag}</span>
         <span className="font-mono text-muted-foreground">{run.id}</span>
         <span className="text-base font-normal">{q.data.order.title}</span>
-        <StageBadge stage={q.data.stage} />
+        <RunStatus {...run} /><StageBadge stage={q.data.stage} />
       </h1>
       {silentEnd && (
         <div role="alert" className="mb-3 rounded-md border border-destructive/40 border-l-[3px] border-l-destructive bg-destructive/8 px-3.5 py-2.5 text-sm">

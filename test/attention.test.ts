@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import { attentionState } from '../src/api/attention.ts';
+import { livenessOf } from '../src/api/views.ts';
 import { saveAttentionMarks, attentionMarks } from '../src/orders/attention-store.ts';
 import { SqliteStore } from '../src/orders/sqlite-store.ts';
 import { FileStore } from '../src/orders/store.ts';
@@ -10,6 +11,16 @@ import { fixture } from './api-fixture.ts';
 import { tempOrders } from './helpers.ts';
 
 const at = (n: number) => new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString();
+
+test('run liveness distinguishes silence from a failed or unavailable probe', () => {
+  assert.equal(livenessOf(false, 0), 'gone');
+  assert.equal(livenessOf(false, 10), 'gone');
+  assert.equal(livenessOf(true, 9), 'active');
+  assert.equal(livenessOf(true, 10), 'quiet');
+  assert.equal(livenessOf(undefined, 10), 'unverifiable');
+  assert.equal(livenessOf(undefined, 9), 'active');
+  assert.equal(livenessOf(undefined), 'active');
+});
 
 test('attention follows stage entries, run ends and unanswered questions across later edits', () => {
   const doc: OrderDoc = { version: 1, order: { tag: 'T1', title: 'Demo', kind: '', needs: [], created: at(0), updated: at(9) },

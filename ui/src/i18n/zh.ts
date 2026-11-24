@@ -1,6 +1,12 @@
 // Chinese texts of the console. The words follow docs/glossary.md (工单, 派工, 报告, 授权, 打回返工, 一次巡检, 验收, 参照值 ...).
 // `node scripts/i18n-keys.mjs` checks that every t('...') text in src/ has a line here.
 export const zh: Record<string, string> = {
+  'Recent activity or no confirmed silence': '近期有活动或尚未确认静默',
+  'Process is alive but quiet': '进程仍在运行，但暂无活动',
+  'Cannot confirm the process is alive': '无法确认进程仍在运行',
+  'Process is no longer alive': '进程已退出',
+  'Activity time unknown': '活动时间未知',
+  '{n} min since activity': '距上次活动 {n} 分钟',
   'Browser notifications': '浏览器通知',
   'Notify me in this browser': '在此浏览器中通知我',
   'Blocked by the browser': '浏览器已阻止通知',

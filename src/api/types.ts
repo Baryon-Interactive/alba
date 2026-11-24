@@ -242,7 +242,11 @@ export interface Report {
   monitor?: MonitorSpec;
 }
 
+export type Liveness = 'active' | 'quiet' | 'unverifiable' | 'gone';
+
 export interface Run {
+  liveness?: Liveness;
+  quietMinutes?: number;
   role?: string;
   role_source?: 'explicit' | 'kind' | 'default' | 'none';
   role_effort?: string;
@@ -357,6 +361,7 @@ export interface AttentionState {
 }
 
 export interface OrderSummary extends AttentionState {
+  liveness?: Liveness;
   waitingQuestion?: { text: string; options?: QuestionOption[] };
   nextWorker?: string;
   review?: 'manual' | 'auto';

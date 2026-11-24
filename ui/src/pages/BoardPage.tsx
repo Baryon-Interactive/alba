@@ -16,6 +16,7 @@ import { BOARD_COLUMNS, stageLabel, waitingFor } from '@/lib/stages';
 import { ago, minutes } from '@/lib/format';
 import { monitorResultLabel, stepText } from '@/lib/monitoring';
 import { cn } from '@/lib/utils';
+import { RunStatus } from '@/components/RunStatus';
 import { t } from '@/i18n';
 
 import { RunPeek } from '@/components/RunPeek';
@@ -61,7 +62,7 @@ function Card({ project, o, overlapTags }: { project: string; o: OrderSummary; o
           <Link className="truncate hover:underline after:absolute after:inset-0" to={`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(o.tag)}`}>{o.tag}<span className="sr-only"> {o.title}</span></Link><UnreadDot unread={o.unread} />
           {overlapTags && overlapTags.length > 0 && <OverlapWarning tags={overlapTags} />}
         </span>
-        <div className="relative flex items-center gap-1"><StageBadge stage={o.stage} waitingFor={o.waitingFor} /><MuteMenu project={project} tag={o.tag} muted={o.muted} /></div>
+        <div className="relative flex items-center gap-1"><RunStatus {...o} /><StageBadge stage={o.stage} waitingFor={o.waitingFor} /><MuteMenu project={project} tag={o.tag} muted={o.muted} /></div>
       </div>
       <div className="mt-1 line-clamp-2 min-h-10 text-sm break-words">{o.title}</div>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
