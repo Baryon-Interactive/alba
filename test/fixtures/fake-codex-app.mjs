@@ -109,5 +109,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
 });
 
-// Keep event loop open in hang mode even if stdin is closed until killed
-if (mode === 'hang') setInterval(() => {}, 1000);
+// Keep event loop open in hang mode even if stdin is closed until killed. A test that fails before it stops the run must
+// not leave this process behind for good (it would hold the test runner's pipes open), so hang mode ends itself after
+// FAKE_CODEX_APP_MAX_MS (default two minutes).
+if (mode === 'hang') {
+  setInterval(() => {}, 1000);
+  setTimeout(() => process.exit(0), Number(process.env.FAKE_CODEX_APP_MAX_MS) || 120_000);
+}

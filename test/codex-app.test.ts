@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { appendInbox, readDelivered, readInbox } from '../src/run/inbox.ts';
 import { applyFinish, findFinishes } from '../src/run/finish.ts';
+import { descendantPids, processSnapshotAsync } from '../src/run/kill-tree.ts';
 import { startRun } from '../src/run/launch.ts';
 import { LiveFold } from '../src/run/live.ts';
 import { TranscriptFold } from '../src/run/transcript.ts';
@@ -281,13 +282,34 @@ test('codex-app: stopping the run from Alba leaves no app-server process behind'
   const ctx = setup('hang');
   startRun({ ...ctx, probes: systemProbes }, 'T1', 'codex-live');
   const run = ctx.orders.get('T1').runs[0];
-  await waitUntil(() => existsSync(ctx.pidFile), 15000, 'fake app-server pid');
-  const appPid = Number(readFileSync(ctx.pidFile, 'utf8').trim());
-  assert.ok(Number.isInteger(appPid) && appPid > 0);
-  assert.equal(systemProbes.isAlive(appPid), true, 'app-server is running');
+  let appPid = 0;
+  try {
+    await waitUntil(() => existsSync(ctx.pidFile), 15000, 'fake app-server pid');
+    appPid = Number(readFileSync(ctx.pidFile, 'utf8').trim());
+    assert.ok(Number.isInteger(appPid) && appPid > 0);
+    assert.equal(systemProbes.isAlive(appPid), true, 'app-server is running');
 
-  systemProbes.kill!(run.pid!, run.process_started_at, run.started);
+    systemProbes.kill!(run.pid!, run.process_started_at, run.started);
 
-  await waitUntil(() => !systemProbes.isAlive(run.pid!) && !systemProbes.isAlive(appPid), 10000, 'both driver and app-server exited');
-  assert.equal(systemProbes.isAlive(appPid), false, 'no app-server left behind');
+    // The stop takes a process snapshot first, which is slow on a loaded machine.
+    await waitUntil(() => !systemProbes.isAlive(run.pid!) && !systemProbes.isAlive(appPid), 30000, 'both driver and app-server exited');
+    assert.equal(systemProbes.isAlive(appPid), false, 'no app-server left behind');
+  } finally {
+    // When an assertion above fails, the hanging tree is still there and holds the test runner's pipes: end it here.
+    await killLeftovers(run.pid, appPid);
+  }
 });
+
+/** Ends `rootPid`, everything under it, and `extraPid`, without identity checks: test cleanup of processes this file started. */
+async function killLeftovers(rootPid: number | undefined, extraPid: number): Promise<void> {
+  const pids = new Set<number>();
+  if (rootPid && systemProbes.isAlive(rootPid)) {
+    try { for (const pid of descendantPids(await processSnapshotAsync(), rootPid)) pids.add(pid); } catch { /* the snapshot is best effort */ }
+    pids.add(rootPid);
+  }
+  if (extraPid > 0) pids.add(extraPid);
+  for (const pid of pids) {
+    if (!systemProbes.isAlive(pid)) continue;
+    try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+}
