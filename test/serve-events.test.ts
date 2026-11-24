@@ -4,6 +4,8 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { loadProject, selectTestBackend } from './state-helper.ts';
+import { stateStore } from '../src/orders/backend.ts';
+import { claimIdempotency } from '../src/api/idempotency.ts';
 import { Orders } from '../src/orders/service.ts';
 import { testStore } from './state-helper.ts';
 import { startServe, type Serve } from '../src/serve/serve.ts';
@@ -55,6 +57,31 @@ async function collect(stream: Awaited<ReturnType<typeof openStream>>, ms: numbe
   feed.mark = feed.items.length;
   return out;
 }
+
+for (const backend of ['files', 'sqlite']) test(`restarting serve preserves the attention baseline and clears abandoned writes (${backend})`, async () => {
+  const s = setup(`state: { backend: ${backend} }`);
+  let time = new Date('2026-01-01T00:00:00Z');
+  const p = { ...probes(), now: () => time };
+  const claim = () => claimIdempotency(stateStore(s.config), { key: 'pending', method: 'POST', route: '/demo', bodyHash: 'demo', instanceId: 'old', now: time });
+  const merge = (tag: string) => {
+    const orders = new Orders(stateStore(s.config), () => time.toISOString());
+    orders.add({ tag, title: 'Demo', kind: 'docs' });
+    orders.act(tag, 'merged-elsewhere', { commit: 'abc1234' });
+  };
+  for (let i = 1; i <= 5; i++) merge(`T${i}`);
+  assert.equal(claim().outcome, 'claimed');
+  for (let start = 0; start < 2; start++) {
+    const { serve, base, stream } = await run(s, {}, p);
+    try {
+      const response = await fetch(base + '/api/orders');
+      assert.equal(response.status, 200);
+      const { items } = await response.json() as import('../src/api/types.ts').OrderList;
+      assert.deepEqual(items.filter(o => o.unread).map(o => o.tag), start ? ['T6'] : []);
+      assert.equal(claim().outcome, 'claimed', 'startup removed the prior owner before a retry');
+    } finally { stream.close(); await serve.stop(); }
+    if (!start) { time = new Date('2026-01-01T00:01:00Z'); merge('T6'); }
+  }
+});
 
 test('serve: a queue from another process starts a tick within seconds; several triggers become one; the serve\'s own writes trigger nothing', async () => {
   const s = setup();
