@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, git } from './api-fixture.ts';
@@ -7,6 +7,12 @@ import { alba } from './cli-helper.ts';
 
 test('a split card accepts retained children and exposes the family in the API and CLI', async () => {
   const f = await fixture({ populate: false });
+  const ui = path.join(f.dir, 'no-ui');
+  mkdirSync(ui);
+  writeFileSync(path.join(ui, 'index.html'), '<main>Console</main>');
+  const deepLink = await fetch(f.base + '/p/demo/orders/CACHE.1');
+  assert.equal(deepLink.status, 200);
+  assert.equal(await deepLink.text(), '<main>Console</main>');
   const base = git(f.root, 'rev-parse', 'main');
   const tag = 'CACHE';
   f.orders.add({ tag, title: 'Cache storage', kind: 'feature' });
@@ -24,6 +30,7 @@ test('a split card accepts retained children and exposes the family in the API a
   const parent = await detail();
   assert.equal(parent.stage, 'waiting-children');
   assert.equal(parent.split.decision.kind, 'accept-split');
+  assert.deepEqual(parent.split.decision.selection[0], { key: 'read', tag: 'CACHE.1', title: 'Read index', kind: 'task' });
   assert.equal(parent.children[0].title, 'Read index');
   assert.deepEqual(parent.children.map((c: { stage: string }) => c.stage), ['queued', 'queued']);
   const list = (await f.get('/api/orders?project=demo')).body.items;

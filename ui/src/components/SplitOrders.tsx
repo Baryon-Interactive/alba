@@ -26,7 +26,7 @@ function SplitCard({ project, tag, split }: { project: string; tag: string; spli
           <legend><label><input type="checkbox" checked={row.keep} onChange={e => update({ keep: e.target.checked })} /> {row.key}</label></legend>
           <label>{t('Title')}<Input value={row.title} disabled={!row.keep} onChange={e => update({ title: e.target.value })} /></label>
           <label>{t('Kind')}<Input value={row.kind} disabled={!row.keep} onChange={e => update({ kind: e.target.value })} /></label>
-          <div>{t('Needs')}: {row.needs?.filter(key => kept.some(r => r.key === key)).join(', ') || '?'}</div>
+          <div>{t('Needs')}: {row.needs?.filter(key => kept.some(r => r.key === key)).join(', ') || t('No dependencies')}</div>
           <details><summary>{t('Work order')}</summary><pre className="whitespace-pre-wrap break-words">{row.body}</pre></details>
         </fieldset>;
       })}

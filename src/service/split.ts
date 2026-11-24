@@ -9,7 +9,9 @@ import { createOrder } from './new-order.ts';
 export function autoAcceptSplit(project: ProjectConfig, orders: Orders, tag: string) {
   if (!project.split) return;
   const doc = orders.get(tag), report = doc.reports.at(-1);
-  if (!report?.subtasks || project.split.approve[doc.order.routing?.kind || doc.order.kind] !== 'auto' || orders.stage(doc).waitingFor !== 'card') return;
+  const policy = project.split.approve;
+  const approval = typeof policy === 'string' ? policy : policy[doc.runs.at(-1)?.routing?.kind || doc.order.kind];
+  if (!report?.subtasks || approval !== 'auto' || orders.stage(doc).waitingFor !== 'card') return;
   try { acceptSplit(project, orders, tag, undefined, report.seq); }
   catch (error) { orders.record(tag, 'split-approval-failed', { reason: (error as Error).message }); }
 }
@@ -38,7 +40,7 @@ export function acceptSplit(project: ProjectConfig, orders: Orders, tag: string,
       const plan = planWorktree(project, doc.order);
       if (('refs/heads/' + plan.branch).toLowerCase() === baseRefOf(project).toLowerCase()) fail('The integration branch must be separate from the project base.');
       ensureWorktree(project, plan);
-      if (commonGitDir(plan.path) !== commonGitDir(project.root) || worktreeGitDir(plan.path) === worktreeGitDir(project.root)) fail('Integration requires a linked parent worktree.');
+      if (commonGitDir(plan.path) !== commonGitDir(project.root) || [worktreeGitDir(project.root), commonGitDir(project.root)].includes(worktreeGitDir(plan.path))) fail('Integration requires a linked parent worktree.');
       orders.setGit(tag, { branch: plan.branch, worktree: plan.path });
       for (const task of tasks) {
         const child = createOrder({ ...project, dispatch_table: undefined }, orders, {
@@ -47,7 +49,7 @@ export function acceptSplit(project: ProjectConfig, orders: Orders, tag: string,
         });
         if (child.file) files.push(child.file);
       }
-      orders.recordSplit(tag, report.seq, [...tags.values()], plan.branch);
+      orders.recordSplit(tag, report.seq, tasks.map(({ key, title, kind }) => ({ key, title, kind, tag: tags.get(key)! })), plan.branch);
     });
   } catch (error) {
     for (const file of files) rmSync(file, { force: true });

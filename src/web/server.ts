@@ -91,7 +91,8 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, uiDir: string, p
   const inside = (p: string) => { const rel = path.relative(root, p); return !rel.startsWith('..') && !path.isAbsolute(rel); };
   if (!inside(file)) return false;
   if (!existsSync(file) || statSync(file).isDirectory()) {
-    if (path.extname(pathname)) return false;
+    const childPage = /^\/p\/[^/]+\/orders\/[a-z][\w-]*\.[1-8]\/?$/i.test(decoded);
+    if (path.extname(pathname) && !childPage) return false;
     file = path.join(root, 'index.html');
     if (!existsSync(file)) return false;
   }

@@ -21,7 +21,7 @@
     },
     "split": {
       "type": "object", "required": ["approve"], "additionalProperties": false,
-      "properties": { "approve": { "type": "object", "additionalProperties": { "enum": ["auto", "manual"] } } }
+      "properties": { "approve": { "oneOf": [{ "enum": ["auto", "manual"] }, { "type": "object", "additionalProperties": { "enum": ["auto", "manual"] } }] } }
     },
     "phases": {
       "description": "Order kinds mapped to one or more read-only phases followed by one final write phase. Phase ids are unique within each kind.",

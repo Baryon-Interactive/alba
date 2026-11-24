@@ -5,7 +5,10 @@ import type { ProjectConfig } from '../config.ts';
 export interface Subtask { key: string; title: string; kind: string; body: string; needs?: string[] }
 
 export function childKinds(project: ProjectConfig): string[] {
-  return [...new Set(['task', ...(project.kinds ?? []).filter(k => !k.tag_only).map(k => k.id), ...Object.keys(project.phases ?? {}), ...Object.keys(project.orders?.templates ?? {})])]
+  const declared = (project.kinds ?? []).filter(k => !k.tag_only).map(k => k.id);
+  const routed = Object.values(project.roles ?? {}).flatMap(role => role.kinds ?? []);
+  const templates = Object.keys(project.orders?.templates ?? {}).filter(k => k !== 'default');
+  return [...new Set(['task', ...declared, ...routed, ...Object.keys(project.phases ?? {}), ...templates])]
     .filter(kind => !project.phases?.[kind]?.some(p => p.mode === 'split'));
 }
 

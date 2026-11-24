@@ -4,6 +4,7 @@ export const zh: Record<string, string> = {
   'Proposed child orders': '拟议的子工单',
   'Accept split': '接受拆分',
   'Child orders': '子工单',
+  'No dependencies': '无依赖',
   'Parent order': '父工单',
   'Waiting for child orders': '等待子工单',
   'Cancel this parent and all open child orders?': '取消此父工单及其所有未完成的子工单？',

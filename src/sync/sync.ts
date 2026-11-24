@@ -161,7 +161,8 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
       const current = [...latest.reports].sort((x, y) => y.seq - x.seq)[0];
       const openRun = latest.runs.find(r => r.ended === undefined);
       // Pipeline notes precede post-merge commands; only its successful merge action may approve.
-      if (project.accept || project.design?.enabled || latest.reports.at(-1)?.design_changes?.length) skip(file, t('the acceptance pipeline owns approval; a note alone does not approve'));
+      if (latest.order.parent || latest.actions.some(a => a.kind === 'accept-split')) skip(file, t('Split deliveries require branch approval.'));
+      else if (project.accept || project.design?.enabled || latest.reports.at(-1)?.design_changes?.length) skip(file, t('the acceptance pipeline owns approval; a note alone does not approve'));
       else if (!OPEN_FOR_DELIVERY.includes(stage)) skip(file, t('the order is {stage}; an acceptance file from an earlier round is not taken as news', { stage }));
       else if (lastTime && acceptTime < lastTime) skip(file, t('older than the delivery file; the delivery was not accepted yet'));
       else if (!sinceAction(acceptTime)) skip(file, t('older than the last queue or rework action'));

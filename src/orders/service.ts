@@ -270,9 +270,10 @@ export class Orders {
     });
   }
 
-  recordSplit(tag: string, report: number, children: string[], branch: string): void {
+  recordSplit(tag: string, report: number, selection: NonNullable<Action['selection']>, branch: string): void {
+    const children = selection.map(item => item.tag);
     const doc = this.get(tag);
-    doc.actions.push({ seq: nextSeq(doc), kind: 'accept-split', at: this.now(), author: this.actor, report, children, branch });
+    doc.actions.push({ seq: nextSeq(doc), kind: 'accept-split', at: this.now(), author: this.actor, report, children, selection, branch });
     this.save(doc, 'action-accept-split', { report, children, branch });
   }
 
@@ -313,6 +314,7 @@ export class Orders {
       const now = this.stage(doc);
       const stage = now.stage;
       const overrideStage = ['failed', 'blocked', 'idle'].includes(stage) || (stage === 'awaiting-user' && doc.reports.length > 0);
+      if (kind === 'approve' && doc.order.parent && !options.commit) fail('Split deliveries require branch approval.');
       if (kind === 'approve' && doc.reports.at(-1)?.subtasks && now.waitingFor === 'card') fail('Decide the split before approving the parent.');
       if (kind === 'approve' && overrideStage && !options.override && !options.force) {
         fail('{tag} is {stage}; approving it needs --override and a note of at least 10 characters.', { tag: doc.order.tag, stage });

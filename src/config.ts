@@ -263,7 +263,7 @@ export interface FirstPassConfig {
 }
 
 export interface ProjectConfig {
-  split?: { approve: Record<string, 'auto' | 'manual'> };
+  split?: { approve: 'auto' | 'manual' | Record<string, 'auto' | 'manual'> };
   phases?: Phases;
   /** Per-kind order templates and preflight rules (`orders:` in alba.yaml). */
   orders?: OrdersConfig;
@@ -636,9 +636,9 @@ export function validateProject(raw: unknown, file: string): ProjectConfig {
   if (raw.skills !== undefined) cfg.skills = validateProjectSkills(raw.skills, file, base);
   Object.assign(cfg, routingOf(raw, file));
   if (raw.split !== undefined) {
-    if (!isRecord(raw.split) || Object.keys(raw.split).some(k => k !== 'approve') || !isRecord(raw.split.approve)
-      || Object.values(raw.split.approve).some(v => v !== 'auto' && v !== 'manual')) fail('split.approve must map order kinds to manual or auto.');
-    cfg.split = { approve: raw.split.approve as Record<string, 'manual' | 'auto'> };
+    if (!isRecord(raw.split) || Object.keys(raw.split).some(k => k !== 'approve') || (raw.split.approve !== 'auto' && raw.split.approve !== 'manual'
+      && (!isRecord(raw.split.approve) || Object.values(raw.split.approve).some(v => v !== 'auto' && v !== 'manual')))) fail('split.approve must map order kinds to manual or auto.');
+    cfg.split = { approve: raw.split.approve as NonNullable<ProjectConfig['split']>['approve'] };
   }
   if (raw.phases !== undefined) {
     cfg.phases = parsePhases(raw.phases);

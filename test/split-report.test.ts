@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { validateProject } from '../src/config.ts';
 import { validateReport } from '../src/orders/report.ts';
 import { validateSubtasks } from '../src/orders/subtasks.ts';
 import { tempOrders } from './helpers.ts';
+
+test('split policy accepts a default or a policy by kind', () => {
+  const config = (approve: unknown) => validateProject({ id: 'sample', name: 'Sample', root: '.', work_orders: '.', state_dir: '.', split: { approve } }, 'sample.yaml');
+  assert.equal(config('auto').split?.approve, 'auto');
+  assert.deepEqual(config({ feature: 'auto' }).split?.approve, { feature: 'auto' });
+  assert.throws(() => config({ feature: true }), /split.approve/);
+});
 
 const body = '## Acceptance\n- Lookup returns the stored value.';
 const item = { key: 'lookup', title: 'Lookup', kind: 'code', body };
