@@ -919,18 +919,20 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
         const point = attentionState(doc).attention;
         return point ? [{ tag: doc.order.tag, seen_at: point.at }] : [];
       }));
+      ctx.hub.publish(view.config.id, 'attention.changed', { project: view.config.id });
       return done(200, { ok: true });
     }
     if (parts[0] === 'orders' && parts.length === 3 && (parts[2] === 'seen' || parts[2] === 'mute')) {
       const tag = view.orders.get(parts[1]).order.tag;
       if (parts[2] === 'mute') {
-        if (typeof body.muted !== 'boolean') throw new ApiFailure(400, 'bad_request', '"muted" must be boolean.');
+        if (typeof body.muted !== 'boolean') throw new ApiFailure(400, 'bad_request', t('"muted" must be boolean.'));
         saveAttentionMarks(view.orders.store, [{ tag, muted: body.muted }]);
       } else {
         const at = str(body, 'at', true)!;
-        if (!/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/i.test(at) || !Number.isFinite(Date.parse(at))) throw new ApiFailure(400, 'bad_request', '"at" must be a timestamp with a timezone.');
+        if (!/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/i.test(at) || !Number.isFinite(Date.parse(at))) throw new ApiFailure(400, 'bad_request', t('"at" must be a timestamp with a timezone.'));
         saveAttentionMarks(view.orders.store, [{ tag, seen_at: new Date(at).toISOString() }]);
       }
+      ctx.hub.publish(view.config.id, 'attention.changed', { project: view.config.id, tag });
       return done(200, { ok: true });
     }
     const producerEnv = () => {

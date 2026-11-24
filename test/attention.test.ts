@@ -6,6 +6,7 @@ import { livenessOf } from '../src/api/views.ts';
 import { saveAttentionMarks, attentionMarks } from '../src/orders/attention-store.ts';
 import { SqliteStore } from '../src/orders/sqlite-store.ts';
 import { FileStore } from '../src/orders/store.ts';
+import { migrateState, exportState } from '../src/orders/state.ts';
 import type { OrderDoc } from '../src/orders/model.ts';
 import { fixture } from './api-fixture.ts';
 import { tempOrders } from './helpers.ts';
@@ -38,6 +39,13 @@ test('attention follows stage entries, run ends and unanswered questions across 
   assert.equal(attentionState(doc).attention?.at, at(4));
 });
 
+test('answering a live question preserves when the order entered awaiting-user', () => {
+  const doc: OrderDoc = { version: 1, order: { tag: 'T1', title: 'Demo', kind: '', needs: [], created: at(0), updated: at(4) },
+    runs: [{ seq: 1, id: 'r1', worker: 'demo', started: at(1) }], reports: [], actions: [],
+    outbox: [{ id: 'q1', kind: 'question', at: at(2), text: 'Which palette?', answered: { id: 'a1', at: at(4), text: 'Warm' } }] };
+  assert.deepEqual(attentionState(doc).attention, { at: at(2), reason: 'stage', text: 'Which palette?' });
+});
+
 for (const Store of [FileStore, SqliteStore]) test(`${Store.name} retains monotonic seen and mute after reopening`, () => {
   const dir = path.join(tempOrders().dir, 'marks');
   const first = new Store(dir);
@@ -46,6 +54,20 @@ for (const Store of [FileStore, SqliteStore]) test(`${Store.name} retains monoto
   const reopened = new Store(dir);
   assert.deepEqual(attentionMarks(reopened).get('T1'), { tag: 'T1', seen_at: at(4), muted: true });
   if (reopened instanceof SqliteStore) reopened.close();
+});
+
+test('migration and export preserve read and mute marks', () => {
+  const { dir, orders } = tempOrders('files');
+  const state = path.join(dir, 'state');
+  saveAttentionMarks(orders.store, [{ tag: 'T1', seen_at: at(1) }, { tag: 'T2', muted: true }]);
+  const marks = attentionMarks(orders.store);
+  migrateState(state);
+  const sql = new SqliteStore(state);
+  assert.deepEqual(attentionMarks(sql), marks);
+  sql.close();
+  const out = path.join(dir, 'export');
+  exportState(state, out);
+  assert.deepEqual(attentionMarks(new FileStore(out)), marks);
 });
 
 test('attention routes validate batches before marking and acknowledge current points', async () => {

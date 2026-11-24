@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router';
 import { Bell } from 'lucide-react';
 import type { OrderSummary } from '@api';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from './ui/dialog';
-import { enableAudio, newNotifications, notifyOrder, preferences, savePreference } from '@/lib/notifications';
+import { enableAudio, notificationTracker, notifyOrder, preferences, savePreference, watchFocusedOrder } from '@/lib/notifications';
 import { t } from '@/i18n';
 
 const loaded = Date.now();
 export function BrowserNotifications({ project, orders }: { project: string; orders?: OrderSummary[] }) {
   const [prefs, setPrefs] = useState(preferences);
   const [blocked, setBlocked] = useState(() => typeof Notification === 'undefined' || Notification.permission === 'denied');
-  const latest = useRef(new Map<string, string>());
+  const [track] = useState(() => notificationTracker(loaded));
   const { pathname } = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
@@ -25,13 +25,18 @@ export function BrowserNotifications({ project, orders }: { project: string; ord
     window.addEventListener('keydown', enableAudio);
     return () => { window.removeEventListener('click', enableAudio); window.removeEventListener('keydown', enableAudio); };
   }, [prefs.sound]);
+  const match = matchPath('/p/:project/orders/:tag/*', pathname);
+  const openTag = match?.params.project === project ? match.params.tag : undefined;
   useEffect(() => {
-    const match = matchPath('/p/:project/orders/:tag/*', pathname);
-    const tag = document.hasFocus() && !document.hidden && match?.params.project === project ? match.params.tag : undefined;
-    for (const order of newNotifications(orders ?? [], latest.current, loaded, tag)) {
+    if (openTag && (prefs.sound || prefs.notify)) return watchFocusedOrder(project, openTag);
+  }, [project, openTag, prefs.sound, prefs.notify]);
+  useEffect(() => {
+    if (!orders) return;
+    const tag = document.hasFocus() && !document.hidden ? openTag : undefined;
+    for (const order of track(project, orders, tag)) {
       if (prefs.notify || prefs.sound) void notifyOrder(order, () => navigate(`/p/${encodeURIComponent(project)}/orders/${encodeURIComponent(order.tag)}`)).catch(() => {});
     }
-  }, [orders, pathname, project, prefs, navigate]);
+  }, [orders, openTag, project, prefs, navigate, track]);
   const save = (key: 'notify' | 'sound', value: boolean) => { savePreference(key, value); setPrefs(preferences()); };
   async function toggleNotify(on: boolean) {
     if (!on) { save('notify', false); return; }

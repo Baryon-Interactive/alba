@@ -18,6 +18,8 @@ export function invalidationsFor(name: StreamEventName, data: unknown, fallbackP
   const fields = (data as { data?: { fields?: string[] }; fields?: string[] } | undefined);
   const changed = fields?.data?.fields ?? fields?.fields ?? [];
   switch (name) {
+    case 'attention.changed':
+      return [...detail, keys.orders(project), keys.projectOverview(project), keys.overview(project)];
     case 'order.added':
     case 'order.action':
     case 'order.report':
@@ -46,8 +48,10 @@ export function invalidationsFor(name: StreamEventName, data: unknown, fallbackP
     case 'check.done':
     case 'refs.adopted':
       return [...order, keys.orders(project)];
-    case 'log.other':
-      return order;
+    case 'log.other': {
+      const type = (data as { type?: string } | undefined)?.type;
+      return type === 'outbox' || type === 'outbox-answered' ? [...order, ...lists] : order;
+    }
     case 'quota':
       return [keys.workers(project), keys.quota(project), ...overview, ['route', project] as const];
     case 'tick.done':
@@ -72,7 +76,7 @@ export const everything: QueryKey[] = [
 ];
 
 export const STREAM_EVENT_NAMES: StreamEventName[] = [
-  'hello', 'resync', 'order.added', 'order.updated', 'order.action', 'order.report', 'run.start', 'run.updated', 'run.activity', 'run.end',
+  'hello', 'resync', 'attention.changed', 'order.added', 'order.updated', 'order.action', 'order.report', 'run.start', 'run.updated', 'run.activity', 'run.end',
   'check.done', 'refs.adopted', 'log.other', 'run.log', 'run.transcript', 'quota', 'tick.done',
   'serve.notice', 'decision.added', 'question.asked', 'question.answered', 'credits.changed', 'clean.done', 'workers.edited', 'skills.edited',
 ];

@@ -1,19 +1,28 @@
 import type { OrderSummary } from '@api';
 
 type Candidate = Pick<OrderSummary, 'project' | 'tag' | 'attention' | 'muted' | 'unread'>;
-export function newNotifications<T extends Candidate>(orders: readonly T[], latest: Map<string, string>, since: number, focusedTag?: string): T[] {
-  return orders.filter(order => {
-    const point = order.attention;
-    if (!point) return false;
-    const key = JSON.stringify([order.project, order.tag]);
-    if ((latest.get(key) ?? '') >= point.at) return false;
-    latest.set(key, point.at);
-    return Date.parse(point.at) > since && !!order.unread && !order.muted && order.tag !== focusedTag;
-  });
+export function notificationTracker(since: number) {
+  const initial = new Set<string>();
+  const latest = new Map<string, string>();
+  return <T extends Candidate>(project: string, orders: readonly T[], focusedTag?: string): T[] => {
+    const baseline = !initial.has(project);
+    initial.add(project);
+    return orders.filter(order => {
+      const point = order.attention;
+      if (!point) return false;
+      const key = JSON.stringify([project, order.tag]);
+      if ((latest.get(key) ?? '') >= point.at) return false;
+      latest.set(key, point.at);
+      return !baseline && Date.parse(point.at) > since && !!order.unread && !order.muted && order.tag !== focusedTag;
+    });
+  };
 }
 
 const notifyKey = 'alba-browser-notify', soundKey = 'alba-browser-sound';
-export const preferences = () => ({ notify: localStorage.getItem(notifyKey) === 'true', sound: localStorage.getItem(soundKey) === 'true' });
+export function preferences() {
+  try { return { notify: localStorage.getItem(notifyKey) === 'true', sound: localStorage.getItem(soundKey) === 'true' }; }
+  catch { return { notify: false, sound: false }; }
+}
 export function savePreference(key: 'notify' | 'sound', value: boolean) {
   localStorage.setItem(key === 'notify' ? notifyKey : soundKey, String(value));
 }
@@ -36,6 +45,32 @@ function tone() {
   oscillator.stop(start + 0.17);
 }
 
+const focusKey = (project: string, tag: string) => 'alba-reading:' + JSON.stringify([project, tag]);
+
+/** A focused order tab suppresses alerts from sibling tabs, including tabs in another window. */
+export function watchFocusedOrder(project: string, tag: string) {
+  if (!navigator.locks) return;
+  let release: (() => void) | undefined;
+  const update = () => {
+    release?.();
+    release = undefined;
+    if (!document.hidden && document.hasFocus()) {
+      const held = new Promise<void>(resolve => { release = resolve; });
+      void navigator.locks.request(focusKey(project, tag), { mode: 'shared' }, () => held);
+    }
+  };
+  update();
+  window.addEventListener('focus', update);
+  window.addEventListener('blur', update);
+  document.addEventListener('visibilitychange', update);
+  return () => {
+    release?.();
+    window.removeEventListener('focus', update);
+    window.removeEventListener('blur', update);
+    document.removeEventListener('visibilitychange', update);
+  };
+}
+
 export async function notifyOrder(order: OrderSummary, open: () => void) {
   const key = 'alba-notified:' + JSON.stringify([order.project, order.tag]);
   const deliver = () => {
@@ -49,6 +84,8 @@ export async function notifyOrder(order: OrderSummary, open: () => void) {
       message.onclick = () => { window.focus(); open(); message.close(); };
     }
   };
-  if (navigator.locks) await navigator.locks.request(key, deliver);
-  else deliver();
+  if (!navigator.locks) return deliver();
+  await navigator.locks.request(key, () => navigator.locks.request(focusKey(order.project, order.tag), { ifAvailable: true }, lock => {
+    if (lock) deliver();
+  }));
 }

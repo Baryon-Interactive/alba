@@ -6,8 +6,7 @@ export interface AttentionMark { tag: string; seen_at?: string; muted?: boolean 
 export function attentionMarks(store: OrderStore): Map<string, AttentionMark> {
   let rows: AttentionMark[];
   if (store instanceof SqliteStore) {
-    rows = store.hasAttentionSchema() ? store.db.prepare('SELECT tag, seen_at, muted FROM order_attention').all()
-      .map(row => ({ tag: String(row.tag), seen_at: row.seen_at as string | undefined, muted: !!row.muted })) : [];
+    rows = store.attentionRows();
   } else rows = (store.readMeta('order-attention') as AttentionMark[] | undefined) ?? [];
   return new Map(rows.map(row => [row.tag, row]));
 }
@@ -28,7 +27,8 @@ export function saveAttentionMarks(store: OrderStore, changes: AttentionMark[]):
       const marks = attentionMarks(store);
       for (const row of changes) {
         const old = marks.get(row.tag);
-        marks.set(row.tag, { ...old, ...row, seen_at: old?.seen_at && (!row.seen_at || old.seen_at > row.seen_at) ? old.seen_at : row.seen_at });
+        const seen_at = [old?.seen_at, row.seen_at].filter((at): at is string => !!at).sort().pop();
+        marks.set(row.tag, { tag: row.tag, muted: row.muted ?? old?.muted ?? false, ...(seen_at && { seen_at }) });
       }
       store.writeMeta('order-attention', [...marks.values()]);
     }

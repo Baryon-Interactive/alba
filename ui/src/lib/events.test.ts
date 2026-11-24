@@ -122,3 +122,11 @@ describe('coalesced invalidation', () => {
     second.close(); client.clear();
   });
 });
+it('refreshes attention after outbox messages and read or mute changes in another browser', () => {
+  for (const type of ['outbox', 'outbox-answered']) {
+    expect(invalidationsFor('log.other', { type, tag: 'T1' }, 'demo')).toContainEqual(keys.orders('demo'));
+  }
+  const changed = invalidationsFor('attention.changed', { tag: 'T1' }, 'demo');
+  expect(changed).toContainEqual(keys.order('demo', 'T1'));
+  expect(changed).toContainEqual(keys.projectOverview('demo'));
+});

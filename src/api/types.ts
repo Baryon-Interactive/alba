@@ -1026,6 +1026,7 @@ export interface CheckRequest { project?: string; results?: string[]; worktree?:
  * See docs/console/010-api.md for replay (`Last-Event-ID`) and the `logs` parameter.
  */
 export interface StreamEvents {
+  'attention.changed': { project: string; tag?: string };
   'run.activity': { project: string; tag: string; key: string; live: import('./live-types.ts').LiveState };
   /** First message of every connection. */
   hello: { boot: string; project: string; at: string; replayed: number };
