@@ -33,7 +33,7 @@ Opening a branch or writing a report is not the same as being done. End the fina
 
 ```
 --- alba-report ---
-{"status":"ready","summary":"one sentence","question":"","evidence":["path/to/proof"],"commits":["abc1234"]}
+{"run":"<ALBA_RUN>","status":"ready","summary":"one sentence","question":"","evidence":["path/to/proof"],"commits":["abc1234"]}
 --- end ---
 ```
 
@@ -45,6 +45,7 @@ Opening a branch or writing a report is not the same as being done. End the fina
   - `dropped`: the order should not be done at all (say why in `summary`).
 - `summary` is one sentence on one line.
 - `question` is at most one concrete question, or an empty string. Never ask several questions, never ask for permission you already have. When the answer is a choice between a few things, add `"options"`: 2 to 4 entries, the one you recommend first, each a short text or `{"label":"...","note":"why","images":["path.png"]}`. When the choice is not about this order alone but about the project (candidate pictures for the look of something, a naming, a direction), add `"scope":"project"`: the question is then listed with the project's pick sets, where a person looks at the pictures large and chooses. When what you need is for a person to start a session and click a card, not to answer, add `"waiting_for":"card"`.
+- Replace `<ALBA_RUN>` with the exact run id from the prompt or environment in both the final block and any JSON report file. A report naming a different run is stale.
 - `evidence` lists paths a reviewer can open to check your claim (test output, screenshots, a report document). `commits` lists the commits you made.
 - Do not claim `ready` for anything you did not verify. Say what is not verified in your final message.
 - Valid JSON on a single line between the two marker lines. Nothing after `--- end ---`.

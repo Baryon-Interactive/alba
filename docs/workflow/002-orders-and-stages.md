@@ -64,6 +64,8 @@ It is either a plain `.json` file or a fixed block at the end of a free-text fil
 --- end ---
 ```
 
+A worker launched by Alba receives `ALBA_RUN` (for example `T1/r2`) in its environment and prompt. Copy it into the JSON `"run"` field in the final block and any standalone report. The order-local id (`r2`) is also accepted. Older workers may omit the field. Finish and sync reject a mismatched id or a delivery file modified before the current run started and record a `stale-report` event. An older file can be inherited from the immediately preceding run on a same-session resume or worker handover. An unsigned inherited file must match the previous run's recorded delivery path.
+
 If a file has several blocks the last one wins. The same JSON may also be a `<TAG>.report.json` file. Document 005 says how a worker is told to write it. `alba orders report <TAG> --file <file>` records it. Nothing is guessed from free text.
 
 ## 5. Importing a Markdown dispatch table

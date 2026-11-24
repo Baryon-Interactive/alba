@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
 import { UserError, t } from '../i18n.ts';
 import type { OrderDoc, Stage } from '../orders/model.ts';
-import { parseReportBlock, type ReportInput } from '../orders/report.ts';
+import { parseReportBlock, staleReport, type ReportInput } from '../orders/report.ts';
 import { Orders } from '../orders/service.ts';
 import { findWorktree } from '../tick/gather.ts';
 import { baseRefOf, planWorktree } from '../run/worktree.ts';
@@ -127,19 +127,28 @@ export function syncOrders(project: ProjectConfig, orders: Orders, options: Sync
       else {
         const text = readFileSync(path.join(dir, file), 'utf8');
         const { report, why } = readDelivery(text);
-        if (why) result.skipped.push({ tag, file, why: t('the report block is not valid ({why}); recorded as inferred', { why }) });
-        change(t('delivered at {time}: {status} ({how}) {summary}', { time: lastTime, status: report.status, how: report.source === 'inferred' ? t('inferred from the first line') : t('report block'), summary: report.summary }));
-        delivered = report.status;
-        if (!options.dryRun) {
-          const when = at(lastTime);
-          const open = doc.runs.find(r => r.ended === undefined);
-          const lastFile = path.join(dir, file).replace(/\\/g, '/');
-          if (!open) when.runStart(tag, { worker: doc.order.worker?.trim() || 'unknown', extra: { last_file: lastFile } }, true);
-          // An imported run that was open since the table was read cannot have started after the delivery.
-          else when.patchRun(tag, open.id, { last_file: lastFile, ...(open.started > lastTime ? { started: lastTime } : {}) });
-          when.runEnd(tag, 'completed');
-          when.report(tag, { ...report, ...(hasDeliveryChecks(project.checks) ? { delivery_text: text } : {}) }, file, true);
-          lintDelivery(project, orders, tag);
+        const open = doc.runs.find(r => r.ended === undefined);
+        const target = open ?? { id: `r${doc.runs.length + 1}`, started: doc.runs.at(-1)?.started ?? lastTime };
+        const rejected = staleReport(doc, target, report, path.join(dir, file).replace(/\\/g, '/'), lastTime);
+        if (rejected) {
+          skip(file, t('stale report'));
+          if (!options.dryRun && !orders.store.events({ tag }).some(e => e.type === 'stale-report' && e.data?.file === rejected.file && e.data?.modified === lastTime && e.data?.run === target.id && e.data?.namedRun === rejected.namedRun)) {
+            orders.record(tag, 'stale-report', rejected);
+          }
+        } else {
+          if (why) result.skipped.push({ tag, file, why: t('the report block is not valid ({why}); recorded as inferred', { why }) });
+          change(t('delivered at {time}: {status} ({how}) {summary}', { time: lastTime, status: report.status, how: report.source === 'inferred' ? t('inferred from the first line') : t('report block'), summary: report.summary }));
+          delivered = report.status;
+          if (!options.dryRun) {
+            const when = at(lastTime);
+            const lastFile = path.join(dir, file).replace(/\\/g, '/');
+            if (!open) when.runStart(tag, { worker: doc.order.worker?.trim() || 'unknown', extra: { last_file: lastFile } }, true);
+            // An imported run that was open since the table was read cannot have started after the delivery.
+            else when.patchRun(tag, open.id, { last_file: lastFile, ...(open.started > lastTime ? { started: lastTime } : {}) });
+            when.runEnd(tag, 'completed');
+            when.report(tag, { ...report, ...(hasDeliveryChecks(project.checks) ? { delivery_text: text } : {}) }, file, true);
+            lintDelivery(project, orders, tag);
+          }
         }
       }
     }

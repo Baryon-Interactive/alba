@@ -54,6 +54,18 @@ test('sync: a delivery becomes a finished run and a report; the block wins, a fi
   assert.equal(orders.get('A1').reports.length, 1);
 });
 
+test('sync leaves a newer imported run open when the file names an earlier run', () => {
+  const { orders, project, put } = shadow();
+  orders.add({ tag: 'T1', title: 'Demo', kind: 'task' });
+  orders.runStart('T1', { worker: 'demo' }, true);
+  orders.runEnd('T1');
+  orders.runStart('T1', { worker: 'demo' }, true);
+  put('T1.last.txt', BLOCK.replace('"status"', '"run":"r1","status"'), '2026-01-02T00:00:00Z');
+  for (let pass = 0; pass < 2; pass++) assert.equal(syncOrders(project, orders).changes.length, 0);
+  assert.equal(orders.get('T1').runs.at(-1)?.ended, undefined);
+  assert.equal(orders.store.events({ tag: 'T1' }).filter(e => e.type === 'stale-report').length, 1);
+});
+
 test('sync: an acceptance file merges the order, but only when it is not older than the delivery; stale files and tool runs are left alone', () => {
   const { orders, project, put } = shadow();
   for (const tag of ['B1', 'B2', 'B3', 'B4']) { orders.add({ tag, title: tag, kind: 'k' }); orders.act(tag, 'queue'); orders.runStart(tag, { worker: 'w' }, true); }

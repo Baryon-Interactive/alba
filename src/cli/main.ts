@@ -13,7 +13,7 @@ import { planOrder, editPlan } from '../orders/planned.ts';
 import { usageRows } from '../usage/store.ts';
 import { collectUsage, usageReport, sinceDate } from '../usage/accounting.ts';
 import { runUsageScorecard } from './scorecard.ts';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { mergeListFlags, parseReleaseArgs, releaseFlags } from './args.ts';
@@ -30,7 +30,7 @@ function editorLines(rows: (EditorSlot & { up?: boolean; pids?: number[]; projec
 }
 import { UserError, fail, t } from '../i18n.ts';
 import { RUN_OUTCOMES, STAGES, type ActionKind, type OrderDoc, type RunOutcome, type Stage } from '../orders/model.ts';
-import { parseReportFile } from '../orders/report.ts';
+import { parseReportFile, staleReport } from '../orders/report.ts';
 import { reportInRunLog } from '../run/lingering.ts';
 import { Orders, STAGE_PRIORITY } from '../orders/service.ts';
 import { stateStore } from '../orders/backend.ts';
@@ -886,7 +886,9 @@ ${editorLines(editors, projects.length > 1)}` : body;
         // A run a person ends as completed whose log already ends with its report (a worker whose process stayed after its last
         // message): that report is recorded, as the end of the process would have done.
         const found = outcome === 'completed' && !ended.reports.some(r => r.run === closed.id) ? reportInRunLog(systemProbes, closed) : undefined;
-        if (found) {
+        const stale = found && staleReport(ended, closed, found.report, found.file);
+        if (stale) orders.record(rest[0], 'stale-report', stale);
+        if (found && !stale) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
           requeueUndeliveredInbox(orders, rest[0], closed);
           if (found.report.status === 'ready') {
@@ -908,6 +910,13 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
         if (!values.file) fail('report needs --file.');
         const file = resolveFile(values.file, cfg);
         const parsed = parseReportFile(file, readFileSync(file, 'utf8'));
+        const doc = orders.get(rest[0]);
+        const current = doc.runs.at(-1) ?? { id: '', started: orders.now() };
+        const stale = (doc.runs.length || parsed.run) && staleReport(doc, current, parsed, file, statSync(file).mtime.toISOString());
+        if (stale) {
+          orders.record(rest[0], 'stale-report', stale);
+          return t('stale report');
+        }
         orders.report(rest[0], { ...parsed, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: readFileSync(file, 'utf8') } : {}) }, path.basename(file));
         lintDelivery(cfg, orders, rest[0]);
         return tagLine(orders.get(rest[0]));

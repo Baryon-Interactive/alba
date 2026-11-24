@@ -101,6 +101,7 @@ test('launch: every worker process gets ALBA_RUN=<TAG>/<run>, and a local run in
   orders.add({ tag: 'G1', title: 'Guard', kind: 'code' }); orders.act('G1', 'queue');
   startRun({ project: cfg, orders, workers, probes }, 'G1', 'fake');
   assert.equal(env.ALBA_RUN, 'G1/r1');
+  assert.match(readFileSync(orders.get('G1').runs[0]!.prompt_file!, 'utf8'), /^ALBA_RUN=G1\/r1\./m);
   assert.match(readFileSync(path.join(root, '.git', 'hooks', 'reference-transaction'), 'utf8'), /^# protected: refs\/heads\/main$/m);
   assert.deepEqual(orders.get('G1').runs[0]!.role_warnings, []);
 });

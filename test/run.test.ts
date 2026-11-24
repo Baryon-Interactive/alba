@@ -70,6 +70,33 @@ test('report block: the new markers, an empty question, and ready leads to await
   assert.equal(orders.stage(orders.get('T1')).stage, 'awaiting-review');
 });
 
+test('finish binds reports to the current run and only inherits files from a resumed run', () => {
+  for (const [named, old, resumed, accepted] of [
+    ['T1/r2', false, false, true], ['r1', false, false, false], [undefined, false, false, true],
+    [undefined, true, false, false], ['r1', true, true, true], ['r1', false, true, false],
+  ] as const) {
+    const { orders, project } = fixture();
+    const file = path.join(project.work_orders, 'T1.last.txt');
+    const first = orders.runStart('T1', { worker: 'demo', session: 'prior', extra: { last_file: file } }).run;
+    orders.runEnd('T1', 'capacity');
+    const current = orders.runStart('T1', { worker: 'demo', session: resumed ? 'prior' : 'new', extra: { continuation: resumed, last_file: file, pid: 42 } }).run;
+    const text = ['--- alba-report ---', JSON.stringify({ status: 'ready', summary: 'Done', run: named }), '--- end ---'].join('\n');
+    const finish = findFinishes(project, orders, probes({
+      fileTime: p => p === file ? old ? first.started : current.started : undefined,
+      readText: p => p === file ? text : undefined,
+    }))[0];
+    applyFinish(orders, finish);
+    assert.equal(finish.report?.status === 'ready', accepted);
+    const rejected = orders.store.events({ tag: 'T1' }).filter(e => e.type === 'stale-report');
+    assert.equal(rejected.length, accepted ? 0 : 1);
+    if (!accepted) {
+      assert.equal(finish.missing_report, true);
+      assert.equal(rejected[0].data?.namedRun, named ?? null);
+      assert.equal(rejected[0].data?.file, file);
+    }
+  }
+});
+
 test('transient errors are recognised and backed off 1, 5, 15 minutes, three times', () => {
   for (const line of ['ERROR: model at capacity, please retry', 'unexpected status 429 Too Many Requests', 'HTTP 503 Service Unavailable', 'stream disconnected before completion', 'read ECONNRESET', 'Reconnecting... 3/5'])
     assert.ok(isTransientError(line), line);
