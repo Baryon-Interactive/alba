@@ -4,6 +4,7 @@ import { tempOrders } from './helpers.ts';
 import { alba, projectDir } from './cli-helper.ts';
 import { validateProject } from '../src/config.ts';
 import { validateWorkers } from '../src/workers/config.ts';
+import { verifierArgs } from '../src/review/independent.ts';
 import { validatePhaseWorkers } from '../src/orders/phase-config.ts';
 
 const base = { id: 'sample', name: 'Sample', root: '.', work_orders: '.', state_dir: '.' };
@@ -31,6 +32,18 @@ test('phase lists require unique ids and exactly one final write phase', () => {
   assert.deepEqual(config([plan, write]).phases?.code, [plan, write]);
   for (const list of [[write], [write, plan], [plan, write, write], [plan, plan, write], [{ ...plan, id: '2' }, write]]) {
     assert.throws(() => config(list), /phase/);
+  }
+});
+
+test('resuming a planner keeps the restricted arguments of each engine', () => {
+  for (const engine of ['codex-cli', 'claude-cli']) {
+    const worker = validateWorkers({ workers: [{ id: 'reader', engine }] }, 'workers.yaml').workers[0];
+    const original = verifierArgs(worker, '.', 'Read', 'last.txt', ['sample']);
+    const resumed = verifierArgs(worker, '.', 'Read', 'last.txt', ['sample'], 'saved-session');
+    const flag = engine === 'codex-cli' ? 'resume' : '--resume';
+    const index = resumed.indexOf(flag);
+    assert.deepEqual(resumed.splice(index, 2), [flag, 'saved-session']);
+    assert.deepEqual(resumed, original);
   }
 });
 

@@ -260,7 +260,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const orderModel = doc.order.model && (doc.order.worker === worker.id || options.explicitWorker) ? doc.order.model : undefined;
   const runWorker = orderModel ? { ...worker, model: orderModel } : worker;
   const adapter = workerAdapter(worker.engine);
-  const canResume = readOnly ? worker.engine === 'claude-cli' : adapter.nativeResume || !!worker.launch.session;
+  const canResume = adapter.nativeResume || !!worker.launch.session;
   const plan = planWorktree(project, doc.order);
   const remote = worker.host ? remoteTarget(project, worker, plan.path, workers.file) : undefined;
   const resumeFailures = trailingTransientFailures(doc.runs, worker.id);
@@ -333,7 +333,8 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // An answer, a monitor result or a message continues the same conversation when the engine can. Several notes still all go in the prompt.
   // The session to continue is the one the engine reported in the previous run's events (a run stopped by a person is closed
   // before its end is read, so its record may not have it).
-  const previousSession = previous && previous.phase === phase?.id ? engineSession(previous, ctx.probes) : undefined;
+  const restartedPhase = phases && previous && doc.actions.some(a => a.seq > previous.seq && (a.kind === 'queue' || a.kind === 'rework'));
+  const previousSession = previous && !restartedPhase && previous.phase === phase?.id ? engineSession(previous, ctx.probes) : undefined;
   // A person who queues the order again after the note (or names another worker) asks for a fresh start, not the same conversation.
   const requeued = !!pending && doc.actions.some(a => a.kind === 'queue' && !a.note && a.seq > pending.seq);
   const resumeForNote = !reroute && !rotating && !previous?.lost_session && pending && !requeued && canResume && previousSession && previous.worker === worker.id && (pending.kind === 'answer' || pending.kind === 'monitor' || pending.kind === 'message') ? previousSession : undefined;
@@ -382,8 +383,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   const values = { cwd: plan.path, prompt_file: promptFile, last_file: lastFile, model: runWorker.model ?? worker.launch.model ?? '', log, git_dir: commonGitDir(plan.path), worktree_git_dir: worktreeGitDir(plan.path), session_id: sessionId, tunnel_port: '', ...remote?.values };
   const args = readOnly ? [] : launchArgs(worker.launch, values, resumeSession !== undefined);
   const launchEnv = expandEnv(worker.launch.env, { ...skillEnvValues(skillPlan.selection), tunnel_port: values.tunnel_port });
-  const environment = readOnly ? readOnlyCommand(ctx, runWorker, plan.path, `Read the UTF-8 prompt file ${promptFile} in full. Follow the read-only planning instructions.`, lastFile, !!remote) : adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file, cwd: plan.path, ...(inboxHook ? { inboxHook } : {}), program: worker.launch.program, extraArgs: roleMount.args });
-  if (readOnly && resumeSession && worker.engine === 'claude-cli') environment.args.push('--resume', resumeSession);
+  const environment = readOnly ? readOnlyCommand(ctx, runWorker, plan.path, `Read the UTF-8 prompt file ${promptFile} in full. Follow the read-only planning instructions.`, lastFile, !!remote, resumeSession) : adapter.prepare(args, { remote: !!remote, worker: runWorker, stateDir: project.state_dir, skills: skillPlan.selection.selected, resume: resumeSession, env: launchEnv, envUnset: worker.launch.env_unset, promptFile: values.prompt_file, lastFile: values.last_file, cwd: plan.path, ...(inboxHook ? { inboxHook } : {}), program: worker.launch.program, extraArgs: roleMount.args });
   if (!environment.program) args.unshift(...roleMount.args);
   Object.assign(environment.env, roleMount.env);
   environment.env[RUN_ENV] = reportRun;
@@ -406,7 +406,12 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
   // the last slot since the checks above), the run record and the leases, before anything is spawned. Nothing is written when a
   // check fails.
   const remotePhaseCheck = readOnly && remote ? path.join(runsDir, `${doc.order.tag}-${runId}.worktree-check`) : undefined;
-  const fingerprint = readOnly ? worktreeFingerprint(plan.path) : undefined;
+  const phaseFacts: Partial<Run> = phases && phase ? {
+    phase: phase.id, final_phase: !readOnly, next_phase: phases.list[phases.index + 1]?.id,
+    phase_timeout_minutes: phase.timeout_minutes,
+    ...(readOnly ? { worktree_fingerprint: worktreeFingerprint(plan.path), remote_phase_check: remotePhaseCheck,
+      plan_file: path.join(runsDir, `${doc.order.tag}-${runId}.plan.md`) } : {}),
+  } : {};
   const launch = worker.launch;
   let run: Run;
   let slot: number | undefined;
@@ -444,7 +449,7 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
       const writtenPrompt = buildWrittenPrompt(slot, portBase);
       writeFileSync(promptFile, writtenPrompt, 'utf8');
       const recordedPrompt = recordRunPrompt({ workOrders: project.work_orders, doc, skills: skillPlan.listed, selection: chosenLessons, promptText, writtenPrompt, rules, handoff });
-      const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...(phases && phase ? { phase: phase.id, final_phase: !readOnly, next_phase: phases.list[phases.index + 1]?.id, phase_timeout_minutes: phase.timeout_minutes } : {}), ...(readOnly ? { worktree_fingerprint: fingerprint, remote_phase_check: remotePhaseCheck, plan_file: path.join(runsDir, `${doc.order.tag}-${runId}.plan.md`) } : {}), ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(slot !== undefined ? { slot } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(!readOnly && launch.session && (resumeSession !== undefined || takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}), lessons: recordedPrompt.lessons, prompt_bytes: recordedPrompt.prompt_bytes } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
+      const opened = orders.runStart(doc.order.tag, { worker: worker.id, extra: { ...phaseFacts, ...(remote ? { host: remote.machine.id, remote_worktree: remote.worktree } : {}), ...(slot !== undefined ? { slot } : {}), ...(role.id ? { role: role.id, role_source: role.source, role_effort: role.definition?.effort, role_reasoning: role.definition?.reasoning, mcp_servers: roleMount.servers, role_warnings: roleMount.warnings } : {}), ...(tools.tools.length ? { tools: tools.tools.map(x => `${x.manifest.id}@${x.manifest.version}`) } : {}), continuation: resumeSession !== undefined || !!resumeFailures || pending?.kind === 'answer' || pending?.kind === 'monitor', engine: worker.engine, model: runWorker.model ?? launch.model, template: launch.id, ...(resumeSession || (!readOnly && launch.session && takesSessionId(launch)) ? { session: sessionId } : {}), log, last_file: lastFile, prompt_file: promptFile, cwd: plan.path, attempt, ...(resumeReason ? { resume_reason: resumeReason } : {}), ...(notes.some(n => n.kind === 'monitor') ? { monitor: true } : {}), ...(rotated ? { rotated, handoff_file: handoff } : {}), routing: { kind: routingOf(project, doc).kind || doc.order.kind, why: options.route?.why ?? `role ${role.id} (${role.source}); ${explicitChoice.why}`, rejected: options.route?.rejected ?? [] }, ...(mountedSkills ? { skills: mountedSkills } : {}), ...(editor ? { editor: { pool: editor.slot.pool, machine: editor.slot.machine, port: editor.slot.port, url: editor.slot.url, log: editor.slot.log } } : {}), ...(main?.head ? { main_head: main.head, root_dirty: main.dirty } : {}), lessons: recordedPrompt.lessons, prompt_bytes: recordedPrompt.prompt_bytes } }, false, fromHeld ? { fromHeld: { note: t('started on {worker} by a person', { worker: worker.id }) } } : {}).run;
       orders.record(doc.order.tag, 'lessons-mounted', { run: opened.id, ...recordedPrompt.lessons });
       if (project.resources) acquireLeases(project, orders, orders.get(doc.order.tag), opened.id, ctx.probes.now());
       return opened;

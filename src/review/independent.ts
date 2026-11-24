@@ -103,12 +103,13 @@ export function readOnlyCommand(
   promptInstruction: string,
   lastFile: string,
   remote = false,
+  resume?: string,
 ) {
   const named = Object.fromEntries(Object.entries(worker.launch!.env).map(([key, value]) => [key, value.replace(/\{skill_names\}|\{skill_allow\}/g, '')]));
   const adapter = workerAdapter(worker.engine);
   const environment = !remote && adapter.verifierEnvironment ? adapter.verifierEnvironment(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) : { env: named, envUnset: worker.launch!.env_unset };
   const mcpServers = remote ? [] : adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
-  const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers);
+  const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers, resume);
   return { program: worker.launch!.program, args, ...environment };
 }
 
@@ -172,10 +173,10 @@ export function parseIndependentVerdict(text: string): IndependentVerdict | unde
 }
 
 /** Deliberately use a restricted engine invocation, never the delivering worker's mutation-capable launch arguments. */
-export function verifierArgs(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[] = []): string[] {
+export function verifierArgs(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[] = [], resume?: string): string[] {
   const args = workerAdapter(worker.engine).verifierArgs;
   if (!args) throw new Error(`No enforced read-only verifier adapter for engine ${worker.engine}. Configure a supported verifier.`);
-  return args(worker, cwd, prompt, lastFile, mcpServers);
+  return args(worker, cwd, prompt, lastFile, mcpServers, resume);
 }
 
 function record(orders: Orders, run: IndependentCheck): IndependentCheck { orders.record(run.tag, 'independent-check', { ...run }); return run; }

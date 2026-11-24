@@ -16,9 +16,11 @@ export function worktreeFingerprint(cwd) {
   // Porcelain v2 carries HEAD and each changed path's index object id and modes.
   const status = execFileSync('git', ['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '--no-renames', '-z', '--untracked-files=all'],
     { cwd, timeout: 30000, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
-  const hash = createHash('sha256').update(status);
+  const hash = createHash('sha256');
   const buffer = Buffer.allocUnsafe(64 * 1024);
   for (const entry of status.toString().split('\0')) {
+    if (!entry || entry.startsWith('# branch.upstream ') || entry.startsWith('# branch.ab ')) continue;
+    hash.update(entry).update('\0');
     // Ordinary, unmerged and untracked entries have different fixed-width prefixes.
     const name = /^(?:1 (?:\S+ ){7}|u (?:\S+ ){9}|\? )([\s\S]+)$/.exec(entry)?.[1];
     if (!name) continue;

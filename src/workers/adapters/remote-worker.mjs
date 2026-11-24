@@ -22,7 +22,7 @@ if (spec.read_only === 'codex-cli') {
     const [exe, flags] = command(program, argv);
     return execFileSync(exe, flags, { ...options, encoding: 'utf8', timeout: 30000 });
   });
-  args.splice(-1, 0, ...disableServers(servers));
+  args.splice(1, 0, ...disableServers(servers));
 } else if (spec.read_only === 'claude-cli') {
   const home = spec.read_only_home;
   mkdirSync(home, { recursive: true });

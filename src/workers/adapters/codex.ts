@@ -2,9 +2,9 @@ import { codexVerifierServers, disableServers } from './read-only.mjs';
 import { generic } from './generic.ts';
 import type { WorkerAdapter } from './types.ts';
 export const codex: WorkerAdapter = {
-  verifierArgs(worker, cwd, prompt, lastFile, mcpServers) {
+  verifierArgs(worker, cwd, prompt, lastFile, mcpServers, resume) {
     const model = worker.model ?? worker.launch?.model;
-    return ['exec', '-C', cwd, '--sandbox', 'read-only', '-c', 'approval_policy="never"', '-c', 'features.apps=false', '-c', 'features.plugins=false', ...disableServers(mcpServers), '--json', '--output-last-message', lastFile, ...(model ? ['--model', model] : []), prompt];
+    return ['exec', '-C', cwd, '--sandbox', 'read-only', '-c', 'approval_policy="never"', '-c', 'features.apps=false', '-c', 'features.plugins=false', ...disableServers(mcpServers), '--json', '--output-last-message', lastFile, ...(model ? ['--model', model] : []), ...(resume ? ['resume', resume] : []), prompt];
   },
   verifierServers: codexVerifierServers,
   ...generic, id: 'codex-cli', structured: true,

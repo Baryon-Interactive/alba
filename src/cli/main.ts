@@ -146,11 +146,11 @@ Usage: alba [--project <alba.yaml>] <command>      (or set ALBA_PROJECT)
   orders edit-plan <TAG> [--title t] [--kind k] [--needs A,B] [--intent text] [--role role]
   orders cancel <TAG>
   orders close <TAG> (--merged-elsewhere <commit-or-ref> | --done-by-lead) [--commit <sha>] [--note text]
-  orders add <TAG> [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--run-model m] [--heavy h] [--branch b] [--base-ref local-branch] [--sparse dir,dir] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
+  orders add <TAG> [--phases none] [--body-file f] [--slug s] [--queue] --title t --kind k [--needs A,B] [--worker w] [--run-model m] [--heavy h] [--branch b] [--base-ref local-branch] [--sparse dir,dir] [--tags a,b] [--skills a,b] [--role id] [--review manual|auto] [--check independent|none] [--worktree p] [--uses res,res]
   orders check <TAG>   start a separate read-only verifier (or show the active check)
                     [--quote text] [--decisions text] [--spend-cap n] [--protect a,b]
-  orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b] [--override]   --override approves a failed, awaiting-user (with report), blocked or idle delivery with a note of at least 10 characters
-  orders set <TAG> [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--role id] [--worker id]   records where an order's work is (an order from a table has no branch); logged as an event
+  orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--phase id (rework)] [--branch b] [--override]   --override approves a failed, awaiting-user (with report), blocked or idle delivery with a note of at least 10 characters
+  orders set <TAG> [--phases none] [--branch b] [--worktree p] [--base-ref local-branch] [--sparse dir,dir] [--uses res,res] [--role id] [--worker id]   records where an order's work is (an order from a table has no branch); logged as an event
   orders run-start <TAG> --worker w [--session s]
   orders run-end <TAG> [--outcome ${RUN_OUTCOMES.join('|')}]   ends the record of the open run (the process is not touched; use "stop" for that); --outcome cancelled also holds the order so that no tick starts it again
   orders report <TAG> --file <report.json | TAG.last.txt>
