@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Input, Label, Textarea } from '@/components/ui/input';
 import { Progress } from '@/components/ui/misc';
-import { UnreadDot } from './OrderAttention';
+import { NewPill } from './OrderAttention';
 import { ErrorBox, TagLink } from '@/components/common';
 import { api } from '@/lib/api';
 import { keys } from '@/lib/keys';
@@ -44,10 +44,10 @@ export function QuoteCard({ project, quote: q, showOrder = true }: { project: st
   const error = approve.error ?? reject.error;
 
   return (
-    <Card className="p-4">
+    <Card className="attention-row p-4">
       <div className="flex flex-wrap items-center gap-2">
-        {showOrder && <UnreadDot tag={q.tag} />}{showOrder && <TagLink project={project} tag={q.tag} />}
-        <span className="font-medium">{q.service}</span>
+        {showOrder && <NewPill tag={q.tag} />}{showOrder && <TagLink project={project} tag={q.tag} />}
+        <span className="order-title font-medium">{q.service}</span>
         <Badge tone={statusTone[q.status]}>{statusText(q.status)}</Badge>
         <span className="ml-auto text-xs text-muted-foreground" title={dateTime(q.created)}>{t('asked {ago} by {by}', { ago: ago(q.created), by: q.by })}</span>
       </div>

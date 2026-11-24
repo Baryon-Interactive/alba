@@ -18,7 +18,7 @@ import { availability, failed, parseCommandQuota, staticQuota, type QuotaReading
 import { readCodexSessions } from '../workers/codex-quota.ts';
 import { claudeRunLogFiles, readClaudeStream } from '../workers/claude-quota.ts';
 import { openCommand } from '../workers/adapters/index.ts';
-import { stopProcessOnly, stopProcessTree, stopProcessTreeVerified } from '../run/kill-tree.ts';
+import { type ProcessStop, stopProcessOnly, stopProcessTree, stopProcessTreeVerified } from '../run/kill-tree.ts';
 import { cachedEndpointProbe, endpointOf, PROBE_TIMEOUT_MS, probeEndpoint } from '../run/endpoint.ts';
 import { trailingTransientFailures } from '../run/launch.ts';
 import { spawnDetachedProgram } from '../run/spawn.ts';
@@ -85,9 +85,9 @@ export interface Probes {
   /** Stops a run's verified process tree on Windows, Linux and macOS; returns stopped pids. `launchedAt` (the run's start) identifies a root whose creation time was never recorded. Optional. */
   kill?(pid: number, expectedStartedAt: string | undefined, launchedAt?: string): number[];
   /** Stops a run's verified process tree except the `spare` descendants and what is under them, which it returns as `leftRunning`. Optional. */
-  stopTree?(pid: number, expectedStartedAt: string | undefined, options?: { launchedAt?: string; spare?: readonly number[] }): { stopped: number[]; leftRunning: number[] };
+  stopTree?(pid: number, expectedStartedAt: string | undefined, options?: { launchedAt?: string; spare?: readonly number[] }): ProcessStop;
   /** Stops only the run process and leaves descendants alive, returning those descendants. */
-  stopProcessOnly?(pid: number, expectedStartedAt: string | undefined): { stopped: number[]; leftRunning: number[] };
+  stopProcessOnly?(pid: number, expectedStartedAt: string | undefined): ProcessStop;
   /** When the process started, as an ISO time, or undefined when it cannot be read. Used to be sure a pid is still the run's own process. Optional. */
   processStartedAt?(pid: number): string | undefined;
   /** Starts a program in the background with stdout and stderr appended to a log file; returns its pid. */

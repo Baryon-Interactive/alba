@@ -32,6 +32,7 @@ export interface ScheduleStateRow {
 
 export interface IdempotencyReceiptRow {
   idempotency_key: string;
+  instance_id?: string;
   method: string;
   route: string;
   body_hash: string;
@@ -168,6 +169,7 @@ export class SqliteStore implements OrderStore {
         );
         CREATE TABLE IF NOT EXISTS idempotency_receipts (
           idempotency_key TEXT PRIMARY KEY,
+          instance_id TEXT,
           method TEXT NOT NULL,
           route TEXT NOT NULL,
           body_hash TEXT NOT NULL,
@@ -258,6 +260,7 @@ export class SqliteStore implements OrderStore {
 
   private toIdempotencyReceipt(row: Record<string, unknown>): IdempotencyReceiptRow {
     return {
+      ...(typeof row.instance_id === 'string' && { instance_id: row.instance_id }),
       idempotency_key: row.idempotency_key as string,
       method: row.method as string,
       route: row.route as string,
@@ -276,6 +279,18 @@ export class SqliteStore implements OrderStore {
     return row ? this.toIdempotencyReceipt(row) : undefined;
   }
 
+  private ensureReceiptOwnerColumn(): void {
+    if (!this.db.prepare("SELECT 1 FROM pragma_table_info('idempotency_receipts') WHERE name = 'instance_id'").get()) {
+      this.db.exec('ALTER TABLE idempotency_receipts ADD COLUMN instance_id TEXT');
+    }
+  }
+
+  clearForeignClaims(instanceId: string): void {
+    if (!this.hasSchedulesTables()) return;
+    this.ensureReceiptOwnerColumn();
+    this.db.prepare("DELETE FROM idempotency_receipts WHERE status = 'in_progress' AND instance_id IS NOT ?").run(instanceId);
+  }
+
   purgeExpiredIdempotencyReceipts(cutoffIso: string): number {
     if (!this.hasSchedulesTables()) return 0;
     const res = this.db.prepare('DELETE FROM idempotency_receipts WHERE created_at < ?').run(cutoffIso);
@@ -284,10 +299,11 @@ export class SqliteStore implements OrderStore {
 
   insertIdempotencyReceipt(receipt: IdempotencyReceiptRow): boolean {
     this.ensureSchedulesSchema();
+    this.ensureReceiptOwnerColumn();
     const res = this.db.prepare(
-      `INSERT OR IGNORE INTO idempotency_receipts(idempotency_key, method, route, body_hash, status, status_code, response_body, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(receipt.idempotency_key, receipt.method, receipt.route, receipt.body_hash, receipt.status, receipt.status_code ?? null, receipt.response_body ?? null, receipt.created_at, receipt.updated_at);
+      `INSERT OR IGNORE INTO idempotency_receipts(idempotency_key, method, route, body_hash, status, status_code, response_body, created_at, updated_at, instance_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(receipt.idempotency_key, receipt.method, receipt.route, receipt.body_hash, receipt.status, receipt.status_code ?? null, receipt.response_body ?? null, receipt.created_at, receipt.updated_at, receipt.instance_id ?? null);
     return Number(res.changes) > 0;
   }
 

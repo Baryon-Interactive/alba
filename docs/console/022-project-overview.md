@@ -6,7 +6,9 @@ The page hides empty widgets and keeps live work, stage bars, queued work, depen
 
 ## Order attention
 
-A new dot marks a stage that needs attention, an unanswered worker question, or a run ending since the order was last read. The Board badge and browser title show the project's unread count. Use **Unread only** to filter the board or **Mark all read** to acknowledge its full project. Reading an order or run acknowledges its current attention point while the tab is visible, the window has focus and you have clicked, scrolled or pressed a key within the past minute. Read state is shared across browsers.
+The first serve startup or real tick sets the project's attention baseline. Earlier changes count as read. Later stage changes that need attention, unanswered worker questions and run endings can make an order unread.
+
+On the Board, project overview and Needs page, an unread order has a **New** pill, a colored left edge and a heavier title. These indicators clear when the order is marked read. The Board badge and browser title show the project's unread count. Use **Unread only** to filter the board or **Mark all read** to acknowledge its full project. Reading an order or run acknowledges its current attention point while the tab is visible, the window has focus and you have clicked, scrolled or pressed a key within the past minute. Read state is shared across browsers.
 
 The order menu on a card or order page can mute its alerts. Muted orders still count as unread. The bell in the header offers browser notifications and an optional short tone. Both start off. Alerts apply to new attention points received during the session. Clicking a notification opens its order.
 

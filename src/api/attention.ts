@@ -9,7 +9,7 @@ const stages = new Set<Stage>(['awaiting-user', 'awaiting-review', 'blocked', 'f
 type Point = NonNullable<AttentionState['attention']>;
 
 /** Replay stage-changing facts so edits, repeated reports and later queueing preserve the actual entry time. */
-export function attentionState(doc: OrderDoc, mark?: AttentionMark): AttentionState {
+export function attentionState(doc: OrderDoc, mark?: Partial<AttentionMark> & { baseline?: string }): AttentionState {
   // Only the latest report, latest run, any still-open runs and last action of each kind can affect inferStage.
   const actions = new Map<Action['kind'], Action>();
   const open = new Map<string, Run>();
@@ -57,5 +57,5 @@ export function attentionState(doc: OrderDoc, mark?: AttentionMark): AttentionSt
   for (const run of doc.runs) if (run.ended) consider(run.ended, 'run-ended', t('Run {id} ended', { id: run.id }));
   for (const question of openQuestions(doc)) consider(question.received ?? question.at, 'question', question.text);
   return { ...(point && { attention: point }), ...(mark?.seen_at && { seen: mark.seen_at }), ...(mark?.muted && { muted: true }),
-    unread: !!point && (!mark?.seen_at || point.at > mark.seen_at) };
+    unread: !!point && (!mark?.baseline || point.at > mark.baseline) && (!mark?.seen_at || point.at > mark.seen_at) };
 }

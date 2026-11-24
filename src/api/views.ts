@@ -1,5 +1,5 @@
 import { attentionState } from './attention.ts';
-import { attentionMarks, type AttentionMark } from '../orders/attention-store.ts';
+import { attentionFor } from '../orders/attention-store.ts';
 import { workerAdapter } from '../workers/adapters/index.ts';
 import { computePortBase } from '../run/launch.ts';
 import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
@@ -130,7 +130,7 @@ export function monitorViewOf(doc: OrderDoc, stage: Stage): A.MonitorView | unde
   return { spec, started: m.started, deadline: m.deadline, checks: m.checks, ...(m.last_at ? { lastCheckAt: m.last_at } : {}), ...(m.last_result ? { lastResult: m.last_result } : {}), ...(m.tail ? { tail: m.tail } : {}) };
 }
 
-export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: AttentionMark): A.OrderSummary {
+export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageResult, env: ViewEnv, activity?: OrderActivity, report?: StoredReport, mark?: Parameters<typeof attentionState>[1]): A.OrderSummary {
   const open = doc.runs.find(r => r.ended === undefined);
   const observation = observeRun(open, env, activity);
   const spend = spendOf(doc, env, project.state_dir);
@@ -154,7 +154,7 @@ export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageRes
 export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSummary[] {
   const docs = view.orders.all();
   const merged = view.orders.mergedSet(docs);
-  const marks = attentionMarks(view.orders.store);
+  const marks = attentionFor(view.orders.store);
   return docs.map(doc => {
     const stage = view.orders.stage(doc, merged);
     const row = view.rows?.find(r => r.tag === doc.order.tag);
@@ -165,7 +165,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
       const observation = observeRun(open, env, row?.activity);
       const waitingQuestion = (stage.stage === 'awaiting-user' || stage.stage === 'blocked') && stage.waitingFor !== 'card' && latest?.question
         ? { text: latest.question, options: latest.options && toOptions(latest.options) } : undefined;
-      return { ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks.get(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      return { ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
         quietMinutes: observation.quietMinutes, liveness: observation.liveness, ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
@@ -174,7 +174,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
         ...(open && row?.activity?.progress ? { progress: row.activity.progress } : {}),
         ...(monitor ? { monitor: { started: monitor.started, deadline: monitor.deadline, checks: monitor.checks, lastCheckAt: monitor.lastCheckAt, lastResult: monitor.lastResult } } : {}), actions: actionsFor(stage.stage, env, stage.waitingFor).allowed };
     }
-    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks.get(doc.order.tag));
+    return summaryOf(view.config, doc, stage, env, row?.activity, NEEDS_YOU.includes(stage.stage) ? latest : undefined, marks(doc.order.tag));
   }).sort((a, b) => (a.tag < b.tag ? -1 : 1));
 }
 
@@ -344,7 +344,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const nudge = open ? readNudges(view.config)[nudgeKey(o.tag, open.id)] : undefined;
   const firstPass = currentFirstPass(view.orders, doc);
   return {
-    ...attentionState(doc, attentionMarks(view.orders.store).get(o.tag)),
+    ...attentionState(doc, attentionFor(view.orders.store)(o.tag)),
     producerNotes: { project: producerNotes(view.config), order: producerNotes(view.config, o.tag) },
     ...(doc.reroutes?.length ? { reroutes: doc.reroutes.slice(-10).map(r => ({ id: r.id, at: r.at, from: r.from, to: r.to, note: r.note, brief: doc.runs.find(run => run.reroute === r.id)?.previous_attempts ?? r.brief })) } : {}),
     project: view.config.id,

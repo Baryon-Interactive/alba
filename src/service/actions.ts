@@ -25,10 +25,12 @@ export const NOTE_REQUIRED: readonly HumanAction[] = ['rework'];
  * started) are ended after their identity is checked, the run is closed as cancelled, and the order is held, so that no tick starts it
  * again. Start it again with `alba run <TAG> --worker <id>` (or Run in the console), or release it.
  */
-export function stopRun(orders: Orders, tag: string, note?: string): void {
+export function stopRun(orders: Orders, tag: string, note?: string): string | undefined {
   const doc = orders.get(tag);
   if (!doc.runs.some(r => r.ended === undefined)) fail('{tag} has no open run to stop. To keep it from starting, hold it: alba orders act {tag} hold', { tag: doc.order.tag });
-  orders.act(tag, 'hold', { note: note?.trim() || t('run stopped by a person') });
+  let warning: string | undefined;
+  orders.act(tag, 'hold', { note: note?.trim() || t('run stopped by a person'), onStopWarning: message => { warning = message; } });
+  return warning;
 }
 
 export function humanAction(project: ProjectConfig, orders: Orders, tag: string, action: HumanAction, note?: string, branch?: string, override = false): string {

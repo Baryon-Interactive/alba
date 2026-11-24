@@ -41,6 +41,17 @@ test('stop ends the open run, holds the order and refuses an order without an op
   assert.ok(!actionsFor('queued', { workers: { workers: [], quota_sources: {}, file: '' } } as never).allowed.includes('stop'));
 });
 
+test('a partial tree stop holds the order and returns the warning shown by the CLI and console', () => {
+  const orders = new Orders(tempOrders().orders.store, () => at, 'test', () => at, {
+    alive: () => true, stop: pid => ({ stopped: [pid], leftRunning: [], problem: 'listing' }),
+  });
+  orders.add({ tag: 'T1', title: 'Demo', kind: 'docs' });
+  orders.act('T1', 'queue');
+  orders.runStart('T1', { worker: 'demo', extra: { pid: 123, process_started_at: at } });
+  assert.match(stopRun(orders, 'T1') ?? '', /Could not list descendants.*may still be running/);
+  assert.equal(orders.stage(orders.get('T1')).stage, 'held');
+});
+
 test('cancelling a running order stops a verified process; an unverified one is left alone as before', () => {
   const { orders, stopped } = withStops();
   orders.add({ tag: 'C1', title: 'Sample', kind: 'code' }); orders.act('C1', 'queue');

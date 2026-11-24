@@ -72,7 +72,7 @@ export class FileStore implements OrderStore {
 
   tags(): string[] {
     if (!existsSync(this.dir)) return [];
-    return readdirSync(this.dir).filter(f => f.endsWith('.json') && !f.startsWith('_')).map(f => f.slice(0, -5)).sort();
+    return readdirSync(this.dir).filter(f => f.endsWith('.json') && !f.startsWith('_') && f !== 'serve.exit.json').map(f => f.slice(0, -5)).sort();
   }
 
   read(tag: string): OrderDoc | undefined {

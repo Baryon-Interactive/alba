@@ -1,5 +1,5 @@
 import { attentionState } from './attention.ts';
-import { attentionMarks, saveAttentionMarks } from '../orders/attention-store.ts';
+import { attentionFor, saveAttentionMarks } from '../orders/attention-store.ts';
 import { effectiveRoles, resolveRole } from '../roles/config.ts';
 import { hasLegacyRoles, migrateRoles } from '../roles/migrate.ts';
 import { editConfig, EDITABLE, readEditable, type ConfigEdit } from '../config-edit.ts';
@@ -41,7 +41,7 @@ import { sayDeliveryMode } from '../workers/config.ts';
 import { startRun, type RunContext } from '../run/launch.ts';
 import { approve } from '../run/review.ts';
 import { planWorktree } from '../run/worktree.ts';
-import { humanAction } from '../service/actions.ts';
+import { humanAction, stopRun } from '../service/actions.ts';
 import { createOrder } from '../service/new-order.ts';
 import { executeTick } from '../tick/execute.ts';
 import { findWorktree, readQuotaHistory, tick, type Probes } from '../tick/gather.ts';
@@ -90,7 +90,7 @@ import { pluginsView } from '../plugins/view.ts';
 import { libraryGet, libraryPost } from './library.ts';
 import { overviewAll, overviewProject } from './overview-all.ts';
 import { sendBody, sendJson } from '../web/response.ts';
-import { bodyHashOf, claimIdempotency, completeIdempotency, IDEMPOTENCY_KEY_RE, MUTATING_METHODS, releaseIdempotency } from './idempotency.ts';
+import { type ClaimOwner, bodyHashOf, claimIdempotency, completeIdempotency, IDEMPOTENCY_KEY_RE, MUTATING_METHODS, releaseIdempotency } from './idempotency.ts';
 import { readOrders } from './read-orders.ts';
 import type { Hub } from './hub.ts';
 import { transcriptRuns } from '../run/transcript.ts';
@@ -116,6 +116,7 @@ export class ApiFailure extends Error {
 }
 
 export interface ApiContext {
+  instanceId: string;
   projects: ProjectConfig[];
   workers?: WorkersFile;
   probes: Probes;
@@ -257,7 +258,7 @@ export function langOf(req: IncomingMessage, url: URL): Lang {
 
 export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: ServerResponse, url: URL, port: number): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
-  let claimed: { store: import('../orders/store.ts').OrderStore; key: string } | undefined;
+  let claimed: { store: import('../orders/store.ts').OrderStore; key: string; owner: ClaimOwner } | undefined;
   try {
     await withLang(langOf(req, url), async () => {
       const rawKey = req.headers['idempotency-key'];
@@ -274,7 +275,7 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
         if (project) {
           const store = stateStore(project);
           const claim = claimIdempotency(store, {
-            key: headerKey,
+            key: headerKey, instanceId: ctx.instanceId,
             method,
             route: url.pathname,
             bodyHash: bodyHashOf(body),
@@ -296,7 +297,7 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
             });
             return;
           }
-          claimed = { store, key: headerKey };
+          claimed = { store, key: headerKey, owner: claim.owner };
           capturedResponses.set(res, null);
         }
       }
@@ -305,9 +306,9 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
     if (claimed) {
       const captured = capturedResponses.get(res);
       if (captured && captured.status < 500) {
-        completeIdempotency(claimed.store, claimed.key, captured.status, captured.body, ctx.probes.now());
+        completeIdempotency(claimed.store, claimed.key, claimed.owner, captured.status, captured.body, ctx.probes.now());
       } else {
-        releaseIdempotency(claimed.store, claimed.key);
+        releaseIdempotency(claimed.store, claimed.key, claimed.owner);
       }
     }
   } catch (e) {
@@ -315,9 +316,9 @@ export async function handleApi(ctx: ApiContext, req: IncomingMessage, res: Serv
     const payload = { error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } } satisfies A.ApiError;
     if (claimed) {
       if (failure.status < 500) {
-        completeIdempotency(claimed.store, claimed.key, failure.status, JSON.stringify(payload), ctx.probes.now());
+        completeIdempotency(claimed.store, claimed.key, claimed.owner, failure.status, JSON.stringify(payload), ctx.probes.now());
       } else {
-        releaseIdempotency(claimed.store, claimed.key);
+        releaseIdempotency(claimed.store, claimed.key, claimed.owner);
       }
     }
     if (res.headersSent) return void res.end();
@@ -1112,7 +1113,7 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
       if (fields.check !== undefined && fields.check !== 'independent' && fields.check !== 'none') throw new ApiFailure(400, 'bad_request', '"check" is independent or none.');
       if (fields.review !== undefined && fields.review !== 'manual' && fields.review !== 'auto') throw new ApiFailure(400, 'bad_request', '"review" is manual or auto.');
       const doc = editOrderFields(view.config, view.orders, ctx.workers, parts[1], fields as OrderFields);
-      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionMarks(view.orders.store).get(doc.order.tag)));
+      return done<A.OrderSummary>(200, summaryOf(view.config, doc, view.orders.stage(doc), env(), undefined, undefined, attentionFor(view.orders.store)(doc.order.tag)));
     }
     if (parts[0] === 'orders' && parts[2] === 'body' && parts.length === 3) {
       const text = str(body, 'text', true)!;
@@ -1243,8 +1244,11 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
           message = t('Merged. Wrote {file} (branch is in the base branch; accept: {accept})', { file: r.acceptFile, accept: r.accept });
           break;
         }
-        case 'queue': case 'hold': case 'release': case 'cancel': case 'rework': case 'stop':
+        case 'queue': case 'hold': case 'release': case 'cancel': case 'rework':
           humanAction(view.config, view.orders, tag, action as 'queue', note);
+          break;
+        case 'stop':
+          message = stopRun(view.orders, tag, note);
           break;
         case 'close': {
           const how = str(body, 'how', true)!;
