@@ -17,6 +17,7 @@ export function openStream(opts: {
   logs?: string[];
   transcripts?: string[];
   client?: QueryClient;
+  backgroundOrders?: () => boolean;
   onState?: (s: StreamState) => void;
   onRunLog?: (e: { key: string; lines: string[]; offset: number }) => void;
   onRunTranscript?: (e: { project: string; key: string; entries: TranscriptEntry[] }) => void;
@@ -28,7 +29,16 @@ export function openStream(opts: {
   const invalidations = opts.client ? sharedInvalidations(opts.client) : undefined;
   let hadError = false;
 
-  const queue = (list: readonly (readonly unknown[])[]) => invalidations?.add(list);
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const queue = (list: readonly (readonly unknown[])[]) => {
+    invalidations?.add(list);
+    if (!refreshTimer && document.hidden && opts.backgroundOrders?.() && list.some(key => key[0] === 'orders')) {
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        void opts.client?.refetchQueries({ queryKey: ['orders', opts.project], exact: true, type: 'active' }, { cancelRefetch: false });
+      }, 500);
+    }
+  };
 
   es.onopen = () => {
     opts.onState?.('live');
@@ -48,5 +58,5 @@ export function openStream(opts: {
       queue(invalidationsFor(name, data, opts.project));
     });
   }
-  return { close() { es.close(); invalidations?.close(); } };
+  return { close() { es.close(); clearTimeout(refreshTimer); invalidations?.close(); } };
 }

@@ -9,6 +9,8 @@ import { useNarrow } from '@/lib/media';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip, TooltipProvider } from '@/components/ui/misc';
 import { CommandPalette } from '@/components/CommandPalette';
 import { groupNeedsYou, needsTotal } from '@/lib/needs';
+import { BrowserNotifications } from './BrowserNotifications';
+import { preferences } from '@/lib/notifications';
 import { ProjectOrders } from './OrderAttention';
 import { presence, tabTitle } from '@/lib/presence';
 import { useOrders, useOverview, useProjectId, useProjects, useSession } from '@/lib/queries';
@@ -52,7 +54,7 @@ export function Shell() {
     if (!ids.length) return;
     setStream('connecting');
     const states = new Map(ids.map(id => [id, 'connecting' as StreamState]));
-    const handles = ids.map(id => openStream({ project: id, client, onState: state => {
+    const handles = ids.map(id => openStream({ project: id, client, backgroundOrders: () => id === project && (preferences().notify || preferences().sound), onState: state => {
       states.set(id, state);
       setStream([...states.values()].every(s => s === 'live') ? 'live' : 'reconnecting');
     } }));
@@ -196,6 +198,7 @@ export function Shell() {
                 <span className="hidden sm:inline">{stream === 'live' ? t('Live') : stream === 'connecting' ? t('Connecting…') : t('Reconnecting…')}</span>
               </span>
             </Tip>
+            <BrowserNotifications project={project} orders={orders.data?.items} />
             <Tip text={t('Switch language')}>
               <Button variant="ghost" size="icon" onClick={() => setLang(getLang() === 'zh' ? 'en' : 'zh')} aria-label={t('Switch language')}><Languages /></Button>
             </Tip>
