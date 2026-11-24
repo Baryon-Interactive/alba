@@ -39,6 +39,22 @@ test('attention follows stage entries, run ends and unanswered questions across 
   assert.equal(attentionState(doc).attention?.at, at(4));
 });
 
+test('merging an order raises a new attention point after the last one was seen', () => {
+  const doc: OrderDoc = { version: 1, order: { tag: 'T1', title: 'Demo', kind: '', needs: ['T0'], created: at(0), updated: at(9) },
+    runs: [{ seq: 1, id: 'r1', worker: 'demo', started: at(1), ended: at(3) }],
+    reports: [{ seq: 2, at: at(2), status: 'ready', summary: 'Ready', evidence: [], commits: [] }], actions: [] };
+  const seen = { tag: 'T1', seen_at: at(3), muted: false };
+  assert.equal(attentionState(doc, seen).unread, false, 'the review point was already seen');
+  doc.actions.push({ seq: 3, at: at(5), kind: 'approve' });
+  const merged = attentionState(doc, seen);
+  assert.equal(merged.unread, true);
+  assert.equal(merged.attention?.at, at(5));
+  assert.equal(merged.attention?.reason, 'stage');
+  // A lead closing the order as merged elsewhere counts the same.
+  const elsewhere: OrderDoc = { ...doc, actions: [{ seq: 3, at: at(6), kind: 'merged-elsewhere', commit: 'abc1234' }] };
+  assert.equal(attentionState(elsewhere, seen).attention?.at, at(6));
+});
+
 test('answering a live question preserves when the order entered awaiting-user', () => {
   const doc: OrderDoc = { version: 1, order: { tag: 'T1', title: 'Demo', kind: '', needs: [], created: at(0), updated: at(4) },
     runs: [{ seq: 1, id: 'r1', worker: 'demo', started: at(1) }], reports: [], actions: [],
