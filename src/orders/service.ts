@@ -5,7 +5,7 @@ import { actionProblem, inferStage, type StageResult } from './stage.ts';
 import type { ReportInput } from './report.ts';
 import { UserError, fail, t, withLang } from '../i18n.ts';
 import { pendingNotes } from '../run/prompt.ts';
-import { openQuestions, type OutboxEntry } from '../run/messages.ts';
+import { openQuestions, requeueUndeliveredInbox, type OutboxEntry } from '../run/messages.ts';
 import { processStartedAt } from '../monitor/process.ts';
 import { runProcessMatches, stopProcessTreeVerified } from '../run/kill-tree.ts';
 
@@ -245,7 +245,7 @@ export class Orders {
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string } = {}): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -280,6 +280,7 @@ export class Orders {
       if (kind === 'answer' && now.waitingFor === 'card' && !options.force) fail('{tag}: the order waits for a card to be clicked, not for an answer. Click the card in a session of your own, or send it back with a rework note.', { tag: doc.order.tag });
       // Holding (and stopping) ends the open run: its process and every process under it, after their identity is checked.
       // Cancelling does the same when the process can be verified; one that cannot is left alone, as before, and its end is recorded later.
+      const closedRuns: Run[] = [];
       if (kind === 'hold' || kind === 'cancel') {
         for (const run of doc.runs.filter(r => !r.ended)) {
           if (run.pid && this.processes.alive(run.pid)) {
@@ -291,11 +292,14 @@ export class Orders {
             }
           }
           run.ended = this.now(); run.outcome = 'cancelled';
+          closedRuns.push(run);
         }
       }
       const action: Action = { seq: nextSeq(doc), at: this.now(), kind };
       if (kind === 'message' && options.queued) action.queued = true;
       if (options.note?.trim()) action.note = options.note.trim();
+      if (options.author?.trim()) action.author = options.author.trim();
+      if (options.requeuedFrom) action.requeued_from = options.requeuedFrom;
       if (options.commit?.trim()) action.commit = options.commit.trim();
       if (options.choice !== undefined) action.choice = options.choice;
       if (options.imported) action.imported = true;
@@ -303,8 +307,9 @@ export class Orders {
       if (options.bounce) action.bounce = true;
       if (options.lint) action.lint = true;
       doc.actions.push(action);
-      this.save(doc, `action-${kind}`, { note: action.note, from: stage, ...(kind === 'merged-elsewhere' || kind === 'done-by-lead' || action.commit ? { commit: action.commit } : {}), ...(action.choice !== undefined ? { choice: action.choice } : {}), ...(action.override ? { override: true } : {}), ...(action.bounce ? { bounce: true } : {}) });
-      return doc;
+      this.save(doc, `action-${kind}`, { note: action.note, from: stage, ...(action.author ? { author: action.author } : {}), ...(action.requeued_from ? { requeued_from: action.requeued_from } : {}), ...(kind === 'merged-elsewhere' || kind === 'done-by-lead' || action.commit ? { commit: action.commit } : {}), ...(action.choice !== undefined ? { choice: action.choice } : {}), ...(action.override ? { override: true } : {}), ...(action.bounce ? { bounce: true } : {}) });
+      for (const run of closedRuns) requeueUndeliveredInbox(this, doc.order.tag, run);
+      return closedRuns.length ? this.get(doc.order.tag) : doc;
     });
   }
 

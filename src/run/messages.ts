@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Orders } from '../orders/service.ts';
-import type { OrderDoc } from '../orders/model.ts';
-import { readInbox } from './inbox.ts';
+import type { OrderDoc, Run } from '../orders/model.ts';
+import { appendDisposed, inboxPath, parseInbox, readAckIds, readDelivered, readDisposed, readInbox } from './inbox.ts';
+import { runFollowedNotes } from './prompt.ts';
 import type { LiveState } from './live.ts';
 
 import type { OutboxEntry, ThreadEntry } from '../api/live-types.ts';
@@ -60,22 +61,112 @@ export function liveActivityTimes(live?: LiveState): string[] {
   return times;
 }
 
+/**
+ * Requeues (or drops, for terminal orders) inbox entries written during a run that ended before the entry was
+ * delivered, acknowledged, or marked seen. Idempotent: a message is requeued or dropped at most once.
+ * Remote runs keep their file inbox and are skipped because remote ack/seen files are not synced back locally.
+ */
+export function requeueUndeliveredInbox(
+  orders: Orders,
+  tag: string,
+  run: Pick<Run, 'id' | 'started' | 'ended' | 'cwd' | 'host'> | undefined,
+): { requeued: number; dropped: number } {
+  if (!run || run.host) return { requeued: 0, dropped: 0 };
+  const doc = orders.get(tag);
+  const worktree = doc.order.worktree ?? run.cwd;
+  if (!worktree) return { requeued: 0, dropped: 0 };
+  const file = inboxPath(worktree);
+  if (!existsSync(file)) return { requeued: 0, dropped: 0 };
+  let entries;
+  try { entries = parseInbox(readFileSync(file, 'utf8')); } catch { return { requeued: 0, dropped: 0 }; }
+  if (!entries.length) return { requeued: 0, dropped: 0 };
+
+  const delivered = readDelivered(worktree);
+  const ackIds = readAckIds(worktree);
+  const disposed = readDisposed(worktree);
+  const outbox = doc.outbox ?? [];
+  const existingRequeued = new Set(doc.actions.map(a => a.requeued_from).filter((x): x is string => !!x));
+  const stage = orders.stage(doc).stage;
+  const terminal = stage === 'merged' || stage === 'cancelled' || stage === 'dropped';
+  const startMs = Date.parse(run.started);
+
+  let requeued = 0;
+  let dropped = 0;
+  for (const m of entries) {
+    const mMs = Date.parse(m.at);
+    if (Number.isFinite(mMs) && Number.isFinite(startMs) && mMs < startMs) continue;
+    if (m.seen || ackIds.has(m.id) || delivered.has(m.id) || disposed.has(m.id) || existingRequeued.has(m.id)) continue;
+    if (outbox.some(e => e.reply === m.id)) continue;
+    const at = orders.now();
+    if (terminal) {
+      const reason = `order is ${stage}`;
+      appendDisposed(worktree, { id: m.id, state: 'dropped', at, run: run.id, reason });
+      orders.record(doc.order.tag, 'inbox-dropped', { id: m.id, run: run.id, at, reason });
+      disposed.set(m.id, { id: m.id, state: 'dropped', at, run: run.id, reason });
+      dropped++;
+      continue;
+    }
+    const updated = orders.act(doc.order.tag, 'message', {
+      note: m.text,
+      queued: true,
+      force: true,
+      author: m.author,
+      requeuedFrom: m.id,
+    });
+    const action = [...updated.actions].reverse().find(a => a.requeued_from === m.id);
+    const actionSeq = action?.seq;
+    const rec = { id: m.id, state: 'requeued' as const, at, run: run.id, ...(actionSeq !== undefined ? { action_seq: actionSeq } : {}) };
+    appendDisposed(worktree, rec);
+    orders.record(doc.order.tag, 'inbox-requeued', { id: m.id, run: run.id, at, ...(actionSeq !== undefined ? { action_seq: actionSeq } : {}) });
+    disposed.set(m.id, rec);
+    existingRequeued.add(m.id);
+    requeued++;
+  }
+  return { requeued, dropped };
+}
+
 export function threadOf(doc: OrderDoc, live?: LiveState): ThreadEntry[] {
   const messages = doc.order.worktree ? readInbox(doc.order.worktree, { openedAt: live?.inbox_opened_at, activityAt: liveActivityTimes(live) }) : [];
   const out = doc.outbox ?? [];
-  const thread: ThreadEntry[] = messages.map(m => ({
-    id: m.id,
-    at: m.at,
-    kind: 'inbox',
-    text: m.text,
-    ...(m.reply ? { reply: m.reply } : {}),
-    ...(m.delivered_at ? { delivered_at: m.delivered_at } : {}),
-    ...(m.via ? { via: m.via } : {}),
-    ...(m.seen ? { seen: m.seen } : {}),
-    delivery: out.some(e => e.reply === m.id) || (m.seen && live?.messages.some(e => e.at >= m.seen! && e.at > m.at)) ? 'answered' : m.delivery,
-  }));
+  const thread: ThreadEntry[] = messages.map(m => {
+    const answered = out.some(e => e.reply === m.id) || (m.seen && live?.messages.some(e => e.at >= m.seen! && e.at > m.at));
+    return {
+      id: m.id,
+      at: m.at,
+      kind: 'inbox',
+      text: m.text,
+      ...(m.reply ? { reply: m.reply } : {}),
+      ...(m.delivered_at ? { delivered_at: m.delivered_at } : {}),
+      ...(m.via ? { via: m.via } : {}),
+      ...(m.seen ? { seen: m.seen } : {}),
+      ...(m.requeued_at ? { requeued_at: m.requeued_at } : {}),
+      ...(m.action_seq !== undefined ? { action_seq: m.action_seq } : {}),
+      ...(m.dropped_at ? { dropped_at: m.dropped_at } : {}),
+      ...(m.drop_reason ? { drop_reason: m.drop_reason } : {}),
+      delivery: answered ? 'answered' : m.delivery,
+    };
+  });
   for (const e of out) thread.push({ ...e, delivery: e.answered ? 'answered' : undefined });
   for (const r of doc.reports) thread.push({ id: `report-${r.seq}`, at: r.at, kind: 'report', text: [r.summary, r.question].filter(Boolean).join('\n') });
-  for (const a of doc.actions.filter(a => ['answer', 'rework', 'message'].includes(a.kind))) thread.push({ id: `action-${a.seq}`, at: a.at, kind: a.kind, text: a.note ?? '' });
+  for (const a of doc.actions.filter(a => ['answer', 'rework', 'message'].includes(a.kind))) {
+    if (a.kind === 'message' && a.requeued_from) {
+      const laterRuns = doc.runs.filter(r => r.seq > a.seq).sort((x, y) => x.seq - y.seq);
+      const followed = laterRuns.find(r => runFollowedNotes(doc, r));
+      const firstRun = laterRuns[0];
+      thread.push({
+        id: `action-${a.seq}`,
+        at: a.at,
+        kind: a.kind,
+        text: a.note ?? '',
+        ...(followed
+          ? { delivery: 'read', delivered_at: followed.started, seen: followed.ended }
+          : firstRun
+            ? { delivery: 'delivered', delivered_at: firstRun.started }
+            : { delivery: 'sent' }),
+      });
+    } else {
+      thread.push({ id: `action-${a.seq}`, at: a.at, kind: a.kind, text: a.note ?? '' });
+    }
+  }
   return thread.sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
 }

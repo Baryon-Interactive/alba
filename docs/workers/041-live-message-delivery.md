@@ -59,14 +59,25 @@ After acting on this message, append <id> to .alba/inbox-ack; if a reply is need
 
 ## Delivery states
 
-Each inbox entry moves through four states in `readInbox`, `OrderDetail.messages`, `OrderDetail.thread`, and the console:
+Each inbox entry moves through up to six states in `readInbox`, `OrderDetail.messages`, `OrderDetail.thread`, `alba orders show`, and the console:
 
 1. **`sent`**: written to `.alba/inbox.md`; not yet delivered or read.
 2. **`delivered`**: recorded in `.alba/inbox-delivered` (`{"id":"...","at":"<ISO>","via":"hook|steer|turn","event":"..."}`), with `delivered_at` and `via`.
 3. **`read`**: acknowledged in `.alba/inbox-ack`, marked with a legacy `seen <time>` line, the run opened `.alba/inbox.md`, **or** the run's event stream shows model activity (a message, tool call, command, or file change) after `delivered_at`.
 4. **`answered`**: an outbox entry has `reply` matching the inbox entry's `id` (or an agent message followed `seen`).
+5. **`requeued`**: the run ended before the entry was delivered, acknowledged, or marked `seen`, and Alba copied it into a queued `message` action (`requeued_at`, `action_seq`) for the next run.
+6. **`dropped`**: the run ended before the entry was delivered, acknowledged, or marked `seen`, and the order does not continue (`merged`, `cancelled`, or `dropped`), recorded with `dropped_at` and `drop_reason`.
 
-Engines without live delivery stay in `sent` until read, matching earlier releases. If a run ends while a message is still `sent`, it remains unread in the thread and pending notes carry it to the next run.
+Engines without live delivery stay in `sent` until read or requeued at run end, matching earlier releases.
+
+## Requeueing undelivered messages on run finish
+
+When a local run ends (for any end kind, including `report`, crashes, `quota`, `killed-by-alba`, `hold`/`cancel`, and `alba say --restart`), Alba inspects `.alba/inbox.md` for entries written during that run (`at >= run.started`) that are not in `.alba/inbox-delivered`, not in `.alba/inbox-ack`, have no `seen` line, and have no outbox reply:
+
+- If the order can continue, each untouched entry is **requeued at most once**: Alba appends one queued `message` action (`queued: true`, original author and text, `requeued_from: <id>`), records `{ id, state: "requeued", at, run, action_seq }` in `.alba/inbox-requeued` (locally excluded from git), and claims the entry in `.alba/inbox-claimed/` so later runs' hooks or steering never deliver the old inbox entry again.
+- The next run receives the requeued message through the normal pending-note path with one sentence explaining that it arrived during the previous run and may already be handled, so the worker checks before redoing anything. That requeued action then follows the normal thread states (`sent` → `delivered` → `read`) as the subsequent run picks it up and completes.
+- If the order is already terminal (`merged`, `cancelled`, or `dropped`), the untouched entry is not requeued; Alba records `{ id, state: "dropped", at, run, reason }` in `.alba/inbox-requeued` instead.
+- Remote runs (`host` set) keep their file inbox and are left untouched at finish because remote `.alba/inbox-ack` and `seen` updates are not synced back to the local worktree.
 
 ## Worker setting `live_messages`
 

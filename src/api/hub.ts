@@ -188,7 +188,7 @@ export class Hub {
       if (store.lastQuotaId() === mark.quota) return;
       const rows = store.quotaRowsAfter(mark.quota);
       if (rows.length) mark.quota = rows[rows.length - 1].id;
-      const points: QuotaPoint[] = rows.map(({ reading: q }) => ({ source: q.source, at: q.at, ok: q.ok, ...(q.error ? { error: q.error } : {}), windows: q.windows, ...(q.balance ? { balance: q.balance } : {}) }));
+      const points: QuotaPoint[] = rows.map(({ reading: q }) => ({ source: q.source, at: q.at, ok: q.ok, ...(q.error ? { error: q.error } : {}), ...(q.note ? { note: q.note } : {}), windows: q.windows, ...(q.balance ? { balance: q.balance } : {}) }));
       if (points.length) this.publish(p.id, 'quota', { project: p.id, points });
       return;
     }
@@ -201,7 +201,7 @@ export class Hub {
     mark.quota += end;
     const points: QuotaPoint[] = [];
     for (const line of text.split('\n').filter(Boolean)) {
-      try { const q = JSON.parse(line) as QuotaPoint; points.push({ source: q.source, at: q.at, ok: q.ok, ...(q.error ? { error: q.error } : {}), windows: q.windows ?? [], ...(q.balance ? { balance: q.balance } : {}) }); } catch { /* skip */ }
+      try { const q = JSON.parse(line) as QuotaPoint; points.push({ source: q.source, at: q.at, ok: q.ok, ...(q.error ? { error: q.error } : {}), ...(q.note ? { note: q.note } : {}), windows: q.windows ?? [], ...(q.balance ? { balance: q.balance } : {}) }); } catch { /* skip */ }
     }
     if (points.length) this.publish(p.id, 'quota', { project: p.id, points });
   }

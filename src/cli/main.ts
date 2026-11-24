@@ -53,6 +53,8 @@ import { startServer } from '../web/server.ts';
 import { keyFile, newKey, writeKeyFile } from '../web/auth.ts';
 import { answerOrder } from '../run/answer.ts';
 import { sayToOrder } from '../run/say.ts';
+import { readInbox } from '../run/inbox.ts';
+import { requeueUndeliveredInbox } from '../run/messages.ts';
 import { formatStatus, recentEndedStatusRows, statusRows, unreachableStatusLines, watchOrder } from './live.ts';
 import { pendingNotes } from '../run/prompt.ts';
 import { lockHolder, skipLine } from '../serve/lock.ts';
@@ -337,6 +339,23 @@ function show(orders: Orders, tag: string): string {
   } else out.push('  ' + t('(none)'));
   const waiting = pendingNotes(doc);
   if (waiting.length) out.push('', t('Notes still waiting:'), ...waiting.map(n => `  ${n.at}  ${n.kind}  ${n.text}`));
+  const inbox = o.worktree ? readInbox(o.worktree) : [];
+  if (inbox.length) {
+    const outbox = doc.outbox ?? [];
+    out.push('', t('Messages:'), ...inbox.map(m => {
+      const state = outbox.some(e => e.reply === m.id) ? 'answered' : (m.delivery ?? 'sent');
+      const detail = state === 'requeued'
+        ? `${state}${m.requeued_at ? ` ${m.requeued_at}` : ''}${m.action_seq !== undefined ? ` -> action #${m.action_seq}` : ''}`
+        : state === 'dropped'
+          ? `${state}${m.dropped_at ? ` ${m.dropped_at}` : ''}${m.drop_reason ? ` (${m.drop_reason})` : ''}`
+          : state === 'delivered'
+            ? `${state}${m.via ? ` via ${m.via}` : ''}${m.delivered_at ? ` ${m.delivered_at}` : ''}`
+            : state === 'read' || state === 'answered'
+              ? `${state}${m.seen ? ` ${m.seen}` : ''}`
+              : state;
+      return `  ${m.at}  ${m.author}  [${detail}]  ${m.text.replace(/\s+/g, ' ')}`;
+    }));
+  }
   const actions = doc.actions;
   if (actions.length) out.push('', t('Actions:'), ...actions.map(a => `  ${a.at}  ${a.kind}${a.note ? '  ' + a.note : ''}`));
   const artifacts = orders.store.events({ tag: o.tag }).filter(e => e.type === 'accept-trial' && Array.isArray(e.data?.artifacts)).at(-1)?.data?.artifacts as { path?: string; sha256?: string; size?: number }[] | undefined;
@@ -855,6 +874,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         const found = outcome === 'completed' && !ended.reports.some(r => r.run === closed.id) ? reportInRunLog(systemProbes, closed) : undefined;
         if (found) {
           orders.report(rest[0], { ...found.report, ...(hasDeliveryChecks(cfg.checks) ? { delivery_text: found.text } : {}) }, path.basename(found.file));
+          requeueUndeliveredInbox(orders, rest[0], closed);
           if (found.report.status === 'ready') {
             const { mergeBaseBeforeReview } = await import('../check/base-merge.ts');
             mergeBaseBeforeReview(cfg, orders, rest[0], closed);
@@ -862,6 +882,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
           lintDelivery(cfg, orders, rest[0]);
           return `${tagLine(orders.get(rest[0]))}\n${t('Recorded the report at the end of its log ({status}: {summary}).', { status: found.report.status, summary: found.report.summary.slice(0, 120) })}`;
         }
+        requeueUndeliveredInbox(orders, rest[0], closed);
         // A person who ends a run as cancelled does not want the next tick to start it again at once (on whatever worker routing picks).
         if (outcome !== 'cancelled' || orders.stage(ended).stage !== 'queued' && orders.stage(ended).stage !== 'waiting-needs') return tagLine(ended);
         orders.act(rest[0], 'hold', { note: t('run ended as cancelled by a person') });

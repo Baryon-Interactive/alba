@@ -14,7 +14,7 @@ export type MessageThreadEntry = NonNullable<OrderDetail['thread']>[number];
 export type SayDelivery = NonNullable<OrderDetail['sayDelivery']>;
 
 /** Human-readable state label (including timestamp when available) for a thread message. */
-export function messageStateLabel(m: Pick<MessageThreadEntry, 'at' | 'delivery' | 'delivered_at' | 'via' | 'seen'>): string | undefined {
+export function messageStateLabel(m: Pick<MessageThreadEntry, 'at' | 'delivery' | 'delivered_at' | 'via' | 'seen' | 'requeued_at' | 'dropped_at' | 'drop_reason'>): string | undefined {
   if (!m.delivery) return undefined;
   if (m.delivery === 'sent') {
     return m.at ? t('Sent ({when})', { when: dateTime(m.at) }) : t('Sent');
@@ -29,13 +29,24 @@ export function messageStateLabel(m: Pick<MessageThreadEntry, 'at' | 'delivery' 
   if (m.delivery === 'read') {
     return m.seen ? t('Read ({when})', { when: dateTime(m.seen) }) : t('Read');
   }
+  if (m.delivery === 'requeued') {
+    return m.requeued_at ? t('Requeued ({when})', { when: dateTime(m.requeued_at) }) : t('Requeued');
+  }
+  if (m.delivery === 'dropped') {
+    const when = m.dropped_at ? dateTime(m.dropped_at) : '';
+    if (m.drop_reason) {
+      return when ? t('Dropped ({when}): {reason}', { when, reason: m.drop_reason }) : t('Dropped: {reason}', { reason: m.drop_reason });
+    }
+    return when ? t('Dropped ({when})', { when }) : t('Dropped');
+  }
   return m.seen ? t('Answered ({when})', { when: dateTime(m.seen) }) : t('Answered');
 }
 
 /** Badge tone for a message delivery state. */
-export function messageStateTone(delivery: MessageThreadEntry['delivery']): 'success' | 'primary' | 'outline' {
+export function messageStateTone(delivery: MessageThreadEntry['delivery']): 'success' | 'primary' | 'warning' | 'outline' {
   if (delivery === 'answered') return 'success';
   if (delivery === 'delivered' || delivery === 'read') return 'primary';
+  if (delivery === 'requeued') return 'warning';
   return 'outline';
 }
 

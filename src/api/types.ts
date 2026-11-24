@@ -606,7 +606,7 @@ export interface OrderDetail {
   /** Notes (rework, answer, monitor, message) that no later run has really followed. Oldest first. */
   pendingNotes: { kind: 'rework' | 'answer' | 'monitor' | 'message'; text: string; at: string; question?: string }[];
   /** Messages left in the worktree inbox for the open run, oldest first. `seen` is set once the worker has read one. */
-  messages: { id?: string; at: string; author: string; text: string; seen?: string; delivery?: 'sent' | 'delivered' | 'read' | 'answered'; delivered_at?: string; via?: 'hook' | 'steer' | 'turn' }[];
+  messages: { id?: string; at: string; author: string; text: string; seen?: string; delivery?: 'sent' | 'delivered' | 'read' | 'answered' | 'requeued' | 'dropped'; delivered_at?: string; via?: 'hook' | 'steer' | 'turn'; requeued_at?: string; action_seq?: number; dropped_at?: string; drop_reason?: string }[];
   /** How a message sent with `say` travels to the open run (`live`, `steer` or `file`); absent when no run is open. */
   sayDelivery?: 'live' | 'steer' | 'file';
   /** The commit reminder for the open run, when one has been sent. */
@@ -638,6 +638,7 @@ export interface QuotaPoint {
   at: string;
   ok: boolean;
   error?: string;
+  note?: string;
   windows: QuotaWindow[];
   balance?: { raw: string; amount?: number };
 }

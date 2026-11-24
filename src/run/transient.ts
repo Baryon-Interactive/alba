@@ -31,17 +31,36 @@ export function eventErrors(events: string): string {
       const e = JSON.parse(line);
       const agy = agyResultError(agyEvent(e));
       if (agy) return [agy];
+      if (e.type === 'result' && e.is_error === true) {
+        if (Array.isArray(e.errors) && e.errors.length) return e.errors.filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 0);
+        if (typeof e.result === 'string' && e.result.trim()) return [e.result];
+      }
       return e.type === 'error' || e.type === 'turn.failed' ? [typeof e.message === 'string' ? e.message : JSON.stringify(e.error ?? e)] : [];
     } catch { return []; }
   }).slice(-TAIL_LINES).join('\n');
 }
 
+const LOST_SESSION_PATTERNS: RegExp[] = [
+  /CLIENT_TOOL_CONTINUATION_UNAVAILABLE/i,
+  /conversation state; start a new conversation/i,
+  // Codex: `thread/resume failed: no rollout found for thread id ...`
+  /no rollout found for thread id/i,
+  // Claude Code (verified on 2.1.317): `No conversation found with session ID: <uuid>`
+  /No conversation found with session ID/i,
+  // Claude Code / API: corrupted or invalid conversation history that cannot be continued
+  /invalid conversation history/i,
+  /\bmessages\.\d+(?:\.[\w.]+)?:\s*[^\n]*(?:must not be empty|must be non-empty|non-empty content)/i,
+  /\bmessage at position \d+[^\n]*(?:must not be empty|must be non-empty|non-empty content)/i,
+  // Missing session/transcript file when attempting to resume
+  /(?:session|conversation|transcript)(?:\s+file)?\s+(?:not found|is missing|does not exist|could not be found)/i,
+  /(?:no|missing)\s+(?:session|conversation|transcript)(?:\s+file)?\s+(?:found|for|at)\b/i,
+  /ENOENT[^\n]*(?:transcript|session)/i,
+];
+
 /** Whether the service says the conversation can no longer be continued. */
 export function isLostSessionError(logTail: string): boolean {
   const tail = logTail.split('\n').filter(line => line.trim()).slice(-TAIL_LINES).join('\n');
-  // Codex: `thread/resume failed: no rollout found for thread id ...`; Claude Code: `No conversation found with session ID: ...`.
-  return /CLIENT_TOOL_CONTINUATION_UNAVAILABLE/i.test(tail) || /conversation state; start a new conversation/i.test(tail)
-    || /no rollout found for thread id/i.test(tail) || /No conversation found with session ID/i.test(tail);
+  return LOST_SESSION_PATTERNS.some(p => p.test(tail));
 }
 
 /** Does the very end of a worker's log look like a transient service error? */
