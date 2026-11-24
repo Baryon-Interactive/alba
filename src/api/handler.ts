@@ -1242,11 +1242,11 @@ async function route(ctx: ApiContext, req: IncomingMessage, res: ServerResponse,
           if (body.override !== undefined && typeof body.override !== 'boolean') throw new ApiFailure(400, 'bad_request', '"override" must be true or false.');
           if (now !== 'awaiting-review' && !(override && ['failed', 'blocked', 'idle'].includes(now))) throw new ApiFailure(409, 'conflict', t('only an order that is awaiting review can be approved here (this one is {stage}); failed, blocked or idle orders need --override and a note of at least 10 characters.', { stage: now }));
           const r = approve(view.config, view.orders, tag, note, str(body, 'branch')?.trim() || undefined, override);
-          message = t('Merged. Wrote {file} (branch is in the base branch; accept: {accept})', { file: r.acceptFile, accept: r.accept });
+          message = r.parent ? t('Merged into {parent} at {commit}.', { parent: r.parent, commit: r.merge }) : t('Merged. Wrote {file} (branch is in the base branch; accept: {accept})', { file: r.acceptFile, accept: r.accept });
           break;
         }
         case 'queue': case 'hold': case 'release': case 'cancel': case 'rework':
-          humanAction(view.config, view.orders, tag, action as 'queue', note, undefined, false, str(body, 'phase'));
+          humanAction(view.config, view.orders, tag, action as 'queue', note, undefined, false, str(body, 'phase'), body.confirm === true);
           break;
         case 'stop':
           message = stopRun(view.orders, tag, note);

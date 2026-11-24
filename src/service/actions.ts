@@ -35,7 +35,7 @@ export function stopRun(orders: Orders, tag: string, note?: string): string | un
   return warning;
 }
 
-export function humanAction(project: ProjectConfig, orders: Orders, tag: string, action: HumanAction, note?: string, branch?: string, override = false, phase?: string): string {
+export function humanAction(project: ProjectConfig, orders: Orders, tag: string, action: HumanAction, note?: string, branch?: string, override = false, phase?: string, confirm = false): string {
   if (phase !== undefined && (action !== 'rework' || !orderPhases(project, orders.get(tag))?.list.some(p => p.id === phase))) fail('Choose a configured phase of this order for rework.');
   if (branch && action !== 'approve') fail('--branch only goes with approve (to record a branch on its own: alba orders set <TAG> --branch b).');
   switch (action) {
@@ -58,7 +58,7 @@ export function humanAction(project: ProjectConfig, orders: Orders, tag: string,
       orders.act(tag, 'queue', { note });
       break;
     }
-    case 'cancel': case 'hold': case 'release': orders.act(tag, action, { note }); break;
+    case 'cancel': case 'hold': case 'release': orders.act(tag, action, { note, confirm }); break;
     case 'stop': stopRun(orders, tag, note); break;
     default: fail('Unknown action "{action}".', { action: String(action) });
   }

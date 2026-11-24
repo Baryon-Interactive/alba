@@ -16,7 +16,7 @@ export type { RoleWorkerResult } from '../roles/statistics.ts';
 
 export const STAGES = [
   'cancelled', 'merged', 'held', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped',
-  'running', 'monitoring', 'idle', 'waiting-needs', 'planned', 'queued', 'draft',
+  'running', 'monitoring', 'idle', 'waiting-children', 'waiting-needs', 'planned', 'queued', 'draft',
 ] as const;
 export type Stage = (typeof STAGES)[number];
 

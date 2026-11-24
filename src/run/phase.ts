@@ -2,8 +2,16 @@ import { readFileSync } from 'node:fs';
 import { worktreeFingerprint } from '../workers/adapters/read-only.mjs';
 export { worktreeFingerprint };
 import type { orderPhases } from '../orders/phases.ts';
+import type { OrderDoc } from '../orders/model.ts';
+import type { Orders } from '../orders/service.ts';
 import { t } from '../i18n.ts';
 import { fenceUntrusted } from './fence.ts';
+
+export function childIntegrationPrompt(orders: Orders, doc: OrderDoc): string {
+  const children = orders.children(doc);
+  if (!children.length) return '';
+  return '\n## Child deliveries\n' + children.map(child => child.order.tag + ' (' + orders.stage(child).stage + '): ' + child.order.title).join('\n') + '\n';
+}
 
 export function phasePrompt(phases: ReturnType<typeof orderPhases>): string {
   if (!phases) return '';

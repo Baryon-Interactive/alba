@@ -25,6 +25,7 @@ export function orderPhases(project: ProjectConfig, doc: OrderDoc, kind = doc.or
       }
     }
   }
+  if (list[index]?.mode === 'split' && doc.actions.some(a => a.kind === 'accept-split')) index++;
   const runsOf = (phase: Phase) => {
     const i = list.indexOf(phase);
     const cutoff = reset.findLast(a => startIndex(a) <= i)?.seq ?? 0;

@@ -1,4 +1,4 @@
-import { phasePrompt, readOnlyChange } from '../run/phase.ts';
+import { childIntegrationPrompt, phasePrompt, readOnlyChange } from '../run/phase.ts';
 import { autoAcceptSplit } from '../service/split.ts';
 import { isReadOnlyPhase } from '../orders/phase-config.ts';
 import { orderPhases } from '../orders/phases.ts';
@@ -123,7 +123,7 @@ const options = {
   since: { type: 'string' }, by: { type: 'string' }, top: { type: 'string' }, reason: { type: 'string' },
   page: { type: 'string' }, image: { type: 'string' }, columns: { type: 'string' }, cell: { type: 'string' }, learn: { type: 'string' }, work: { type: 'string' }, days: { type: 'string' }, region: { type: 'string' }, recipe: { type: 'string' }, channel: { type: 'string' },
   'merged-elsewhere': { type: 'string' }, 'done-by-lead': { type: 'boolean' }, commit: { type: 'string' },
-  force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' }, 'include-ignored': { type: 'boolean' },
+  confirm: { type: 'boolean' }, force: { type: 'boolean' }, wait: { type: 'string' }, 'watch-code': { type: 'boolean' }, log: { type: 'string' }, takeover: { type: 'string' }, 'drain-seconds': { type: 'string' }, 'include-ignored': { type: 'boolean' },
 } as const;
 
 const HELP = `Alba - local work orders and worker orchestration
@@ -811,7 +811,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
         need(1, 'alba orders edit-plan <TAG>');
         return tagLine(editPlan(orders, rest[0], { ...(values.title !== undefined ? { title: values.title } : {}), ...(values.kind !== undefined ? { kind: values.kind } : {}), ...(values.intent !== undefined ? { intent: values.intent } : {}), ...(values.role !== undefined ? { role: values.role } : {}), ...(values.needs !== undefined ? { needs: values.needs.split(',').filter(Boolean) } : {}) }));
       }
-      case 'cancel': need(1, 'alba orders cancel <TAG>'); return tagLine(orders.act(rest[0], 'cancel'));
+      case 'cancel': need(1, 'alba orders cancel <TAG>'); return tagLine(orders.act(rest[0], 'cancel', { confirm: values.confirm === true }));
       case 'close': {
         const usage = 'alba orders close <TAG> (--merged-elsewhere <commit-or-ref> | --done-by-lead) [--commit <sha>] [--note text]';
         need(1, usage);
@@ -849,7 +849,7 @@ ${editorLines(editors, projects.length > 1)}` : body;
       case 'act': {
         need(2, `alba orders act <TAG> <${HUMAN_ACTIONS.join('|')}> [--note text] [--branch b]`);
         if (!isHumanAction(rest[1])) fail('Unknown action "{kind}". Allowed: {allowed}.', { kind: rest[1], allowed: HUMAN_ACTIONS.join(', ') });
-        humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true, values.phase);
+        humanAction(cfg, orders, rest[0], rest[1], values.note, values.branch, values.override === true, values.phase, values.confirm === true);
         return tagLine(orders.get(rest[0]));
       }
       case 'preflight': {
@@ -1039,7 +1039,7 @@ ${t('Held so that no tick starts it again. Start it on a worker with "alba run {
     try { promptWorkers = workersOf(values.workers, cfg); } catch { promptWorkers = undefined; }
     const phases = orderPhases(cfg, doc);
     const role = resolveRole(effectiveRoles(cfg, promptWorkers), { role: phases?.current.role ?? doc.order.role, kind: routingOf(cfg, doc).kind || doc.order.kind });
-    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines) + phasePrompt(phases), roleRules(role));
+    const text = withRoleRules(promptFor(cfg.work_orders, doc, selectLessons(cfg, doc, lessonRunFor(cfg, promptWorkers, values.worker ?? (currentWorker(doc) || undefined))), planSkills(cfg, promptWorkers, doc).listed, cfg.lessons?.max_rule_lines) + phasePrompt(phases) + childIntegrationPrompt(orders, doc), roleRules(role));
     if (values.out) { writeFileSync(values.out, text, 'utf8'); return t('Wrote {file}', { file: values.out }); }
     return text.trimEnd();
   }
@@ -1156,7 +1156,7 @@ ${t('Stopped run {run}. The order is held: start it on a worker with "alba run {
     const action = rest[0];
     if (action === 'approve') {
       const r = approve(cfg, orders, command!, values.note, values.branch, values.override === true); // same step as humanAction(..., 'approve')
-      return t('{tag}: merged. Wrote {file} (branch {branch} is in the base branch; accept: {accept})', { tag: command!, file: r.acceptFile, branch: r.merge, accept: r.accept });
+      return r.parent ? t('Merged into {parent} at {commit}.', { parent: r.parent, commit: r.merge }) : t('{tag}: merged. Wrote {file} (branch {branch} is in the base branch; accept: {accept})', { tag: command!, file: r.acceptFile, branch: r.merge, accept: r.accept });
     }
     if (action === 'rework') { rework(orders, command!, values.note, { max: cfg.dispatch.max_reworks, override: values.override === true }); return tagLine(orders.get(command!)); }
     if (action === 'sheet') {

@@ -75,8 +75,14 @@ export class Orders {
     return new Set(docs.filter(d => inferStage(d.order, d.runs, d.reports, d.actions, none).stage === 'merged').map(d => d.order.tag));
   }
 
+  children(doc: OrderDoc): OrderDoc[] {
+    const decision = doc.actions.find(a => a.kind === 'accept-split');
+    return (decision?.children ?? []).map(tag => this.get(tag));
+  }
+
   stage(doc: OrderDoc, merged: ReadonlySet<string> = this.mergedSet()): StageResult {
-    const stage = inferStage(doc.order, doc.runs, doc.reports, doc.actions, merged);
+    const pending = this.children(doc).filter(child => !['merged', 'cancelled'].includes(inferStage(child.order, child.runs, child.reports, child.actions, merged).stage));
+    const stage = inferStage(doc.order, doc.runs, doc.reports, doc.actions, merged, pending.length);
     // Only a question waits on a person; a blocker or a note while the run goes on is shown, not a stage.
     const waiting = openQuestions(doc)[0];
     return waiting && stage.stage === 'running' ? { stage: 'awaiting-user', why: waiting.text, waitingFor: 'answer' } : stage;
@@ -271,8 +277,24 @@ export class Orders {
   }
 
   /** A person's action. `force` skips the legality check (used by the table importer, which records what the table says). */
-  act(tag: string, kind: ActionKind, options: { phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
+  act(tag: string, kind: ActionKind, options: { confirm?: boolean; phase?: string; note?: string; commit?: string; force?: boolean; imported?: boolean; choice?: number; override?: boolean; bounce?: boolean; lint?: boolean; queued?: boolean; author?: string; requeuedFrom?: string; onStopWarning?: (warning: string) => void } = {}): OrderDoc {
     if (kind === 'accept-split') fail('Accept the split proposal through the split decision.');
+    if (kind === 'cancel') {
+      const doc = this.get(tag);
+      if (doc.actions.some(a => a.kind === 'accept-split')) {
+        if (!options.confirm) fail('Confirm cancellation of the parent and its open children with --confirm.');
+        return this.store.transaction(() => {
+          for (const child of this.children(this.get(tag))) {
+            if (!['merged', 'cancelled'].includes(this.stage(child).stage)) this.act(child.order.tag, 'cancel', options);
+          }
+          return this.applyAction(tag, kind, options);
+        });
+      }
+    }
+    return this.applyAction(tag, kind, options);
+  }
+
+  private applyAction(tag: string, kind: ActionKind, options: NonNullable<Parameters<Orders['act']>[2]>): OrderDoc {
     // Queueing a held order (stopped with "alba stop") releases it, and queues it too when it had ended: what a person means by it.
     if (kind === 'queue' && !options.force && this.stage(this.get(tag)).stage === 'held') {
       const plan = heldStartPlan(this, this.get(tag));
@@ -291,6 +313,7 @@ export class Orders {
       const now = this.stage(doc);
       const stage = now.stage;
       const overrideStage = ['failed', 'blocked', 'idle'].includes(stage) || (stage === 'awaiting-user' && doc.reports.length > 0);
+      if (kind === 'approve' && doc.reports.at(-1)?.subtasks && now.waitingFor === 'card') fail('Decide the split before approving the parent.');
       if (kind === 'approve' && overrideStage && !options.override && !options.force) {
         fail('{tag} is {stage}; approving it needs --override and a note of at least 10 characters.', { tag: doc.order.tag, stage });
       }
@@ -367,7 +390,7 @@ export class Orders {
         stage = this.stage(doc).stage;
         released = true;
       }
-      if (doc.order.planned || (['merged', 'cancelled', 'held'].includes(stage) && !imported)) fail('{tag} is {stage}; a run cannot start.', { tag: doc.order.tag, stage });
+      if (doc.order.planned || (['merged', 'cancelled', 'held', 'waiting-children'].includes(stage) && !imported)) fail('{tag} is {stage}; a run cannot start.', { tag: doc.order.tag, stage });
       if (stage === 'awaiting-user' && doc.reports.at(-1)?.subtasks) fail('Decide the split before starting a run.');
       const open = doc.runs.find(r => r.ended === undefined);
       if (open) fail('{tag} already has an open run ({id}). End it first with run-end.', { tag: doc.order.tag, id: open.id });
@@ -697,5 +720,5 @@ export function optionAnswer(option: OptionInput, n: number, note?: string): str
 }
 
 export const STAGE_PRIORITY: readonly Stage[] = [
-  'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped', 'running', 'queued', 'waiting-needs', 'idle', 'held', 'planned', 'draft', 'merged', 'cancelled',
+  'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped', 'running', 'queued', 'waiting-needs', 'waiting-children', 'idle', 'held', 'planned', 'draft', 'merged', 'cancelled',
 ];

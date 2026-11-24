@@ -30,7 +30,7 @@ export interface StageResult {
  * A report is "current" only if no person queued/reworked the order and no run started after it was written.
  * `merged` is the set of tags of merged orders (used for `needs`).
  */
-export function inferStage(order: Order, runs: readonly Run[], reports: readonly Report[], actions: readonly Action[], merged: ReadonlySet<string>): StageResult {
+export function inferStage(order: Order, runs: readonly Run[], reports: readonly Report[], actions: readonly Action[], merged: ReadonlySet<string>, pendingChildren = 0): StageResult {
   let cancelled = false, isMerged = false, held = false, queued = false, lastReset = 0;
   let mergeAction: Action | undefined;
   for (const a of [...actions].sort((x, y) => x.seq - y.seq)) {
@@ -65,6 +65,7 @@ export function inferStage(order: Order, runs: readonly Run[], reports: readonly
   }
   if (order.planned) return hit('planned', unmet.length ? `Waiting to draft after ${unmet.join(', ')} merges` : 'Ready for producer drafting');
   if (held) return hit('held', t('put on hold by a person'));
+  if (pendingChildren) return hit('waiting-children', t('Waiting for {count} child orders.', { count: pendingChildren }));
   if (current?.status === 'waiting' && current.question) {
     const card = current.waiting_for === 'card';
     return hit('awaiting-user', card ? t('the latest report waits for a card to be clicked: {q}', { q: current.question }) : t('the latest report waits for an answer: {q}', { q: current.question }), card ? 'card' : 'answer');
@@ -106,8 +107,8 @@ export function actionProblem(stage: Stage, kind: ActionKind): string | undefine
   const allowed: Record<ActionKind, readonly Stage[]> = {
     'accept-split': ['awaiting-user'],
     queue: ['draft', 'idle', 'monitoring', 'blocked', 'failed', 'dropped', 'cancelled'],
-    cancel: ['planned', 'draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'held', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
-    hold: ['draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
+    cancel: ['waiting-children', 'planned', 'draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'held', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
+    hold: ['waiting-children', 'draft', 'queued', 'waiting-needs', 'running', 'monitoring', 'idle', 'awaiting-user', 'awaiting-review', 'blocked', 'failed', 'dropped'],
     release: ['held'],
     approve: ['awaiting-review', 'idle'],
     rework: ['awaiting-user', 'awaiting-review', 'monitoring', 'blocked', 'failed', 'dropped', 'idle'],
