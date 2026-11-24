@@ -2,12 +2,33 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ProjectConfig } from '../config.ts';
+import { removeTreeSync } from '../fs/remove-tree.mjs';
 import { fail } from '../i18n.ts';
 import { withGitLockRetrySync } from '../sync/git.ts';
 
-export interface WorktreePlan { path: string; branch: string; baseRef: string }
+export interface WorktreePlan { path: string; branch: string; baseRef: string; sparse?: string[] }
 
 const slash = (p: string) => p.replace(/\\/g, '/');
+
+/** Cone-mode directories for a new worktree: an order's `sparse` overrides `dispatch.sparse` (`[]` means full checkout). */
+export function effectiveSparse(project: ProjectConfig, order: { sparse?: string[] }): string[] | undefined {
+  const dirs = order.sparse !== undefined ? order.sparse : project.dispatch.sparse;
+  return dirs?.length ? [...dirs] : undefined;
+}
+
+/** Directories checked out in an existing sparse worktree, or undefined when the worktree is a full checkout. */
+export function worktreeSparseDirs(worktree: string): string[] | undefined {
+  if (!existsSync(worktree)) return undefined;
+  try {
+    const enabled = withGitLockRetrySync(() => execFileSync('git', ['--no-optional-locks', '-C', worktree, 'config', '--bool', 'core.sparseCheckout'], { encoding: 'utf8', timeout: 15000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })).trim();
+    if (enabled !== 'true') return undefined;
+    const raw = withGitLockRetrySync(() => execFileSync('git', ['--no-optional-locks', '-C', worktree, 'sparse-checkout', 'list'], { encoding: 'utf8', timeout: 15000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }));
+    const dirs = raw.split(/\r?\n/).map(line => line.trim().replace(/\\/g, '/').replace(/\/+$/, '')).filter(Boolean);
+    return dirs.length ? dirs : [];
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Where an order's worktree goes and which branch it uses.
@@ -50,9 +71,15 @@ export function worktreeParent(project: ProjectConfig): string {
   return project.dispatch.worktree_parent ? path.resolve(path.dirname(project.file), project.dispatch.worktree_parent) : path.resolve(project.root, '..', `${project.id}-worktrees`);
 }
 
-export function planWorktree(project: ProjectConfig, order: { tag: string; branch?: string; base_ref?: string; worktree?: string }): WorktreePlan {
+export function planWorktree(project: ProjectConfig, order: { tag: string; branch?: string; base_ref?: string; worktree?: string; sparse?: string[] }): WorktreePlan {
   const name = `${project.id}-${order.tag.toLowerCase()}`;
-  return { path: slash(order.worktree ?? path.join(worktreeParent(project), name)), branch: order.branch ?? name, baseRef: order.base_ref ? localRef(order.base_ref, `${order.tag}: base_ref`) : baseRefOf(project) };
+  const sparse = effectiveSparse(project, order);
+  return {
+    path: slash(order.worktree ?? path.join(worktreeParent(project), name)),
+    branch: order.branch ?? name,
+    baseRef: order.base_ref ? localRef(order.base_ref, `${order.tag}: base_ref`) : baseRefOf(project),
+    ...(sparse ? { sparse } : {}),
+  };
 }
 
 /** A base must be a local branch: a remote-tracking ref may be stale. */
@@ -104,8 +131,24 @@ export function ensureWorktree(project: ProjectConfig, plan: WorktreePlan): { cr
     return { created: false };
   }
   const branchExists = gitOk(project.root, ['show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`]);
-  git(project.root, branchExists ? ['worktree', 'add', plan.path, plan.branch] : ['worktree', 'add', '-b', plan.branch, plan.path, plan.baseRef]);
-  return { created: true };
+  if (!plan.sparse?.length) {
+    git(project.root, branchExists ? ['worktree', 'add', plan.path, plan.branch] : ['worktree', 'add', '-b', plan.branch, plan.path, plan.baseRef]);
+    return { created: true };
+  }
+  const createdBranch = !branchExists;
+  const workers = project.dispatch.checkout_workers || 4;
+  try {
+    git(project.root, branchExists ? ['worktree', 'add', '--no-checkout', plan.path, plan.branch] : ['worktree', 'add', '--no-checkout', '-b', plan.branch, plan.path, plan.baseRef]);
+    git(plan.path, ['sparse-checkout', 'set', '--cone', ...plan.sparse]);
+    git(plan.path, ['-c', `checkout.workers=${workers}`, 'checkout']);
+    return { created: true };
+  } catch (error) {
+    try { git(project.root, ['worktree', 'remove', '--force', '--force', plan.path]); } catch { /* may not be registered or partially removed */ }
+    if (existsSync(plan.path)) { try { removeTreeSync(plan.path); } catch { /* best-effort cleanup */ } }
+    try { git(project.root, ['worktree', 'prune']); } catch { /* best-effort cleanup */ }
+    if (createdBranch) { try { git(project.root, ['branch', '-D', plan.branch]); } catch { /* branch may not have been created */ } }
+    throw error;
+  }
 }
 
 /** Is the branch's tip already part of the base branch? (The check behind `review approve` with manual merging.) */

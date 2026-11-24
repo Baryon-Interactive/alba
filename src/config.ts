@@ -11,7 +11,7 @@ import type { Roles } from './roles/config.ts';
 import { routingOf } from './workers/config.ts';
 import path from 'node:path';
 import { parse } from 'yaml';
-import { STAGES, type Stage } from './orders/model.ts';
+import { STAGES, normalizeSparseDirs, type Stage } from './orders/model.ts';
 import { fail } from './i18n.ts';
 import { ENGINES, normalizeEngine, validateSourceList, type SkillSourceConfig } from './skills/sources.ts';
 import { validateArt, validateCredits, validatePicks, validateUsageLedgers, type ArtConfig, type CreditsConfig, type PicksConfig, type UsageLedgerConfig } from './library/config.ts';
@@ -25,6 +25,8 @@ export interface DispatchRules {
   stall_minutes?: number;
   worktree_parent?: string;
   base_ref?: string;
+  sparse?: string[];                // cone-mode directories checked out in new worktrees (relative, no "..")
+  checkout_workers: number;         // git checkout.workers concurrency for sparse worktrees (default 4)
   long_command_minutes: number;     // a worker whose last command is still running is waiting, not stalled, for this long
   rework_reserve: number;           // extra slots per capped class that only reworked orders may use
   provision?: string[];             // command run in a new worktree (program and arguments, no shell)
@@ -930,14 +932,14 @@ export const DEFAULT_LONG_COMMANDS: string[] = [];
 
 const dispatchDefaults = (): DispatchRules => ({
   caps: {}, long_command_minutes: 240, rework_reserve: 1, merge: 'manual', start_receipt_minutes: 15, on_loop: 'report', on_stall: 'report', on_lingering: 'report', lingering_minutes: 10, loop_idle_minutes: 45, loop_repeat: 3, loop_alternate: 6,
-  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true,
+  long_commands: [...DEFAULT_LONG_COMMANDS], monitor_dirs: [], monitor_timeout_seconds: 120, commit_nudge_minutes: 45, auto_merge_base: true, checkout_workers: 4,
 });
 
 function validateDispatch(raw: unknown, file: string): DispatchRules {
   if (raw === undefined) return dispatchDefaults();
   if (!isRecord(raw)) fail('{file}: "dispatch" must be a mapping.', { file });
   const out: DispatchRules = dispatchDefaults();
-  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
+  const unknown = Object.keys(raw).filter(k => !['caps', 'min_free_ram_gb', 'stall_minutes', 'long_command_minutes', 'worktree_parent', 'base_ref', 'sparse', 'checkout_workers', 'rework_reserve', 'provision', 'accept_command', 'merge', 'start_receipt_minutes', 'on_loop', 'on_stall', 'max_reworks', 'on_lingering', 'lingering_minutes', 'loop_idle_minutes', 'loop_repeat', 'loop_alternate', 'long_commands', 'monitor_dirs', 'monitor_timeout_seconds', 'commit_nudge_minutes', 'auto_merge_base'].includes(k));
   if (unknown.length) fail('{file}: unknown key(s) under "dispatch": {keys}.', { file, keys: unknown.join(', ') });
   if (raw.caps !== undefined) {
     if (!isRecord(raw.caps)) fail('{file}: "dispatch.caps" must be a mapping of name to a whole number.', { file });
@@ -1004,6 +1006,17 @@ function validateDispatch(raw: unknown, file: string): DispatchRules {
     if (v === undefined) continue;
     if (typeof v !== 'string' || !v.trim()) fail('{file}: "dispatch.{key}" must be a non-empty string.', { file, key });
     out[key] = v.trim();
+  }
+  if (raw.sparse !== undefined) {
+    const checked = normalizeSparseDirs(raw.sparse);
+    if (!checked.ok) fail('{file}: "dispatch.sparse" {error}.', { file, error: checked.error });
+    out.sparse = checked.dirs;
+  }
+  if (raw.checkout_workers !== undefined) {
+    if (typeof raw.checkout_workers !== 'number' || !Number.isInteger(raw.checkout_workers) || raw.checkout_workers < 1) {
+      fail('{file}: "dispatch.checkout_workers" must be a whole number >= 1.', { file });
+    }
+    out.checkout_workers = raw.checkout_workers;
   }
   return out;
 }

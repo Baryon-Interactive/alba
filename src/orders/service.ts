@@ -1,5 +1,5 @@
 import type { Action, ActionKind, Mandate, MonitorResult, OptionInput, Order, OrderDoc, QuoteHold, Report, ReportStatus, Run, RunEnd, RunOutcome, Stage, StoredQuestion, StoredQuote, WorkerReroute } from './model.ts';
-import { ACTION_KINDS, RUN_OUTCOMES, nextSeq } from './model.ts';
+import { ACTION_KINDS, RUN_OUTCOMES, nextSeq, normalizeSparseDirs } from './model.ts';
 import { StaleWrite, type OrderStore } from './store.ts';
 import { actionProblem, inferStage, type StageResult } from './stage.ts';
 import type { ReportInput } from './report.ts';
@@ -126,7 +126,7 @@ export class Orders {
     }
   }
 
-  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; condition?: string; source?: Order['source'] }): OrderDoc {
+  add(input: { check?: Order['check']; review?: 'manual' | 'auto'; planned?: boolean; intent?: string; role?: string; tag: string; title: string; kind: string; needs?: string[]; worker?: string; model?: string; heavy?: string; mandate?: Mandate; tags?: string[]; skills?: string[]; routing?: Order['routing']; uses?: string[]; tools?: string[]; branch?: string; base_ref?: string; worktree?: string; sparse?: string[]; condition?: string; source?: Order['source'] }): OrderDoc {
     return this.retry(() => {
       const taken = this.resolveTag(input.tag);
       if (taken) {
@@ -161,6 +161,11 @@ export class Orders {
       if (input.branch) order.branch = input.branch;
       if (input.base_ref) order.base_ref = input.base_ref;
       if (input.worktree) order.worktree = input.worktree;
+      if (input.sparse !== undefined) {
+        const checked = normalizeSparseDirs(input.sparse);
+        if (!checked.ok) fail('sparse {error}.', { error: checked.error });
+        order.sparse = checked.dirs;
+      }
       if (input.condition) order.condition = input.condition;
       if (input.source) order.source = input.source;
       const doc: OrderDoc = { version: 1, order, runs: [], reports: [], actions: [] };
@@ -170,7 +175,7 @@ export class Orders {
   }
 
   /** Changes definition fields (not facts). Used when a table is imported again. */
-  update(tag: string, patch: Partial<Pick<Order, 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
+  update(tag: string, patch: Partial<Pick<Order, 'check' | 'review' | 'planned' | 'intent' | 'role' | 'priority' | 'title' | 'worker' | 'model' | 'needs' | 'condition' | 'source' | 'kind' | 'heavy' | 'branch' | 'base_ref' | 'worktree' | 'sparse' | 'tags' | 'skills' | 'routing' | 'uses' | 'tools'>>): OrderDoc {
     return this.retry(() => {
       const doc = this.get(tag);
       if (patch.check !== undefined && !['independent', 'none'].includes(patch.check)) fail('Check must be independent or none.');
@@ -178,11 +183,17 @@ export class Orders {
       if (patch.role !== undefined && patch.role !== '' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(patch.role)) fail('Invalid role identifier.');
       if (patch.priority !== undefined && (!Number.isInteger(patch.priority) || Math.abs(patch.priority) > 1000000)) fail('Priority must be a bounded integer.');
       if (patch.needs?.some(need => need.toLowerCase() === tag.toLowerCase())) fail('An order cannot need itself.');
-      const changed = Object.entries(patch).filter(([k, v]) => JSON.stringify(doc.order[k as keyof Order]) !== JSON.stringify(v));
-      const clearPin = Object.hasOwn(patch, 'worker') && !!doc.order.next_worker;
+      const normalizedPatch = { ...patch };
+      if (patch.sparse !== undefined) {
+        const checked = normalizeSparseDirs(patch.sparse);
+        if (!checked.ok) fail('sparse {error}.', { error: checked.error });
+        normalizedPatch.sparse = checked.dirs;
+      }
+      const changed = Object.entries(normalizedPatch).filter(([k, v]) => JSON.stringify(doc.order[k as keyof Order]) !== JSON.stringify(v));
+      const clearPin = Object.hasOwn(normalizedPatch, 'worker') && !!doc.order.next_worker;
       if (!changed.length && !clearPin) return doc;
       if (clearPin) delete doc.order.next_worker;
-      Object.assign(doc.order, patch);
+      Object.assign(doc.order, normalizedPatch);
       this.save(doc, 'order-updated', { fields: [...changed.map(([k]) => k), ...(clearPin ? ['next_worker'] : [])] });
       return doc;
     });

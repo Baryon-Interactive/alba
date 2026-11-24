@@ -79,6 +79,7 @@ export interface Order {
   branch?: string;
   base_ref?: string;         // local branch this order starts from instead of the project base (a person wrote "start from <branch>")
   worktree?: string;
+  sparse?: string[];         // cone-mode sparse worktree directories overriding project dispatch.sparse ([] = full checkout)
   source?: ImportSource;
   created: string;
   updated: string;
@@ -283,4 +284,27 @@ export function nextSeq(doc: OrderDoc): number {
   let max = 0;
   for (const item of [...doc.runs, ...doc.reports, ...doc.actions]) max = Math.max(max, item.seq);
   return max + 1;
+}
+
+/** Validates a cone-mode sparse worktree directory list (relative paths, no "..", no leading "-"). */
+export function normalizeSparseDirs(raw: unknown): { ok: true; dirs: string[] } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) return { ok: false, error: 'must be a list of relative directory paths' };
+  const dirs: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string' || !item.trim() || item.includes('\0')) {
+      return { ok: false, error: 'entries must be non-empty relative directory paths' };
+    }
+    const trimmed = item.trim();
+    if (trimmed.startsWith('/') || trimmed.startsWith('\\') || /^[A-Za-z]:/.test(trimmed)) {
+      return { ok: false, error: `"${trimmed}" must be a relative directory path` };
+    }
+    const norm = trimmed.replace(/\\/g, '/').replace(/\/+$/, '');
+    const parts = norm.split('/');
+    if (!norm || norm.startsWith('-') || parts.some(p => !p || p === '.' || p === '..')) {
+      return { ok: false, error: `"${trimmed}" is not a valid cone-mode sparse directory` };
+    }
+    if (!seen.has(norm)) { seen.add(norm); dirs.push(norm); }
+  }
+  return { ok: true, dirs };
 }

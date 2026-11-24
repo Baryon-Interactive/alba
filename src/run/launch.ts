@@ -29,7 +29,7 @@ import { checkToolEnvironment, orderTools, toolsPrompt, withToolServers } from '
 import { handoffLine, handoffPrompt, writeHandoff } from './handoff.ts';
 import { answerPrompt, findOrderFile, launchArgs, messagePrompt, monitorPrompt, pendingNotes, promptFor, recordRunPrompt } from './prompt.ts';
 import { MAX_RESUMES } from './transient.ts';
-import { baseRefOf, checkBaseRef, commonGitDir, ensureWorktree, mainCheckoutState, planWorktree, worktreeGitDir } from './worktree.ts';
+import { baseRefOf, checkBaseRef, commonGitDir, ensureWorktree, mainCheckoutState, planWorktree, worktreeGitDir, worktreeSparseDirs } from './worktree.ts';
 import { installBaseGuard, RUN_ENV } from './ref-guard.ts';
 import { bindEditor, dropEditor, editorPoolsOf, editorPortProblem, editorPrompt, editorSlots, runMachine, takeEditor } from '../editors/pool.ts';
 import { exitFileOf } from './spawn.ts';
@@ -117,9 +117,11 @@ export function prepareRunWorktree(project: ProjectConfig, orders: Orders, tag: 
 }
 
 /** Where the worker works: its worktree only (a worker once worked and committed in the main checkout). */
-export const worktreePrompt = (worktree: string, branch: string, root?: string): string => [
+export const worktreePrompt = (worktree: string, branch: string, root?: string, sparse?: readonly string[]): string => [
   '', '## Where you work', '',
-  `Your working folder is ${slash(worktree)} (branch ${branch}). Run every command, build and commit there and only there.${root && path.resolve(root) !== path.resolve(worktree) ? ` Never change, build in or commit to ${slash(root)} or another worktree: that checkout belongs to the lead, and a run that changes it is stopped at review.` : ''} Read files elsewhere when the order names them, but write only inside your folder.`, '',
+  `Your working folder is ${slash(worktree)} (branch ${branch}). Run every command, build and commit there and only there.${root && path.resolve(root) !== path.resolve(worktree) ? ` Never change, build in or commit to ${slash(root)} or another worktree: that checkout belongs to the lead, and a run that changes it is stopped at review.` : ''} Read files elsewhere when the order names them, but write only inside your folder.`,
+  ...(sparse?.length ? [`This is a sparse worktree: only root files and ${sparse.join(', ')} are checked out; other directories are absent on purpose.`] : []),
+  '',
 ].join('\n');
 
 /** A remote run on Windows has no desktop: how the worker starts a program that needs a window (src/workers/adapters/desktop-run.ps1). */
@@ -287,7 +289,8 @@ export function startRun(ctx: RunContext, tag: string, workerId: string | undefi
         : fullPrompt();
   // A handed-over order: the prompt is only the path of the continuation file (what the branch holds, the last report, the questions, the end of the log, the usual instructions).
   const handoff = rotating ? writeHandoff({ project, doc, from: { worker: rotating.from, run: previous }, to: worker.id, why: rotating.reason, worktree: plan.path, runId, probes: ctx.probes, lessons: getLessons(), skills: skillPlan.listed }) : undefined;
-  const writtenPrompt = withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
+  const activeSparse = worktreeSparseDirs(plan.path);
+  const writtenPrompt = withRoleRules((handoff ? handoffPrompt(handoff) : promptText) + (adapter.finalMessagePrompt?.(worker, remote?.values.last_file ?? lastFile) ?? '') + (attemptsBrief ? `\n${attemptsBrief}\n` : '') + worktreePrompt(plan.path, plan.branch, remote ? undefined : project.root, activeSparse) + slotsPrompt(caps, project.resources ? usesOf(project, doc) : [], !!overCap) + toolsPrompt(tools.tools, worker.engine, roleMount.servers) + (editor ? editorPrompt(editor.slot, editorPool!) : '') + (remote?.machine.os === 'windows' ? remoteDesktopPrompt(remote.machine.id) : '') + (project.design?.enabled ? '\nRead .alba/design/README.md and snapshot.json for the design library. Propose change sets in .alba/design/changes/*.json and list them in the report field design_changes.\n' : ''), rules);
   writeFileSync(promptFile, writtenPrompt, 'utf8');
   const recordedPrompt = recordRunPrompt({ workOrders: project.work_orders, doc, skills: skillPlan.listed, selection: chosenLessons, promptText, writtenPrompt, rules, handoff });
   const sessionId = resumeSession ?? randomUUID();
