@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import type { RunUsage } from '../api/types.ts';
@@ -11,7 +11,7 @@ import { reviewRunsToday } from '../review/independent.ts';
 import { stopTreeAsync } from '../run/kill-tree.ts';
 import { parseUsage, withCost } from '../usage/usage.ts';
 import { parseStreamLog, totalUsage, UsageFold } from '../workers/adapters/index.ts';
-import { consultsFileOf, consultsToday, parseConsultRecords, type ConsultRecord } from './config.ts';
+import { activeConsultFileOf, consultsFileOf, consultsToday, parseConsultRecords, type ActiveConsult, type ConsultRecord } from './config.ts';
 import { CONSULT_ENV, CONSULT_TOKEN_ENV, type ConsultSpec } from './spec.ts';
 
 const QUESTION_MAX_BYTES = 4096;
@@ -228,6 +228,10 @@ export async function runConsult(
   let timedOut = false;
   let spawnErr: Error | undefined;
   let exitCode: number | null = null;
+  // Lets the console list this consult among the order's running agents while the consultant works.
+  const activeFile = activeConsultFileOf(spec.state_dir, spec.tag, spec.run);
+  const active: ActiveConsult = { at: startedAt, question: capUtf8(cappedQuestion, 512), consultant: spec.consultant, model: spec.model, ...(spec.model_family ? { model_family: spec.model_family } : {}), timeout_minutes: spec.limits.timeout_minutes };
+  try { writeFileSync(activeFile, JSON.stringify(active), 'utf8'); } catch { /* display only */ }
 
   try {
     const notBefore = Date.now();
@@ -345,5 +349,6 @@ export async function runConsult(
     return { code: 0, stdout: textOut, stderr: warning ? warning + '\n' : '' };
   } finally {
     rmSync(lastFile, { force: true });
+    rmSync(activeFile, { force: true });
   }
 }

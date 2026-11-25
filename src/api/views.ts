@@ -7,6 +7,7 @@ import { effectiveSparse, worktreeSparseDirs } from '../run/worktree.ts';
 import { SqliteStore } from '../orders/sqlite-store.ts';
 import { producerNotes } from '../producer/notes.ts';
 import { acceptanceCard } from '../review/acceptance.ts';
+import { independentChecks } from '../review/independent.ts';
 import { currentFirstPass } from '../review/first-pass.ts';
 import { readOrders } from './read-orders.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -28,7 +29,7 @@ import { CAPABILITIES } from '../workers/config.ts';
 import { effectiveKind, toRouting } from '../routing/route.ts';
 import type { Probes } from '../tick/gather.ts';
 import type { OrderActivity } from '../tick/plan.ts';
-import { readRunConsults } from '../consult/config.ts';
+import { readActiveConsult, readRunConsults } from '../consult/config.ts';
 import { orderSpend, spendToday, stateDirOfRun, usageOf } from '../usage/spend.ts';
 import type { WorkersFile } from '../workers/config.ts';
 import type { QuotaReading } from '../workers/quota.ts';
@@ -137,6 +138,32 @@ function phaseSummary(project: ProjectConfig, doc: OrderDoc) {
   return phases ? { phase: { id: phases.current.id, index: phases.index + 1, count: phases.list.length } } : {};
 }
 
+/** Every agent working on the order now: its open runs, the consult each is waiting on, its children's open runs and
+ * their consults, a monitor job, and (detail only, it scans events) a running independent check. */
+export function liveAgents(doc: OrderDoc, stage: Stage, stateDir: string | undefined, orders?: View['orders'], withChecks = false): A.LiveAgent[] {
+  const agents: A.LiveAgent[] = [];
+  const runsOf = (d: OrderDoc, kind: 'run' | 'child') => {
+    for (const r of d.runs.filter(run => run.ended === undefined)) {
+      agents.push({ kind, tag: d.order.tag, label: r.phase ?? r.role ?? (r.monitor ? 'monitor' : 'run'), worker: r.worker, ...(r.model ? { model: r.model } : {}), started: r.started, run: r.id });
+      const consult = readActiveConsult(stateDirOfRun(r, stateDir), d.order.tag, r.id);
+      if (consult) agents.push({ kind: 'consult', tag: d.order.tag, label: 'consult', worker: consult.consultant, model: consult.model, started: consult.at, run: r.id, question: consult.question });
+    }
+  };
+  runsOf(doc, 'run');
+  const monitor = monitorViewOf(doc, stage);
+  if (monitor && !doc.runs.some(r => r.ended === undefined)) agents.push({ kind: 'monitor', tag: doc.order.tag, label: 'monitor', started: monitor.started });
+  if (withChecks && orders) {
+    try {
+      const check = independentChecks(orders, doc.order.tag).findLast(c => c.status === 'running');
+      if (check) agents.push({ kind: 'check', tag: doc.order.tag, label: 'verifier', worker: check.worker, started: check.started });
+    } catch { /* display only */ }
+  }
+  for (const child of orders?.children(doc) ?? []) runsOf(child, 'child');
+  return agents;
+}
+
+const agentCount = (agents: A.LiveAgent[]) => agents.length ? { agentsRunning: agents.length } : {};
+
 function family(doc: OrderDoc, orders?: View['orders']) {
   const children = orders?.children(doc).map(child => {
     const run = child.runs.at(-1), o = child.order;
@@ -151,7 +178,7 @@ export function summaryOf(project: ProjectConfig, doc: OrderDoc, stage: StageRes
   const spend = spendOf(doc, env, project.state_dir);
   const o = doc.order;
   return {
-    ...family(doc, orders), ...phaseSummary(project, doc), ...attentionState(doc, mark),
+    ...family(doc, orders), ...phaseSummary(project, doc), ...attentionState(doc, mark), ...agentCount(liveAgents(doc, stage.stage, project.state_dir, orders)),
     ...(open && liveRuns.peek(open) ? { live: liveRuns.peek(open) } : {}), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}),
     ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
     ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}),
@@ -180,7 +207,7 @@ export function summaries(view: View, env: ViewEnv, listOnly = false): A.OrderSu
       const observation = observeRun(open, env, row?.activity);
       const waitingQuestion = (stage.stage === 'awaiting-user' || stage.stage === 'blocked') && stage.waitingFor !== 'card' && latest?.question
         ? { text: latest.question, options: latest.options && toOptions(latest.options) } : undefined;
-      return { ...family(doc, view.orders), ...phaseSummary(view.config, doc), ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
+      return { ...family(doc, view.orders), ...phaseSummary(view.config, doc), ...agentCount(liveAgents(doc, stage.stage, view.config.state_dir, view.orders)), ...(waitingQuestion && { waitingQuestion }), ...attentionState(doc, marks(o.tag)), ...(unanswered(doc).length ? { unanswered: unanswered(doc) } : {}), ...(doc.actions.some(a => a.lint) ? { lintBounced: true } : {}), project: view.config.id, review: o.review ?? view.config.review, tag: o.tag, title: o.title, kind: effectiveKind(o), stage: stage.stage, why: stage.why, needs: o.needs, updated: o.updated,
         ...(o.next_worker ? { nextWorker: o.next_worker } : {}),
         ...(o.heavy ? { heavy: o.heavy } : {}), ...(o.tags?.length ? { tags: o.tags } : {}),
         quietMinutes: observation.quietMinutes, liveness: observation.liveness, ...(row?.activity?.openCommand ? { openCommand: row.activity.openCommand } : {}),
@@ -364,6 +391,7 @@ export function detail(view: View, tag: string, env: ViewEnv): A.OrderDetail {
   const pending = !!proposal && proposal === doc.reports.at(-1) && stage.waitingFor === 'card' && !splitDecision;
   return {
     ...family(doc, view.orders),
+    ...(() => { const agents = liveAgents(doc, stage.stage, view.config.state_dir, view.orders, true); return agents.length ? { agents } : {}; })(),
     ...(proposal?.subtasks ? { split: { report: proposal.seq, subtasks: proposal.subtasks, pending, decision: splitDecision } } : {}),
     ...attentionState(doc, attentionFor(view.orders.store)(o.tag)),
     ...(phases ? { phases: phases.list.map((p, i): A.OrderPhase => {
