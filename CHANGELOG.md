@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Read-only Codex runs (planning phases, independent checks, remote read-only runs) no longer fail at startup with `invalid transport in mcp_servers."codex_app"` when the Codex desktop app's plugins define MCP servers. The MCP server listing now uses the same `features.apps=false` / `features.plugins=false` switches as the run, so only servers the run actually defines are disabled.
+
 - A read-only lead phase can [split an order into child orders](docs/workflow/045-split-and-integrate.md). Reviewers can edit the proposal, follow the children on the board and approve their branches into the parent before its final integration run.
 
 - Running workers can [consult a read-only model from another family](docs/workers/043-consult.md) mid-run (`consult:` in `alba.yaml`, `node .alba/bin/consult.mjs --question ... [--file ...] [--json]` authenticated by per-run `ALBA_CONSULT_TOKEN`, bounded by `max_per_run`, `timeout_minutes` and shared `producer.budgets.review_runs_per_day`), with consult records and `consult` usage surfaced in `alba orders show`, [`GET /api/runs/:key` and `GET /api/orders/:tag`](docs/console/010-api.md#reads), the Run page and spend totals.

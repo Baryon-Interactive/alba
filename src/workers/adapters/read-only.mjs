@@ -3,8 +3,13 @@ import { createHash } from 'node:crypto';
 import { closeSync, lstatSync, openSync, readlinkSync, readSync } from 'node:fs';
 import path from 'node:path';
 
+/** Feature switches of every read-only Codex run. The MCP listing must use the same ones: with plugins on, Codex also lists
+ * plugin-provided servers (e.g. the desktop app's codex_app), and an `enabled=false` override for a server the run does not
+ * define creates a stub entry without a transport, which makes Codex refuse to start ("invalid transport"). */
+export const codexReadOnlyFeatures = ['-c', 'features.apps=false', '-c', 'features.plugins=false'];
+
 export function codexVerifierServers(program, cwd, run) {
-  const servers = JSON.parse(run([program, '-C', cwd, 'mcp', 'list', '--json']));
+  const servers = JSON.parse(run([program, '-C', cwd, ...codexReadOnlyFeatures, 'mcp', 'list', '--json']));
   if (!Array.isArray(servers) || servers.some(s => !s || typeof s.name !== 'string' || !s.name)) throw new Error('Cannot determine configured MCP servers; refusing an unrestricted verifier.');
   return servers.map(s => s.name);
 }
