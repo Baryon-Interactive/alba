@@ -15,6 +15,8 @@ import { reviewRunsToday } from '../review/independent.ts';
 import { dayBudgetExhausted, emptyUsage, addUsage, recordRequestUsage, requestDelta, type SessionUsage } from './session-usage.ts';
 import { mcpConfig, sessionCardKey, DENIED_TOOLS, claudeEffort } from './session.ts';
 import { codexCommand, codexExecArgs } from './engines/codex.ts';
+import { agyArgs, writeAgyWorkspace } from './engines/agy.ts';
+import { agyEvent } from '../workers/adapters/agy-protocol.ts';
 import { validateProducerToolCall } from './tool-schemas.ts';
 import { readRegistry } from '../skills/registry.ts';
 import { t } from '../i18n.ts';
@@ -26,7 +28,7 @@ export interface ProducerWork {
   worker: string; status: 'running' | 'done' | 'failed'; started: string; ended?: string; timeoutMs: number;
   pid?: number; process_started_at?: string; cwd: string; log: string; prompt: string;
   result?: WorkResult; reason?: string; usage: SessionUsage; accountedRequests?: string[];
-  engine?: 'claude' | 'codex'; model?: string; retryOf?: string;
+  engine?: 'claude' | 'codex' | 'agy'; model?: string; retryOf?: string;
   /** The router's brief for this session; a retry gets it again. */
   brief?: string;
   /** When the router was first shown the finished result (on its card or by `producer_read kind work`). */
@@ -202,9 +204,12 @@ export function startProducerWork(project: ProjectConfig, orders: Orders, caseKe
     else { const at = args.indexOf('--model'); if (at >= 0) args.splice(at, 2); }
     if (config.effort) args.push('--effort', claudeEffort(config.effort));
     const codex = config.engine === 'codex' ? codexCommand(config.cli) : undefined;
-    const argv = codex ? [...codex.prefix, ...codexExecArgs({ ...config, systemPrompt, mcpConfig: mcpConfig(project, true), cwd })] : args;
+    // agy reads its agent (the work prompt, the read-only producer server and the two read tools) from this session's own folder.
+    const agy = config.engine === 'agy' ? codexCommand(config.cli || 'agy') : undefined;
+    const agyArgv = agy ? [...agy.prefix, ...agyArgs({ ...config, agent: 'alba-producer-work', addDirs: [project.root], settings: writeAgyWorkspace(cwd, { name: 'alba-producer-work', description: 'Alba producer work session: read-only drafting, review and inspection.', mcpConfig: mcpConfig(project, true), tools: ['producer_read', 'producer_notes'], systemPrompt: `${systemPrompt}\nProject files are under ${slashed(project.root)}; read them with absolute paths.` }) }), '-p', args[1]] : undefined;
+    const argv = codex ? [...codex.prefix, ...codexExecArgs({ ...config, systemPrompt, mcpConfig: mcpConfig(project, true), cwd })] : agyArgv ?? args;
     // Claude works from the project root (read-only tools): the same folder for every session and for the router, so relative paths in the context resolve.
-    run.pid = probes.spawnDetached(codex?.program ?? config.cli ?? 'claude', argv, { cwd: codex ? cwd : project.root, env: { ALBA_PRODUCER_READ_ONLY: '1' }, envUnset: [], logFile: run.log, ...(codex ? { stdinFile: run.prompt } : {}) });
+    run.pid = probes.spawnDetached(codex?.program ?? agy?.program ?? config.cli ?? 'claude', argv, { cwd: codex || agy ? cwd : project.root, env: { ALBA_PRODUCER_READ_ONLY: '1' }, envUnset: [], logFile: run.log, ...(codex ? { stdinFile: run.prompt } : {}) });
     run.process_started_at = probes.processStartedAt?.(run.pid);
     return save(project, run);
   } catch (error) { run.status = 'failed'; run.ended = probes.now().toISOString(); run.reason = `Work could not start: ${(error as Error).message}`; return save(project, run); }
@@ -230,6 +235,10 @@ export function pollProducerWorks(project: ProjectConfig, probes: Probes = syste
             stateTransaction(project, () => { recordRequestUsage(project, usage, run.model ?? run.worker, now, run.engine ?? 'claude'); addUsage(run.usage, usage); seen.add(request); run.accountedRequests = [...seen]; save(project, run); });
           }
           if (raw.type === 'result') { if (raw.is_error) error = String(raw.result ?? 'Work engine failed.'); else final = typeof raw.result === 'string' ? raw.result : undefined; }
+          if (run.engine === 'agy') {
+            const event = agyEvent(raw);
+            if (event?.kind === 'result') { if (event.result.status === 'SUCCESS') final = event.result.response; else error = event.result.error || 'agy work engine failed.'; }
+          }
           if (run.engine === 'codex') {
             if (raw.type === 'item.completed' && raw.item?.type === 'agent_message') codexAnswer = raw.item.text ?? '';
             if (raw.type === 'turn.completed') final = codexAnswer;
