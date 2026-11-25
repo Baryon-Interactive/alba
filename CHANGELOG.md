@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Read-only Codex runs (planning phases, independent checks, remote read-only runs) no longer fail at startup with `invalid transport in mcp_servers."codex_app"` when the Codex desktop app's plugins define MCP servers. The MCP server listing now uses the same `features.apps=false` / `features.plugins=false` switches as the run, so only servers the run actually defines are disabled.
+- Read-only Codex runs (planning phases, independent checks, remote read-only runs) no longer fail at startup with `invalid transport in mcp_servers."codex_app"` when the Codex desktop app's plugins define MCP servers. The MCP server listing now uses the same `features.apps=false` / `features.plugins=false` switches as the run, so only servers the run actually defines are disabled, and the servers are disabled through one TOML inline table (`mcp_servers={"name"={enabled=false},...}`): codex-cli keeps quote characters in `-c` key paths, so the old `mcp_servers."name".enabled=false` named a different server without a transport.
 
 - A read-only lead phase can [split an order into child orders](docs/workflow/045-split-and-integrate.md). Reviewers can edit the proposal, follow the children on the board and approve their branches into the parent before its final integration run.
 
