@@ -1,6 +1,7 @@
 import type { ProjectConfig } from '../config.ts';
 import { readStateJson, stateTransaction, writeStateFile } from '../orders/state-files.ts';
 import { audit } from './producer.ts';
+import { agyEvent, type AgyUsage } from '../workers/adapters/agy-protocol.ts';
 
 export interface SessionUsage {
   /** Total prompt tokens, including both cache categories (aggregate across cache categories). */
@@ -51,11 +52,21 @@ export function requestUsage(raw: Record<string, unknown>): SessionUsage | undef
     const token = (raw.params as { tokenUsage?: { total?: Record<string, unknown>; last?: Record<string, unknown> } })?.tokenUsage;
     if (token?.total) { const usage = codexUsage(token.total); if (token.last) usage.context_tokens = codexUsage(token.last).input_tokens; return usage; }
   }
+  const agy = agyEvent(raw);
+  if (agy) return agy.kind === 'step' && agy.step.type === 'agent_response' && agy.step.state === 'DONE' && agy.step.usage ? agyParts(agy.step.usage) : undefined;
   if (raw.type !== 'assistant') return;
   const message = raw.message as { usage?: Record<string, unknown> } | undefined;
   const u = message?.usage;
   return u ? claudeParts(u) : undefined;
 }
+/**
+ * Antigravity: each finished agent_response step is one model request. Its input_tokens exclude the cache read and its
+ * output_tokens already include thinking_tokens. A result's usage is the running total of the whole process, never charged.
+ */
+const agyParts = (u: AgyUsage): SessionUsage => {
+  const uncached = count(u.input_tokens), read = count(u.cache_read_tokens), output = count(u.output_tokens), input = uncached + read;
+  return { input_tokens: input, output_tokens: output, total_tokens: input + output, uncached_input_tokens: uncached, cache_read_input_tokens: read, cache_creation_input_tokens: 0, context_tokens: input };
+};
 const claudeParts = (u: Record<string, unknown>): SessionUsage => {
   const uncached = count(u.input_tokens), read = count(u.cache_read_input_tokens), write = count(u.cache_creation_input_tokens), output = count(u.output_tokens);
   const input = uncached + read + write;
@@ -91,7 +102,8 @@ export function requestDelta(raw: Record<string, unknown>, previous: Map<string,
   if (!full) return;
   const cumulative = raw.type === 'turn.completed' || raw.method === 'thread/tokenUsage/updated' || raw.type === 'token_count' || raw.type === 'event_msg';
   const params = raw.params as { threadId?: string } | undefined;
-  const id = streamed ? streamed.id : cumulative ? `codex-cumulative:${raw.thread_id ?? params?.threadId ?? 'thread'}` : String(raw.request_id ?? (raw.message as { id?: string } | undefined)?.id ?? `request-${previous.size}`), old = previous.get(id);
+  const agy = agyEvent(raw);
+  const id = agy?.kind === 'step' ? `agy:${agy.step.conversationId ?? ''}:${agy.step.index}` : streamed ? streamed.id : cumulative ? `codex-cumulative:${raw.thread_id ?? params?.threadId ?? 'thread'}` : String(raw.request_id ?? (raw.message as { id?: string } | undefined)?.id ?? `request-${previous.size}`), old = previous.get(id);
   previous.set(id, full);
   const usage = { ...full };
   // A provider may restart cumulative totals after resume/compaction. Charge the fresh total.

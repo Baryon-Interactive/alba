@@ -3,6 +3,7 @@ import { FRESHNESS_REPAIR } from '../verify/verify.ts';
 import { draftBudgetRemaining } from './drafting-budget.ts';
 import { addUsage, emptyUsage, budgetState, dayBudgetExhausted, recordRequestUsage, requestDelta, modelUsage, type ModelUsage, type SessionUsage } from './session-usage.ts';
 import { CodexEngine } from './engines/codex.ts';
+import { AgyEngine } from './engines/agy.ts';
 export { budgetState } from './session-usage.ts';
 export type { SessionUsage } from './session-usage.ts';
 import { eventText } from '../workers/adapters/claude-protocol.ts';
@@ -263,7 +264,7 @@ export class ClaudeCodeEngine implements SessionEngine {
 }
 
 export type SessionEngineFactory = (project: ProjectConfig) => SessionEngine;
-export const sessionEngine: SessionEngineFactory = project => project.producer.session.engine === 'codex' ? new CodexEngine() : new ClaudeCodeEngine();
+export const sessionEngine: SessionEngineFactory = project => project.producer.session.engine === 'codex' ? new CodexEngine() : project.producer.session.engine === 'agy' ? new AgyEngine() : new ClaudeCodeEngine();
 
 export class ProducerSessionManager {
   workersFile?: string;

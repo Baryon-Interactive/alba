@@ -343,7 +343,7 @@ export const PRODUCER_TRIGGERS = ['machine-down', 'delivery', 'failed', 'blocked
 export const DEFAULT_SESSION_TRIGGERS = ['machine-down', 'delivery', 'failed', 'blocked', 'question', 'commit-reminder', 'no-report', 'loop', 'ready-to-draft', 'stalled-run', 'monitor-stale', 'dispatch', 'repeated-failure', 'clean', 'target-failing', 'target-unmeasured', 'gap-unowned', 'idle-capacity', 'nightly-gate-failed'];
 export const DEFAULT_NOTICE_TRIGGERS = ['machine-down', 'gap-unowned', 'target-unmeasured', 'idle-capacity', 'commit-reminder'];
 export interface ProducerEngineConfig {
-  engine: 'claude' | 'codex';
+  engine: 'claude' | 'codex' | 'agy';
   model?: string;
   cli?: string;
   profile?: string;
@@ -381,7 +381,7 @@ export interface ProducerModelPrice { input: number; cache_read: number; cache_w
 export interface ProducerConfig { escalate_to?: string[]; enabled: boolean; /** Delivery reviews by detached work sessions; `false` turns them off (default on). */ reviews?: boolean; /** Skills whose text a delivery review session follows (e.g. Alba's `alba-review-bar`). */ review_skills?: string[]; rules: ProducerRule[]; budgets: { escalations_per_day?: number; turns_per_hour?: number; review_runs_per_day?: number; draft_runs_per_day?: number; usage_per_day?: number; cache_read_weight?: number; cost_per_day_usd?: number }; model_prices?: Record<string, ProducerModelPrice>; session: ProducerSessionConfig; work?: Partial<ProducerEngineConfig>; constraints?: ConstraintThresholds; quick_prompts?: string[]; trust?: ProducerTrustConfig; brief?: ProducerBriefConfig; round?: RoundConfig }
 
 function producerEngineConfig(raw: Record<string, unknown>, at: string): Partial<ProducerEngineConfig> {
-  if (raw.engine !== undefined && raw.engine !== 'claude' && raw.engine !== 'codex') throw new Error(`${at}.engine must be claude or codex.`);
+  if (raw.engine !== undefined && raw.engine !== 'claude' && raw.engine !== 'codex' && raw.engine !== 'agy') throw new Error(`${at}.engine must be claude, codex or agy.`);
   for (const key of ['model', 'cli', 'profile'] as const) if (raw[key] !== undefined && (typeof raw[key] !== 'string' || !raw[key].trim() || raw[key].includes('\0'))) throw new Error(`${at}.${key} must be non-empty text without NUL.`);
   if (raw.config !== undefined && (!Array.isArray(raw.config) || raw.config.some(v => typeof v !== 'string' || !/^[A-Za-z_][A-Za-z0-9_.-]*=.+$/s.test(v) || v.includes('\0')))) throw new Error(`${at}.config must be a list of key=value overrides.`);
   if (raw.effort !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(String(raw.effort))) throw new Error(`${at}.effort must be none, minimal, low, medium, high, xhigh or max.`);
@@ -475,6 +475,7 @@ function validateProducer(raw: unknown, file: string): ProducerConfig {
   }
   for (const [name, value] of [['session', session], ['work', work ? producerWorkConfig({ producer: { session, work } }) : undefined]] as const) {
     if (value?.engine === 'claude' && (value.config?.length || value.profile)) console.warn(`${file}: producer.${name}.config/profile are ignored by the Claude engine.`);
+    if (value?.engine === 'agy' && (value.config?.length || value.profile)) console.warn(`${file}: producer.${name}.config/profile are ignored by the agy engine.`);
     if (value?.engine === 'codex' && /\.(cmd|bat)$/i.test(value.cli ?? '')) console.warn(`${file}: producer.${name}.cli is a Windows batch shim; use the real Codex executable (.exe), because direct spawn cannot launch .cmd/.bat files.`);
   }
   const constraints: ConstraintThresholds = {};

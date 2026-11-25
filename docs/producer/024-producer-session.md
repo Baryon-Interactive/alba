@@ -10,7 +10,7 @@ producer:
     model: claude-sonnet
     cli: claude                 # optional executable path
     # profile: producer        # optional Codex exec-only profile; app-server rejects it
-    config: []                 # optional Codex key=value overrides; ignored by Claude
+    config: []                 # optional Codex key=value overrides; ignored by Claude and agy
     effort: medium             # optional reasoning effort (omit to use the CLI default)
     max_turns: 40
     page_chars: 12000          # collection page size, positive integer
@@ -38,16 +38,16 @@ producer:
 
 The Claude Code adapter runs one `claude -p --input-format stream-json --output-format stream-json --verbose` process. The host writes an MCP configuration in the state folder. The allowed tools are the Alba producer MCP tools and `Read`; shell, edit, write and web tools are denied. The MCP server is started with `alba producer mcp --project <alba.yaml>` and speaks JSON-RPC over stdio without another dependency.
 
-`producer.session.engine` accepts `claude` (default) or `codex`; omitting it preserves the Claude adapter. Engine settings are validated when loading the project:
+`producer.session.engine` accepts `claude` (default), `codex` or `agy`; omitting it preserves the Claude adapter. Engine settings are validated when loading the project:
 
 | Key | Meaning |
 | --- | --- |
-| `engine` | `claude` or `codex`. |
+| `engine` | `claude`, `codex` or `agy` (the [Antigravity CLI](#antigravity-agy)). |
 | `model` | Non-empty model id passed to the CLI. Omit to use its default; unknown model attribution is shown as `unknown`. |
-| `cli` | Non-empty program path, default `claude` or `codex`. On Windows, point at the native `.exe`; `.cmd`/`.bat` paths warn on load and direct spawn errors are reported without falling back. |
-| `profile` | Optional non-empty Codex exec profile, passed as `-p` after `exec`. App-server rejects it because it has no profile option; select the provider/account through `config` instead. Claude ignores it with a configuration warning. |
-| `config` | List of `key=value` Codex overrides, each passed as its own `-c` argument without a shell. Claude ignores these with a configuration warning. Credentials remain in the CLI's provider configuration/environment. |
-| `effort` | Optional `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Codex maps `max` to `xhigh`; Claude maps `none`/`minimal` to `low` and `xhigh` to `max`. The configured model must support the chosen level. |
+| `cli` | Non-empty program path, default `claude`, `codex` or `agy`. On Windows, point at the native `.exe`; `.cmd`/`.bat` paths warn on load and direct spawn errors are reported without falling back. |
+| `profile` | Optional non-empty Codex exec profile, passed as `-p` after `exec`. App-server rejects it because it has no profile option; select the provider/account through `config` instead. Claude and agy ignore it with a configuration warning. |
+| `config` | List of `key=value` Codex overrides, each passed as its own `-c` argument without a shell. Claude and agy ignore these with a configuration warning. Credentials remain in the CLI's provider configuration/environment. |
+| `effort` | Optional `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Codex maps `max` to `xhigh`; Claude maps `none`/`minimal` to `low` and `xhigh` to `max`; agy maps `none`/`minimal` to `low` and passes the rest as `--effort`. The configured model must support the chosen level. |
 
 For example, use model `model-x` through the invented provider entry `provider_p` already configured in Codex:
 
@@ -77,6 +77,29 @@ Codex exec receives `-` as its prompt: detached work opens the saved UTF-8 promp
 The adapter requires `debug models --bundled` and `model_catalog_json` support. It writes a restricted copy of the bundled catalog with shell tools disabled and `apply_patch_tool_type` removed, since current Codex selects its patch tool from model metadata. A model id missing from the bundled catalog gets a copy of the closest entry (the longest slug that prefixes it, e.g. a provider alias, else the longest shared leading run), not the first entry. The catalog is prepared once per Codex executable and model for the life of the host process, and the shared catalog and instruction files are replaced atomically so a starting Codex never reads a half-written file. It also disables unified exec and agents explicitly. MCP startup has a 60-second allowance. Its server receives explicit worker-path, read-only and English-language settings plus inherited `NODE_*` and `CODEX_HOME`, with inherited Alba settings and tokens excluded. Model-engine subprocesses and catalog probes use the worker environment boundary. To verify the installed binary's effective tools without a provider call, set `ALBA_CODEX_TEST_CLI` to its native executable and run `node --test test/producer-codex-tools.test.ts`; the test captures the request at a loopback HTTP server.
 
 The protocol adapter follows the [official Codex app-server documentation](https://developers.openai.com/codex/app-server/); tests use local fake JSON-RPC and exec CLIs without provider calls.
+
+### Antigravity (agy)
+
+`engine: agy` runs the official Antigravity CLI directly (never through OpenCode or a gateway), signed in with its own Google account. For example:
+
+```yaml
+producer:
+  session:
+    enabled: true
+    engine: agy
+    model: gemini-4-carbon-high   # an id that `agy models` lists
+    cli: agy                      # on Windows, the full path of agy.exe
+```
+
+agy has no command-line option for MCP servers or a tool list, and `agy mcp add` would change the person's global configuration for every agy run. The host therefore writes a custom agent into a workspace folder of its own, `<state_dir>/producer-agy/.agents/agents/alba-producer.md`, and starts `agy --input-format stream-json --output-format stream-json --agent alba-producer --settings <state_dir>/producer-agy/agy-settings.json --disable-slash-commands --add-dir <project root> -p=` in that folder. agy finds a workspace agent only in the folder it runs in, so nothing outside the state folder changes:
+
+- The agent lists only the producer MCP server (`mcpServers`) and sets `inheritMcp: false`. agy still connects to the servers of the person's own `mcp_config.json` when it starts, but the agent cannot call them: agy answers `tool ... is not enabled for server ...` even when a permission rule would allow it.
+- `tools: ["view_file"]` is the only built-in tool listed; agy adds its MCP call, resource read and task list tools. `inheritCustomizations: false` leaves out ambient rules, skills and subagents, and `commandExecutionPolicy: "off"`. The agent body is the fixed system prompt.
+- The `--settings` file is used for this session only (agy never saves it). It sets the default agent mode with `request-review` permissions, allows `read_file(*)` and `mcp(alba-producer/<tool>)` for the producer tools, and denies `command(*)`, `write_file(*)`, `read_url(*)`, `execute_url(*)`, `download_url(*)` and `unsandboxed(*)`. Deny rules win over the person's own allow rules, and headless agy refuses every action that would ask for approval; `--dangerously-skip-permissions` is never passed. The producer MCP server enforces its own read-only and action gates as with the other engines.
+
+Each stdin line `{"event":"user","message":{"role":"user","content":...}}` is one turn with its own `result` event. Usage is charged per finished `agent_response` step (agy's `input_tokens` exclude the cache read, its `output_tokens` include thinking); the cumulative usage of a `result` is not charged again. Turns, usage and the usage history record engine `agy` and the configured model, and producer MCP calls appear under the same tool names as with Claude. If agy ends cleanly before it started on a turn, the turn goes to a new process that resumes the conversation with `--conversation <id>` (once per turn); any other exit is a lost session and follows the usual restart and recovery. Detached work with `engine: agy` runs `agy -p "<read the prompt file>" --output-format stream-json --agent alba-producer-work ...` in its own work folder with the read-only producer server and only `producer_read` and `producer_notes` allowed.
+
+Limits: agy writes the producer tool schemas to its own cache (`~/.gemini/antigravity-cli/mcp/alba-producer/`), connects to the person's global MCP servers at startup as described above, and reports no MCP startup failure in its stream, so a producer server that cannot start shows up as a turn whose tool calls fail rather than as a session error.
 
 After building the UI, run `node --disable-warning=ExperimentalWarning test/producer-usage-browser.mjs artifacts/producer-usage` for a mock Activity check and English/Chinese 1440×900 screenshots with two models and separate cache hit rates. Set `ALBA_BROWSER` to a Chromium executable when needed.
 
