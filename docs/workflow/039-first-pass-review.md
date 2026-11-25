@@ -38,7 +38,7 @@ Modes:
 - the order's stage is `awaiting-review`, its latest report is `ready`, no delivery run is open, delivery lint is not failing, and any acceptance trial for the current report is not `waiting`;
 - no `first-pass` record exists yet for `(commit, report, acceptance, delivering_worker)`.
 
-Reviewer selection resolves `roles.first-pass` when defined (falling back to `roles.verifier`, else any eligible worker) and filters the candidate pool to read-only-capable engines (`codex-cli` and `claude-cli`), dropping:
+Reviewer selection resolves `roles.first-pass` when defined (falling back to `roles.verifier`, else any eligible worker) and filters the candidate pool to read-only-capable engines (`codex-cli`, `codex-app`, `claude-cli` and local `agy-cli` workers; see [read-only launches](../worker-adapters.md#read-only-launches)), dropping:
 
 - the delivering worker;
 - any worker with the delivering worker's `model_family` (case-insensitive);
@@ -58,7 +58,7 @@ Each review creates a detached Git worktree at `<state_dir>/first-pass/<id>/chec
 - `final-message.txt` — the worker's final delivery text (at most 20,000 characters);
 - `capture/manifest.json`, `capture/sheet.png` and every `<shot>.png` when the latest acceptance trial for this report ran a `capture` step (plus `targets.json` when target results are present on the trial).
 
-Placing `.alba-first-pass/` inside `checkout` keeps every text file and PNG inside the reviewer's working directory for both `claude-cli` (`Read,Glob,Grep`) and `codex-cli` (`--sandbox read-only` and `view_image`), with every path listed explicitly in the prompt. No edits, builds or worker contact are permitted; inputs are marked untrusted data. When the process exits, Alba verifies that `HEAD` still equals the delivery commit and `git status --porcelain --untracked-files=all -- . ":(exclude).alba-first-pass"` is empty before removing the worktree; any modification outside `.alba-first-pass/` invalidates the run as `unsure`.
+Placing `.alba-first-pass/` inside `checkout` keeps every text file and PNG inside the reviewer's working directory for `claude-cli` (`Read,Glob,Grep`), `codex-cli` (`--sandbox read-only` and `view_image`) and `agy-cli` (`read_file`, which also opens the PNGs, plus Alba's `list_files` and `search_text` limited to the checkout), with every path listed explicitly in the prompt. No edits, builds or worker contact are permitted; inputs are marked untrusted data. When the process exits, Alba verifies that `HEAD` still equals the delivery commit and `git status --porcelain --untracked-files=all -- . ":(exclude).alba-first-pass"` is empty before removing the worktree; any modification outside `.alba-first-pass/` invalidates the run as `unsure`.
 
 A review still running after `first_pass_minutes` has its verified process tree stopped via `stopProcessTree` and is recorded as `done` with verdict `unsure` and reason `timed out`.
 

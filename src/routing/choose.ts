@@ -28,8 +28,11 @@ export interface Choosable {
   scorecard?: Record<string, WorkerKindScore>;
 }
 
-export const supportsReadOnly = (worker: WorkerConfig): boolean =>
-  !!workerAdapter(worker.engine).verifierArgs && !!worker.launch && !worker.card_only;
+/** An enforced read-only launch exists for this worker (an engine whose read-only launch needs local files cannot use it on an SSH worker). */
+export const supportsReadOnly = (worker: WorkerConfig): boolean => {
+  const adapter = workerAdapter(worker.engine);
+  return !!adapter.verifierArgs && !!worker.launch && !worker.card_only && !(worker.host && adapter.verifierLocalOnly);
+};
 
 export interface RolePolicy { readOnly?: boolean; id?: string; requires?: string[]; prefer?: string[]; avoid?: string[]; only?: string[]; /** The route's worker group, whose members are `prefer` and `only`. */ group?: string; rank_by?: RankBy }
 export function rolePolicy(role: ResolvedRole, readOnly = false): RolePolicy | undefined {

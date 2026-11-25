@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { workerEnvironment } from '../../run/environment.ts';
 import { agyEvent } from '../../workers/adapters/agy-protocol.ts';
@@ -7,7 +7,8 @@ import { t } from '../../i18n.ts';
 import type { ProducerEngineConfig } from '../../config.ts';
 import { PRODUCER_TOOLS, type SessionEngine, type SessionEvent, type SessionStartOptions } from '../session.ts';
 import { addUsage, emptyUsage, requestDelta, type SessionUsage } from '../session-usage.ts';
-import { codexCommand, writeAtomic } from './codex.ts';
+import { codexCommand } from './codex.ts';
+import { writeAgyAgent, writeAgySettings, type AgyMcpServer } from '../../workers/adapters/agy-workspace.ts';
 
 /**
  * The Antigravity CLI (`agy`, run directly; never through OpenCode or a gateway) as a producer engine.
@@ -24,31 +25,14 @@ import { codexCommand, writeAtomic } from './codex.ts';
  * Headless agy denies every action that would ask for approval, and no `--dangerously-skip-permissions` is passed.
  */
 export const AGY_SERVER = 'alba-producer';
-const DENY = ['command(*)', 'write_file(*)', 'read_url(*)', 'execute_url(*)', 'download_url(*)', 'unsandboxed(*)'];
-
 export const agyEffort = (effort: NonNullable<ProducerEngineConfig['effort']>): string => ['none', 'minimal'].includes(effort) ? 'low' : effort;
 
 export interface AgyAgent { name: string; description: string; systemPrompt: string; mcpConfig: string; tools: readonly string[] }
 /** One custom agent and the session settings in `dir`, the workspace agy runs in. Returns the settings file. */
 export function writeAgyWorkspace(dir: string, agent: AgyAgent): string {
-  const servers = JSON.parse(readFileSync(agent.mcpConfig, 'utf8')).mcpServers as Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
-  // JSON scalars and flow collections are valid YAML, so no value can break out of its field.
-  const q = (value: unknown) => JSON.stringify(value);
-  const front = [
-    `name: ${q(agent.name)}`, `description: ${q(agent.description)}`, 'mainAgent: true', 'subagent: false', 'inheritMcp: false', 'inheritCustomizations: false',
-    'tools: ["view_file"]', 'commandExecutionPolicy: "off"', 'mcpServers:',
-    ...Object.entries(servers).flatMap(([name, server]) => [`  - name: ${q(name)}`, `    command: ${q(server.command)}`, `    args: ${q(server.args ?? [])}`, `    env: ${q(server.env ?? {})}`]),
-  ];
-  const agents = path.join(dir, '.agents', 'agents');
-  mkdirSync(agents, { recursive: true });
-  writeAtomic(path.join(agents, `${agent.name}.md`), `---\n${front.join('\n')}\n---\n${agent.systemPrompt.replace(/\r\n/g, '\n')}\n`);
-  const settings = path.join(dir, 'agy-settings.json');
-  writeAtomic(settings, JSON.stringify({
-    // Default agent mode (not Auto, whose reviewer may approve commands) and review for anything not allowed below.
-    agentMode: '', toolPermission: 'request-review',
-    permissions: { allow: ['read_file(*)', ...Object.keys(servers).flatMap(server => agent.tools.map(tool => `mcp(${server}/${tool})`))], deny: DENY },
-  }, null, 2) + '\n');
-  return settings;
+  const servers = JSON.parse(readFileSync(agent.mcpConfig, 'utf8')).mcpServers as Record<string, AgyMcpServer>;
+  writeAgyAgent(dir, { name: agent.name, description: agent.description, systemPrompt: agent.systemPrompt, builtinTools: ['view_file'], servers });
+  return writeAgySettings(path.join(dir, 'agy-settings.json'), ['read_file(*)', ...Object.keys(servers).flatMap(server => agent.tools.map(tool => `mcp(${server}/${tool})`))]);
 }
 
 /** Flags shared by the router and detached work: everything before the prompt, Go-style. */
