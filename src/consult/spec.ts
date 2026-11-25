@@ -106,7 +106,7 @@ export function buildConsultSpec(input: {
     worktree,
     command => probes.runCommand(command, 30, { cwd: worktree, ...environment }),
   ) ?? [];
-  const args = verifierArgs(consultant, worktree, '{prompt}', '{last_file}', mcpServers);
+  const args = verifierArgs(consultant, worktree, '{prompt}', '{last_file}', mcpServers, undefined, project.state_dir);
   const model = consultant.model ?? consultant.launch?.model ?? '';
   return {
     version: 1,

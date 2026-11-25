@@ -22,6 +22,35 @@ Use one or more read-only phases followed by exactly one write phase. The first 
 
 `alba orders add CACHE --title "Check cache lookup" --kind code --phases none` opts out when creating an order. `alba orders set CACHE --phases none` opts out on an existing order. Kinds without a phase list use the ordinary dispatch flow.
 
+## Choosing the planning model
+
+A phase runs on the worker its role chooses, with that worker's model. To plan on another model than the one that implements, add a worker entry for that model and name it in the planning role. For example, plan on agy Carbon high and implement on the usual agy worker (Neon xhigh):
+
+```yaml
+# workers file
+workers:
+  - id: agy-direct                 # the usual worker: implements
+    engine: agy-cli
+    model_family: gemini-4
+    launch: { template: agy-direct-v1, program: agy, model: gemini-4-neon-xhigh, args: [] }
+  - id: agy-carbon                 # the same agy program and sign-in, another model: plans
+    engine: agy-cli
+    model_family: gemini-4
+    concurrency: 2
+    launch: { template: agy-carbon-v1, program: agy, model: gemini-4-carbon-high, args: [] }
+
+# project file
+roles:
+  planner:
+    workers: { only: [agy-carbon] }
+phases:
+  code:
+    - { id: plan, mode: read-only, role: planner, timeout_minutes: 30 }
+    - { id: implement, mode: write }
+```
+
+Both entries use the same account, so their concurrency adds up against it; give them the same `quota` when the account has a quota source. Keep the planning entry out of write roles (`workers.avoid`, or `only` lists that leave it out) if it should only plan.
+
 ## Planning and handoff
 
 A fresh queue starts at the first phase. A read-only run inspects the order's worktree and returns its normal report block in its final message. Use a one-line `summary` and put Markdown in the `plan` field. A ready planning report requires a nonempty plan of at most 24 KiB in UTF-8. Alba records the plan on the report and writes a copy at `<state_dir>/runs/<TAG>-<run>.plan.md`.
@@ -30,6 +59,7 @@ A fresh queue starts at the first phase. A read-only run inspects the order's wo
 |---|---|
 | Codex CLI | The verifier launch uses the read-only sandbox, disables approvals, apps and plugins, and disables the configured MCP servers. |
 | Claude CLI | The verifier launch permits Read, Glob and Grep and supplies an empty strict MCP configuration. |
+| Antigravity CLI (`agy-cli`) | A custom agent of Alba's own with only `read_file` and Alba's read-only `list_files`/`search_text` server for the worktree, and session settings that deny commands, file writes and web access ([details](../worker-adapters.md#antigravity-agy-cli)). Local workers only. |
 
 Planning needs a launchable worker with a supported read-only adapter. Alba compares the worktree's HEAD, index, tracked changes and non-ignored untracked contents before and after the run. A changed worktree fails the run, including when the worker reported ready. A local run can inspect an existing dirty worktree in place. On an SSH worker the launcher checks the host worktree and returns the check result and final message. An unverified remote checkout cannot advance the order.
 

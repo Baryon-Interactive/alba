@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { t } from '../../i18n.ts';
 import { agyFailureKind, agyLine } from './agy-protocol.ts';
+import { writeAgyReadOnlyAgent } from './agy-workspace.ts';
 import { generic } from './generic.ts';
 import type { WorkerAdapter } from './types.ts';
 
@@ -11,6 +12,22 @@ import type { WorkerAdapter } from './types.ts';
  */
 export const agy: WorkerAdapter = {
   ...generic, id: 'agy-cli', structured: true, nativeResume: true,
+  /**
+   * Read-only: a fresh custom agent in `<state_dir>/agy-read-only` (added with `--add-dir`; agy also finds agents there) with only
+   * `read_file` and Alba's read-only search server for this worktree, and a session `--settings` file that denies commands, file
+   * writes and web access. Never `--dangerously-skip-permissions`: headless agy refuses whatever would ask for approval.
+   * The run stays in the worktree, so the worktree checks before and after it see exactly what agy saw.
+   */
+  verifierArgs(worker, cwd, prompt, _lastFile, _mcpServers, resume, stateDir) {
+    if (!stateDir) throw new Error('The agy read-only launch needs the project state folder.');
+    const agent = writeAgyReadOnlyAgent(stateDir, [cwd]);
+    const model = worker.model ?? worker.launch?.model;
+    const slash = (p: string) => path.resolve(p).replace(/\\/g, '/');
+    // Go-style flags: all before -p, whose value is the prompt.
+    return ['--output-format', 'stream-json', '--agent', agent.name, '--settings', slash(agent.settings), '--disable-slash-commands', '--print-timeout', '8h',
+      ...(model ? ['--model', model] : []), '--add-dir', slash(agent.folder), ...(resume ? ['--conversation', resume] : []), '-p', prompt];
+  },
+  verifierLocalOnly: true,
   prepare(args, c) {
     const has = (...flags: string[]) => args.some(a => flags.includes(a) || flags.some(f => a.startsWith(`${f}=`)));
     const set = (flag: string, value: string) => {

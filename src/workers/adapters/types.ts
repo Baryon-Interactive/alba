@@ -14,7 +14,13 @@ export interface WorkerAdapter {
   nativeResume: boolean;
   finalMessagePrompt?(worker: WorkerConfig, lastFile: string): string;
   prepare(args: string[], context: LaunchContext): { program?: string; args: string[]; env: Record<string, string>; envUnset: string[] };
-  verifierArgs?(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[], resume?: string): string[];
+  /**
+   * The read-only launch (planning phases, split leads, first-pass review, consult, independent checks): the engine itself must refuse
+   * edits, commands and web access. `stateDir` is the project's state folder, for engines that need files of their own there.
+   */
+  verifierArgs?(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[], resume?: string, stateDir?: string): string[];
+  /** The read-only launch needs files on this machine (it cannot run on an SSH worker). */
+  verifierLocalOnly?: boolean;
   verifierEnvironment?(stateDir: string, workerId: string, env: Record<string, string>, envUnset: string[]): { env: Record<string, string>; envUnset: string[] };
   verifierServers?(program: string, cwd: string, run: (command: string[]) => string): string[];
   usage(text: string, cut?: boolean): RunUsage | undefined;

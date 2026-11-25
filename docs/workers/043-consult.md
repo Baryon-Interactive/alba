@@ -26,7 +26,7 @@ Unknown keys or out-of-range values fail project validation.
 At local run launch, when `consult.enabled` is `true` (and the order's resolved kind is in `consult.kinds` when set), Alba picks one consultant from `workers.yaml` using the same pool rules as the independent-check reviewer ([026](../workflow/026-acceptance-pipeline.md)):
 
 1. **Role pool**: resolves `roles.<consult.role>` (`roles.consultant` by default), falling back to `roles.verifier` when `consult.role` is not defined, and otherwise considering all local workers.
-2. **Launchable and read-only capable**: the candidate must be enabled, available on the local machine (no remote `host`), have a `launch` command, and use an engine adapter that implements `verifierArgs` (`claude-cli` or `codex-cli`; see [worker adapters](../worker-adapters.md)).
+2. **Launchable and read-only capable**: the candidate must be enabled, available on the local machine (no remote `host`), have a `launch` command, and use an engine adapter that implements `verifierArgs` (`claude-cli`, `codex-cli`, `codex-app` or `agy-cli`; see [read-only launches](../worker-adapters.md#read-only-launches)).
 3. **Cross-family requirement**: the running worker must declare `model_family` (otherwise consulting is refused for the run with `Set model_family on <worker> to allow consulting another model.`), and the candidate must not be the running worker and must declare a **different** `model_family` (compared case-insensitively).
 
 If no candidate qualifies, the run still starts normally without installing the consult helper and records a launch warning explaining why.
@@ -67,9 +67,10 @@ The consultant runs inside the run's worktree using the exact read-only verifier
 |---|---|
 | `claude-cli` | `claude -p <prompt> --output-format json --strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools Read,Glob,Grep --allowedTools Read,Glob,Grep --disallowedTools Bash,PowerShell,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Task,Skill [--model <model>]` with an isolated `CLAUDE_CONFIG_DIR` under `<state_dir>/review-env/<worker>/claude`. |
 | `codex-cli` | `codex exec -C <worktree> --sandbox read-only -c approval_policy="never" -c features.apps=false -c features.plugins=false [-c mcp_servers."<name>".enabled=false ...] --json --output-last-message <file> [--model <model>] <prompt>`. |
+| `agy-cli` | `agy --output-format stream-json --agent alba-read-only-<random> --settings <state_dir>/agy-read-only/agy-settings.json --disable-slash-commands --print-timeout 8h [--model <model>] --add-dir <state_dir>/agy-read-only -p <prompt>`: a custom agent with only `read_file` and Alba's read-only `list_files`/`search_text` server for the worktree; commands, file writes and web access are denied ([details](../worker-adapters.md#antigravity-agy-cli)). The agent is written when the asking run starts. |
 
 - **Can do**: read files, search text, and inspect paths in the run's worktree to answer the question with the order's title and listed `--file` paths in context.
-- **Cannot do**: edit, write, or delete files, run shell commands that change state, call MCP tools, browse the web, or commit to git.
+- **Cannot do**: edit, write, or delete files, run shell commands that change state, call MCP tools (an `agy-cli` consultant calls only Alba's read-only `alba-read` search server), browse the web, or commit to git.
 - **Worktree integrity check**: the helper hashes `HEAD`, `git status --porcelain --untracked-files=all`, and `git diff` before and after the consultant runs. It never modifies the worktree itself; if the worktree status changed while the consultant ran, the helper warns on stdout/stderr and records `worktree_changed: true` on the consult entry.
 
 ## Records, console, CLI and usage

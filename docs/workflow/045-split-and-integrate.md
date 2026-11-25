@@ -16,7 +16,7 @@ split:
     feature: manual
 ```
 
-The lead has the same enforced read-only launch and worktree checks as a planning worker. Its final ready report carries `subtasks`. Each item has a unique `key`, a `title`, a supported child `kind`, and a Markdown `body` under 16 KiB with its own Acceptance bullets. Optional `needs` lists sibling keys. A proposal has two to eight children and an acyclic dependency graph. The prompt lists eligible kinds. Children can use their kind's own phases. Splitting stops at one level.
+The lead has the same enforced read-only launch and worktree checks as a planning worker, so any [read-only-capable worker](../worker-adapters.md#read-only-launches) can lead, including a local `agy-cli` worker. Its final ready report carries `subtasks`. Each item has a unique `key`, a `title`, a supported child `kind`, and a Markdown `body` under 16 KiB with its own Acceptance bullets. Optional `needs` lists sibling keys. A proposal has two to eight children and an acyclic dependency graph. The prompt lists eligible kinds. Children can use their kind's own phases. Splitting stops at one level.
 
 ## Decide the proposal
 

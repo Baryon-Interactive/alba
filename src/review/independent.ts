@@ -10,7 +10,7 @@ import type { Orders } from '../orders/service.ts';
 import { readStateJson, stateTransaction } from '../orders/state-files.ts';
 import { effectiveRoles, resolveRole, type ResolvedRole } from '../roles/config.ts';
 import { roleRules } from '../roles/mount.ts';
-import { chooseWorker, rolePolicy, type Choice, type Choosable } from '../routing/choose.ts';
+import { chooseWorker, rolePolicy, supportsReadOnly, type Choice, type Choosable } from '../routing/choose.ts';
 import { routingOf } from '../routing/classify.ts';
 import { parseStreamLog } from '../workers/adapters/index.ts';
 import { findOrderFile } from '../run/prompt.ts';
@@ -82,7 +82,7 @@ export function chooseReviewerFromPool(
 ): { pool: Choosable[]; choice: Choice; worker?: WorkerConfig } {
   const states = tick(ctx.project, ctx.orders, ctx.workers, ctx.probes, { record: false }).workers;
   const filtered = states
-    .filter(w => !!w.config.launch && !w.config.card_only && !!workerAdapter(w.config.engine).verifierArgs && accept(w))
+    .filter(w => supportsReadOnly(w.config) && accept(w))
     .map(w => (adjust ? adjust(w) : w));
   const choice = chooseWorker({ role: rolePolicy(role), kind: 'review', tags: [] }, filtered);
   const worker = choice.chosen ? ctx.workers.workers.find(w => w.id === choice.chosen) : undefined;
@@ -109,9 +109,10 @@ export function readOnlyCommand(
 ) {
   const named = Object.fromEntries(Object.entries(worker.launch!.env).map(([key, value]) => [key, value.replace(/\{skill_names\}|\{skill_allow\}/g, '')]));
   const adapter = workerAdapter(worker.engine);
+  if (remote && adapter.verifierLocalOnly) throw new Error(t('The {engine} read-only launch runs only on this machine, not on an SSH worker.', { engine: worker.engine }));
   const environment = !remote && adapter.verifierEnvironment ? adapter.verifierEnvironment(ctx.project.state_dir, worker.id, named, worker.launch!.env_unset) : { env: named, envUnset: worker.launch!.env_unset };
   const mcpServers = remote ? [] : adapter.verifierServers?.(worker.launch!.program, cwd, command => ctx.probes.runCommand(command, 30, { cwd, ...environment })) ?? [];
-  const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers, resume);
+  const args = verifierArgs(worker, cwd, promptInstruction, lastFile, mcpServers, resume, ctx.project.state_dir);
   return { program: worker.launch!.program, args, ...environment };
 }
 
@@ -176,10 +177,10 @@ export function parseIndependentVerdict(text: string): IndependentVerdict | unde
 }
 
 /** Deliberately use a restricted engine invocation, never the delivering worker's mutation-capable launch arguments. */
-export function verifierArgs(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[] = [], resume?: string): string[] {
+export function verifierArgs(worker: WorkerConfig, cwd: string, prompt: string, lastFile: string, mcpServers: string[] = [], resume?: string, stateDir?: string): string[] {
   const args = workerAdapter(worker.engine).verifierArgs;
   if (!args) throw new Error(`No enforced read-only verifier adapter for engine ${worker.engine}. Configure a supported verifier.`);
-  return args(worker, cwd, prompt, lastFile, mcpServers, resume);
+  return args(worker, cwd, prompt, lastFile, mcpServers, resume, stateDir);
 }
 
 function record(orders: Orders, run: IndependentCheck): IndependentCheck { orders.record(run.tag, 'independent-check', { ...run }); return run; }

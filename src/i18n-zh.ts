@@ -58,6 +58,7 @@ export const zh: Record<string, string> = {
   'phases.{kind}.{id} has no worker with an enforced read-only launch for its role.': 'phases.{kind}.{id} 的角色没有可强制以只读模式启动的执行器。',
   'requires a read-only engine launch': '需要可强制以只读模式启动的引擎',
   'Could not verify the remote read-only worktree.': '无法核实远程只读工作树。',
+  'The {engine} read-only launch runs only on this machine, not on an SSH worker.': '{engine} 的只读启动只能在本机运行，不能用于 SSH 执行器。',
   '"muted" must be boolean.': '“muted”必须是布尔值。',
   '"at" must be a timestamp with a timezone.': '“at”必须是带时区的时间戳。',
   'Run {id} ended': '派工 {id} 已结束',

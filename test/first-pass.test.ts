@@ -307,6 +307,25 @@ test('reviewer choice: selects different model_family, skips same-family pool, a
   assert.match(r3.reason ?? '', /set model_family on plain-worker to allow a first pass/);
 });
 
+test('reviewer choice: an agy worker reviews another family\'s delivery through its restricted read-only launch', t => {
+  const f = setupFixture(t, {
+    deliveringWorker: 'gpt-author',
+    workerDefs: [makeWorker('gpt-author', 'gpt'), { ...makeWorker('agy-carbon', 'gemini-4', 'agy-cli'), launch: { program: 'agy-carbon', args: [], model: 'gemini-4-carbon-high', template: 'synthetic' } }],
+  });
+  runFirstPass(f);
+  assert.equal(f.spawned.length, 1);
+  const { program, args, cwd } = f.spawned[0];
+  const run = firstPasses(f.orders, 'T1')[0];
+  assert.deepEqual([program, run.worker, run.model_family], ['agy-carbon', 'agy-carbon', 'gemini-4']);
+  assert.ok(!args.includes('--dangerously-skip-permissions'));
+  assert.match(args[args.indexOf('--agent') + 1], /^alba-read-only-/);
+  assert.equal(args[args.indexOf('--model') + 1], 'gemini-4-carbon-high');
+  assert.equal(args.at(-2), '-p');
+  assert.equal(cwd, run.cwd);
+  const done = f.finishReview(fpBlock(validPass));
+  assert.deepEqual([done.status, done.verdict?.verdict], ['done', 'pass']);
+});
+
 // 3. Verdict parser
 test('parseFirstPassVerdict: accepts valid pass, send-back and unsure, and rejects invalid or contradictory blocks', () => {
   const p = parseFirstPassVerdict(`Checked everything.\n${fpBlock(validPass)}`);
