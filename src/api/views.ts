@@ -149,16 +149,20 @@ export function liveAgents(doc: OrderDoc, stage: Stage, stateDir: string | undef
       if (consult) agents.push({ kind: 'consult', tag: d.order.tag, label: 'consult', worker: consult.consultant, model: consult.model, started: consult.at, run: r.id, question: consult.question });
     }
   };
+  // A monitor job (a long build, test or league the worker handed over) keeps working without an open run.
+  const monitorOf = (d: OrderDoc, s: Stage) => {
+    const monitor = monitorViewOf(d, s);
+    if (monitor && !d.runs.some(r => r.ended === undefined)) agents.push({ kind: 'monitor', tag: d.order.tag, label: 'monitor', started: monitor.started });
+  };
   runsOf(doc, 'run');
-  const monitor = monitorViewOf(doc, stage);
-  if (monitor && !doc.runs.some(r => r.ended === undefined)) agents.push({ kind: 'monitor', tag: doc.order.tag, label: 'monitor', started: monitor.started });
+  monitorOf(doc, stage);
   if (withChecks && orders) {
     try {
       const check = independentChecks(orders, doc.order.tag).findLast(c => c.status === 'running');
       if (check) agents.push({ kind: 'check', tag: doc.order.tag, label: 'verifier', worker: check.worker, started: check.started });
     } catch { /* display only */ }
   }
-  for (const child of orders?.children(doc) ?? []) runsOf(child, 'child');
+  for (const child of orders?.children(doc) ?? []) { runsOf(child, 'child'); monitorOf(child, orders!.stage(child).stage); }
   return agents;
 }
 

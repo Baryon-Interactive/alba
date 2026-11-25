@@ -41,4 +41,10 @@ test('order detail lists every agent working on the order now: child runs and a 
   f.orders.runEnd('CACHE.1');
   f.orders.runEnd('CACHE.2');
   assert.equal((await detail()).agents, undefined);
+
+  // A child that handed a long job to the monitor still has an agent working, without an open run.
+  f.orders.report('CACHE.1', { status: 'monitoring', summary: 'League running', evidence: [], commits: [], monitor: { check: ['fake-status'], done_when: { exit_code: 0 }, deadline_minutes: 60 } });
+  const monitoring = await detail();
+  assert.deepEqual(monitoring.agents.map((a: { kind: string; tag: string }) => `${a.kind}:${a.tag}`), ['monitor:CACHE.1']);
+  assert.equal((await f.get('/api/orders?project=demo')).body.items.find((o: { tag: string }) => o.tag === tag).agentsRunning, 1);
 });
