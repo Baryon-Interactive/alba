@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { validateProject } from '../src/config.ts';
@@ -10,8 +9,9 @@ import { mountRole, roleRules, withRoleRules } from '../src/roles/mount.ts';
 import { chooseWorker } from '../src/routing/choose.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { buildPrompt, launchArgs } from '../src/run/prompt.ts';
+import { tmpDir } from './tmp.ts';
 
-const temp = () => mkdtempSync(path.join(tmpdir(), 'alba-roles-'));
+const temp = () => tmpDir('alba-roles-');
 const art = { description: 'Artwork', kinds: ['art'], skills: ['drawing'], mcp: { image: { command: 'image-tool', args: ['--stdio'], env_from: ['IMAGE_TOKEN'] } }, rules: 'art.md', workers: { prefer: ['painter'], avoid: ['slow'] } };
 
 test('roles merge keys, preserve source-relative rules and stable first-match resolution', () => {

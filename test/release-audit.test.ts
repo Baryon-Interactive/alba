@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { auditBuild } from '../src/release/audit.ts';
 import { validateRelease } from '../src/release/config.ts';
+import { tmpDir } from './tmp.ts';
 
 function folder(t: TestContext) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-release-audit-'));
+  const dir = tmpDir('alba-release-audit-');
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const put = (relative: string, content: string | Buffer = '') => {
     const file = path.join(dir, relative);

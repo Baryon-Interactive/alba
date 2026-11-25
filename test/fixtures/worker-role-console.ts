@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadProject } from '../../src/config.ts';
 import { Orders } from '../../src/orders/service.ts';
@@ -7,11 +7,12 @@ import { stateStore } from '../../src/orders/backend.ts';
 import { loadWorkers } from '../../src/workers/config.ts';
 import { createBoard } from '../../src/web/server.ts';
 import type { Probes } from '../../src/tick/gather.ts';
+import { tmpDir } from '../tmp.ts';
 
 /** Synthetic supply and jobs, isolated inside this worktree. Never invokes an engine. */
 export function workerRoleFixture() {
   const parent = path.resolve('.alba/TASK47'); mkdirSync(parent, { recursive: true });
-  const dir = mkdtempSync(path.join(parent, 'fixture-'));
+  const dir = tmpDir('fixture-', { parent: parent });
   mkdirSync(path.join(dir, 'orders')); mkdirSync(path.join(dir, 'rules'));
   const file = path.join(dir, 'alba.yaml'), workersFile = path.join(dir, 'workers.yaml');
   writeFileSync(file, `id: demo

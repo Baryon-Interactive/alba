@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { latestLimits, readCodexSessions, windowName } from '../src/workers/codex-quota.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { availability } from '../src/workers/quota.ts';
+import { tmpDir } from './tmp.ts';
 
 /** A token_count line as Codex writes it into a session file. */
 const tokenCount = (timestamp: string, primary: unknown, secondary: unknown, credits: unknown = null) => JSON.stringify({
@@ -22,7 +22,7 @@ function session(home: string, day: string, name: string, lines: string[], mtime
 }
 
 test('codex-sessions: the newest session file with limits gives the windows, named by length; nothing is run', () => {
-  const home = mkdtempSync(path.join(tmpdir(), 'alba-codex-home-'));
+  const home = tmpDir('alba-codex-home-');
   const resets5h = Math.floor(Date.parse('2026-11-13T15:00:00Z') / 1000), resets7d = Math.floor(Date.parse('2026-11-18T00:00:00Z') / 1000);
   session(home, '2026/11/12', 'rollout-2026-11-12T08-00-00-aaaa.jsonl', [
     tokenCount('2026-11-12T08:00:00Z', { used_percent: 90, window_minutes: 300, resets_at: 1 }, null),
@@ -58,7 +58,7 @@ test('codex-sessions: the newest session file with limits gives the windows, nam
 });
 
 test('codex-sessions: a missing home is an error, a home without limits yet is a reading without windows, and the config is checked', () => {
-  const home = mkdtempSync(path.join(tmpdir(), 'alba-codex-home-'));
+  const home = tmpDir('alba-codex-home-');
   const missing = readCodexSessions('codex-plan', { type: 'codex-sessions', codex_home: path.join(home, 'nope') }, '2026-11-13T12:00:00.000Z');
   assert.equal(missing.ok, false);
   assert.match(missing.error!, /no Codex sessions folder at .*nope\/sessions/);

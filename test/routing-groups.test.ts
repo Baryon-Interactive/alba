@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { parse } from 'yaml';
@@ -10,6 +8,7 @@ import { migrateRoles } from '../src/roles/migrate.ts';
 import { rolesView } from '../src/roles/view.ts';
 import { chooseWorker, rolePolicy, type Choosable } from '../src/routing/choose.ts';
 import { validateWorkers } from '../src/workers/config.ts';
+import { tmpDir } from './tmp.ts';
 
 const workersFile = (extra: Record<string, unknown> = {}) => validateWorkers({
   workers: [
@@ -71,7 +70,7 @@ test('one edit to a group reaches every route that uses it', () => {
 });
 
 test('the project file can redefine a group or a route of the workers file', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-routing-'));
+  const dir = tmpDir('alba-routing-');
   const file = workersFile({ routing });
   const project = validateProject({ id: 'p', name: 'P', root: dir, work_orders: dir, state_dir: dir, routing: { groups: { main: ['opencode'] }, routes: { art: { kinds: ['art'], workers: { prefer: ['codex'] } } } } }, path.join(dir, 'alba.yaml'));
   assert.equal(project.uses_routing, true);
@@ -127,7 +126,7 @@ test('earlier roles keep working, and migrate turns them into routes and groups 
 });
 
 test('the routing view lists each group with its workers in order and the routes that draw on it', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-routing-'));
+  const dir = tmpDir('alba-routing-');
   const project = validateProject({ id: 'p', name: 'P', root: dir, work_orders: dir, state_dir: dir }, path.join(dir, 'alba.yaml'));
   const file = workersFile({ routing });
   const view = rolesView(project, file, [], [], states(file));

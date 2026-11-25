@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { loadProject, type ProjectConfig } from '../src/config.ts';
@@ -9,9 +8,10 @@ import { Orders } from '../src/orders/service.ts';
 import { validateMonitor, validateReport } from '../src/orders/report.ts';
 import { runMonitors } from '../src/monitor/monitor.ts';
 import type { Probes } from '../src/tick/gather.ts';
+import { tmpDir } from './tmp.ts';
 
 function makeProject(): { project: ProjectConfig; cleanup: () => void } {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-mon-'));
+  const dir = tmpDir('alba-mon-');
   const root = path.join(dir, 'repo');
   const work = path.join(dir, 'work');
   const state = path.join(dir, 'state');

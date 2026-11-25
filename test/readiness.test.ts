@@ -1,12 +1,12 @@
 import { zh as translated } from '../src/i18n-zh.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { mergeReadiness, systemReadiness, type ReadinessProbe, type ReadinessQuery } from '../src/review/readiness.ts';
 import { fixture, git as fixtureGit, shape } from './api-fixture.ts';
+import { tmpDir } from './tmp.ts';
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'core.autocrlf=false', '-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -15,7 +15,7 @@ const commit = (dir: string, message: string) => { git(dir, 'add', '-A'); git(di
 
 /** A repository with one root commit on `main` (`a.txt`, `shared.txt`). */
 function init(): string {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-ready-'));
+  const dir = tmpDir('alba-ready-');
   git(dir, 'init', '-q', '-b', 'main');
   write(dir, 'a.txt', 'a\n');
   write(dir, 'shared.txt', 'base\n');

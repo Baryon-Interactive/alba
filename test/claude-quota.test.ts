@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { claudeLimitsOfLine, claudeRunLogFiles, claudeWindowName, latestClaudeLimits, readClaudeStream } from '../src/workers/claude-quota.ts';
@@ -9,6 +8,7 @@ import { availability } from '../src/workers/quota.ts';
 import { tick, type Probes } from '../src/tick/gather.ts';
 import { tempOrders } from './helpers.ts';
 import { validateProject } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 function writeLog(dir: string, name: string, lines: string[], mtimeSec: number): string {
   const file = path.join(dir, name);
@@ -110,7 +110,7 @@ test('claude-stream: parses top-level only, unifiedWindows only, merged, rejecte
 });
 
 test('claude-stream: passed reset reads 0%, max_age_hours yields ok reading with note, newest observation wins over newer file mtime', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-claude-quota-'));
+  const dir = tmpDir('alba-claude-quota-');
   try {
     const resets5h = Math.floor(Date.parse('2026-11-24T15:00:00Z') / 1000);
     const resets7d = Math.floor(Date.parse('2026-11-30T00:00:00Z') / 1000);

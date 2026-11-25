@@ -1,6 +1,5 @@
 // Run directly with Node 24+: node --disable-warning=ExperimentalWarning test/bench-state.ts
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { Orders } from '../src/orders/service.ts';
@@ -13,8 +12,9 @@ import { tick, type Probes } from '../src/tick/gather.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import type { OrderDoc, OrderEvent } from '../src/orders/model.ts';
 import type { QuotaReading } from '../src/workers/quota.ts';
+import { tmpDir } from './tmp.ts';
 
-const root = mkdtempSync(path.join(os.tmpdir(), 'alba-bench-'));
+const root = tmpDir('alba-bench-');
 const measure = (run: () => unknown) => {
   run();
   const samples = Array.from({ length: 15 }, () => { const start = performance.now(); run(); return performance.now() - start; });

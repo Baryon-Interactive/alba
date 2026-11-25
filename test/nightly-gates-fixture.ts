@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { cpSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { stringify } from 'yaml';
 import { validateProject } from '../src/config.ts';
@@ -10,6 +9,7 @@ import { Orders } from '../src/orders/service.ts';
 import type { NightlyGate } from '../src/gates/config.ts';
 import { type GateRunOptions, runNightlyGates } from '../src/gates/runner.ts';
 import { activeLeases } from '../src/resources/leases.ts';
+import { tmpDir } from './tmp.ts';
 
 export const gate = (name = 'reference', script = 'console.log("ok")', extra: Partial<NightlyGate> = {}): NightlyGate => ({ name, argv: [process.execPath, '-e', script], timeout_minutes: 1, ...extra });
 export async function until(check: () => boolean, message = 'async state ready') {
@@ -25,12 +25,12 @@ export function runFixtureGates(project: Parameters<typeof runNightlyGates>[0], 
 
 let seedRepo: string | undefined;
 export function fixture(backend: 'sqlite' | 'files' = 'sqlite', gates = [gate()]) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-nightly-')), root = path.join(dir, 'game'), file = path.join(dir, 'alba.yaml');
+  const dir = tmpDir('alba-nightly-'), root = path.join(dir, 'game'), file = path.join(dir, 'alba.yaml');
   mkdirSync(root); mkdirSync(path.join(dir, 'orders'));
   const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], { encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
   if (!seedRepo) {
     git('init', '-q', '-b', 'main'); writeFileSync(path.join(root, 'input.txt'), 'baseline'); git('add', '.'); git('commit', '-qm', 'Baseline');
-    seedRepo = mkdtempSync(path.join(os.tmpdir(), 'alba-gate-seed-'));
+    seedRepo = tmpDir('alba-gate-seed-');
     cpSync(root, seedRepo, { recursive: true });
   } else cpSync(seedRepo, root, { recursive: true });
   const raw = { id: 'sample', name: 'Sample', root, work_orders: path.join(dir, 'orders'), state_dir: path.join(dir, 'state'), state: { backend }, dispatch: { caps: { sim: 1 } }, resources: { rig: { slots: 2 } }, gates: { nightly: gates, window: '01:00-06:00' } };

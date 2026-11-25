@@ -9,6 +9,7 @@ import { syncOrders } from '../src/sync/sync.ts';
 import { importTable } from '../src/table/import.ts';
 import { writeBack } from '../src/table/write.ts';
 import { tempOrders } from './helpers.ts';
+import { tmpDir } from './tmp.ts';
 
 function shadow() {
   const { orders, dir } = tempOrders();
@@ -179,9 +180,8 @@ test('sync: a report block that is there but cannot be read is a failed delivery
 
 test('events: a line cut short by a crash is skipped on reading, and the next event starts on a line of its own', async () => {
   const { FileStore } = await import('../src/orders/store.ts');
-  const { mkdtempSync, appendFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-events-'));
+  const { appendFileSync } = await import('node:fs');
+  const dir = tmpDir('alba-events-');
   const store = new FileStore(dir);
   store.appendEvent({ at: '2026-01-01T00:00:00Z', tag: 'T1', type: 'a' } as never);
   appendFileSync(path.join(dir, 'events.jsonl'), '{"at":"2026-01-01T00:00:01Z","tag":"T1","ty');

@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   GIT_LOCK_HELD_SENTENCE,
@@ -12,9 +11,10 @@ import {
   withGitLockRetrySync,
 } from '../src/sync/git.ts';
 import { git } from '../src/run/worktree.ts';
+import { tmpDir } from './tmp.ts';
 
 function initTempRepo(): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-lock-'));
+  const dir = tmpDir('alba-lock-');
   execFileSync('git', ['init', '-b', 'main'], { cwd: dir, stdio: 'ignore' });
   execFileSync('git', ['config', 'user.email', 'demo@example.com'], { cwd: dir, stdio: 'ignore' });
   execFileSync('git', ['config', 'user.name', 'Demo'], { cwd: dir, stdio: 'ignore' });

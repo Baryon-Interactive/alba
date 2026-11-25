@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { stringify } from 'yaml';
 import { loadProject } from '../../src/config.ts';
@@ -8,13 +8,14 @@ import { writeStateFile } from '../../src/orders/state-files.ts';
 import type { ProducerCase } from '../../src/producer/producer.ts';
 import type { Probes } from '../../src/tick/gather.ts';
 import { validateWorkers } from '../../src/workers/config.ts';
+import { tmpDir } from '../tmp.ts';
 
 export const NOW = '2026-01-10T12:00:00.000Z';
 export const ago = (minutes: number) => new Date(Date.parse(NOW) - minutes * 60000).toISOString();
 export function producerReadFixture(backend: 'files' | 'sqlite' = 'files') {
   const parent = path.resolve('.state/producer-read-tests');
   mkdirSync(parent, { recursive: true });
-  const root = mkdtempSync(path.join(parent, 'fixture-'));
+  const root = tmpDir('fixture-', { parent: parent });
   mkdirSync(path.join(root, 'orders'));
   const file = path.join(root, 'alba.yaml');
   writeFileSync(file, stringify({ id: 'demo', name: 'Demo', root, work_orders: path.join(root, 'orders'), state_dir: path.join(root, 'state'), state: { backend },

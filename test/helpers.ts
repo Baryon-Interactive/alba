@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Orders } from '../src/orders/service.ts';
 import { testStore } from './state-helper.ts';
 import { FileStore } from '../src/orders/store.ts';
+import { tmpDir } from './tmp.ts';
 
 /** An engine on a temporary directory with a clock that moves one minute per call. */
 export function tempOrders(backend?: 'files'): { orders: Orders; dir: string } {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-test-'));
+  const dir = tmpDir('alba-test-');
   let tick = 0;
   const clock = () => new Date(Date.UTC(2026, 0, 1, 0, tick++)).toISOString();
   return { orders: new Orders(backend === 'files' ? new FileStore(path.join(dir, 'state')) : testStore(path.join(dir, 'state')), clock), dir };

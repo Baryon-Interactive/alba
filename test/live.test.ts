@@ -13,8 +13,8 @@ import { projectDir, alba } from './cli-helper.ts';
 import { loadProject } from './state-helper.ts';
 import { Orders } from '../src/orders/service.ts';
 import { stateStore } from '../src/orders/backend.ts';
-import { mkdtempSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync } from 'node:fs';
+import { tmpDir } from './tmp.ts';
 
 const at = '2026-01-01T00:00:00.000Z';
 const events = [
@@ -73,7 +73,7 @@ test('an active configured long command never becomes a stall, even past the old
 });
 
 test('status reads two projects and reports run usage and questions as JSON', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-status-'));
+  const dir = tmpDir('alba-status-');
   const paths = ['alpha', 'beta'].map((name, i) => {
     const folder = path.join(dir, name); mkdirSync(folder);
     const file = projectDir(folder);

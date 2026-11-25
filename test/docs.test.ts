@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { validateProject } from './state-helper.ts';
 import { DOC_MARK_END, DOC_MARK_START, documentContentReads, listDocuments, resetDocumentIndex, searchDocuments } from '../src/docs/docs.ts';
 import { fixture } from './api-fixture.ts';
+import { tmpDir } from './tmp.ts';
 
 const factory = () => path.join(process.cwd(), 'f.yaml');
 
@@ -152,9 +153,7 @@ test('docs calls say the feature is off when the project has no docs section', a
 
 test('a listed document at the project root opens only itself, not every .md of the project', async () => {
   const { readDocument } = await import('../src/docs/docs.ts');
-  const { mkdtempSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-docs-root-'));
+  const root = tmpDir('alba-docs-root-');
   mkdirSync(path.join(root, 'orders')); mkdirSync(path.join(root, 'docs'));
   writeFileSync(path.join(root, 'README.md'), '# Readme\n');
   writeFileSync(path.join(root, 'orders', 'T1-x.md'), '# T1\n');

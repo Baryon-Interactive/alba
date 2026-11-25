@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { loadProject, DEFAULT_SESSION_TRIGGERS, PRODUCER_TRIGGERS, type ProjectConfig } from '../src/config.ts';
@@ -22,6 +21,7 @@ import { listScheduleFires } from '../src/schedules/store.ts';
 import { runSchedulesCli } from '../src/cli/schedules.ts';
 import { startServer } from '../src/web/server.ts';
 import type { Probes } from '../src/tick/gather.ts';
+import { tmpDir } from './tmp.ts';
 
 function makeTempProject(opts: {
   backend?: 'sqlite' | 'files';
@@ -29,7 +29,7 @@ function makeTempProject(opts: {
   templateBody?: string;
   templateName?: string;
 }): { dir: string; project: ProjectConfig; cleanup: () => void } {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-sched-'));
+  const dir = tmpDir('alba-sched-');
   const root = path.join(dir, 'repo');
   const workOrders = path.join(dir, 'work-orders');
   const stateDir = path.join(dir, 'state');
@@ -157,7 +157,7 @@ test('timetable math: every_minutes, daily_at, and 5-field cron (steps, lists, r
 });
 
 test('config validation rejects invalid schedule definitions', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-sched-cfg-'));
+  const dir = tmpDir('alba-sched-cfg-');
   try {
     const root = path.join(dir, 'repo');
     const work = path.join(dir, 'work');

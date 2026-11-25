@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -18,12 +17,13 @@ import { tempOrders } from './helpers.ts';
 import { validateProject } from './state-helper.ts';
 import { closeStateStores } from '../src/orders/backend.ts';
 import type { Probes } from '../src/tick/gather.ts';
+import { tmpDir } from './tmp.ts';
 
 const registry = (extra = {}) => ({ machines: [{ id: 'box', name: 'Box', os: 'windows', connect: { ssh: 'box' }, workspace: path.win32.join('W:', path.win32.sep, 'Work', 'alba').replaceAll('\\', '/'), ...extra }] });
 const worker = () => validateWorkers({ workers: [{ id: 'remote', engine: 'script', host: 'box', tunnel: 1234, launch: { program: 'node', args: ['worker.mjs', '{tunnel_port}'] } }] }, 'workers.yaml').workers[0]!;
 
 test('remote configuration validates host, tunnel and target OS before dispatch', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-remote-config-'));
+  const dir = tmpDir('alba-remote-config-');
   try {
     const file = path.join(dir, 'machines.yaml');
     const p = { id: 'game', machines: file } as ProjectConfig;
@@ -95,7 +95,7 @@ test('core dispatch starts the adapter runner with host paths and no local Claud
 
 test('desktop-run.ps1 runs a command in the logged-on desktop session, prints its output and passes its exit code', { timeout: 120_000, skip: (process.platform !== 'win32' || !!process.env.CI) && 'needs Windows with a logged-on desktop' }, () => {
   const script = fileURLToPath(new URL('../src/workers/adapters/desktop-run.ps1', import.meta.url));
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-desktop-'));
+  const dir = tmpDir('alba-desktop-');
   try {
     const probe = path.join(dir, 'probe.ps1');
     writeFileSync(probe, '"session $((Get-Process -Id $PID).SessionId) in $((Get-Location).Path)"; "arg: $($args[0])"; exit 7\n');
@@ -109,7 +109,7 @@ test('desktop-run.ps1 runs a command in the logged-on desktop session, prints it
 });
 
 test('a failed archive sender cannot report success and removes its temporary stage', { timeout: 20_000 }, async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-remote-transfer-'));
+  const dir = tmpDir('alba-remote-transfer-');
   try {
     const prompt = path.join(dir, 'prompt.md'); writeFileSync(prompt, 'Prompt');
     const spec = { id: 'task-r1', os: 'windows', local_stage: path.join(dir, 'stage'), local_worktree: dir, overlay_roots: [], order_files: [], prompt_file: prompt, rewrite: [], workspace: path.join(dir, 'host'), ssh: 'stand-in' };
@@ -127,7 +127,7 @@ test('a failed archive sender cannot report success and removes its temporary st
 });
 
 async function remoteRoundTrip(editDuringCollection = false) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-remote-sync-'));
+  const dir = tmpDir('alba-remote-sync-');
   const local = path.join(dir, 'local'), workspace = path.join(dir, 'remote'), repo = path.join(workspace, 'repos/game.git'), wt = path.join(workspace, 'wt/order');
   const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   try {
@@ -219,7 +219,7 @@ test('local edits made while collecting remote results are preserved', { timeout
  * dispatch before the worker starts. Runs the real remote-run.ps1 (Windows PowerShell), so it needs Windows and Git LFS.
  */
 async function lfsDispatch(dropOne: boolean) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-remote-lfs-'));
+  const dir = tmpDir('alba-remote-lfs-');
   const local = path.join(dir, 'local'), workspace = path.join(dir, 'remote'), repo = path.join(workspace, 'repos/game.git').replaceAll('\\', '/'), wt = path.join(workspace, 'wt/order').replaceAll('\\', '/');
   const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   try {

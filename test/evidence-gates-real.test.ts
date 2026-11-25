@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { validateProject, type ProjectConfig } from '../src/config.ts';
@@ -14,6 +13,7 @@ import { verifyOrder, type VerifyReport } from '../src/verify/verify.ts';
 import { regionError } from '../src/verify/png.ts';
 import { alba, projectDir } from './cli-helper.ts';
 import { testStore } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const MAIN = path.resolve('src/cli/main.ts');
 const nodeArgs = ['--disable-warning=ExperimentalWarning', MAIN];
@@ -58,7 +58,7 @@ function removeLinks(root: string): void {
 type GateFixture = { dir: string; root: string; delivery: string; workOrders: string; projectFile: string; project: ProjectConfig; orders: Orders; tag: string; cleanup: () => void };
 
 function fixture(t: TestContext, images: Record<string, Buffer>, screenshots: Record<string, unknown> = thresholds, accept?: Record<string, unknown>): GateFixture {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-real-evidence-')), root = path.join(dir, 'repo'), delivery = path.join(dir, 'delivery'), workOrders = path.join(root, 'orders');
+  const dir = tmpDir('alba-real-evidence-'), root = path.join(dir, 'repo'), delivery = path.join(dir, 'delivery'), workOrders = path.join(root, 'orders');
   mkdirSync(workOrders, { recursive: true });
   git(root, 'init', '-q', '-b', 'main'); git(root, 'config', 'user.name', 'fixture'); git(root, 'config', 'user.email', 'fixture@example.com');
   writeFileSync(path.join(root, 'README.md'), 'fixture\n'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'initial');
@@ -128,7 +128,7 @@ test('real verifyOrder motion gates measure exact regions, warn for missing pair
 });
 
 test('image CLI reports exact luminance and motion values and distinguishes argument, bounds and decode exits', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-real-cli-')), half = path.join(dir, 'half.png'), changed = path.join(dir, 'changed.png'), bad = path.join(dir, 'bad.png');
+  const dir = tmpDir('alba-real-cli-'), half = path.join(dir, 'half.png'), changed = path.join(dir, 'changed.png'), bad = path.join(dir, 'bad.png');
   writeFileSync(half, png(2, 1, x => x === 0 ? [0, 0, 0] : [255, 255, 255])); writeFileSync(changed, png(2, 1, x => x === 0 ? [255, 255, 255] : [0, 0, 0])); writeFileSync(bad, Buffer.from('89504e470d0a1a0a', 'hex'));
   const whole = runRaw(['image', 'lum', half, '--json']); assert.equal(whole.status, 0); assert.ok(Math.abs(JSON.parse(whole.stdout).mean_luminance - 0.5) < 1e-12);
   const left = runRaw(['image', 'lum', half, '--region', '0,0,1,1', '--json']); assert.equal(left.status, 0); assert.equal(JSON.parse(left.stdout).mean_luminance, 0);
@@ -143,7 +143,7 @@ test('image CLI reports exact luminance and motion values and distinguishes argu
 });
 
 test('lock CLI timeout, list, stale state, resources view and standalone worktree helper', async t => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-real-lock-')), env = { ALBA_LOCK_DIR: dir }, project = projectDir(dir);
+  const dir = tmpDir('alba-real-lock-'), env = { ALBA_LOCK_DIR: dir }, project = projectDir(dir);
   const holder = spawn(process.execPath, [...nodeArgs, 'lock', 'held', '--wait-minutes', '1', '--', process.execPath, '-e', 'setTimeout(() => {}, 8000)'], { env: { ...process.env, ...env }, windowsHide: true });
   t.after(() => { try { holder.kill(); } catch {} rmSync(dir, { recursive: true, force: true }); });
   for (let i = 0; i < 30 && !existsSync(path.join(dir, 'held.lock')); i++) await new Promise(resolve => setTimeout(resolve, 50));

@@ -1,13 +1,13 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { validateProject, type ProjectConfig } from './state-helper.ts';
 import { Orders } from '../src/orders/service.ts';
 import { testStore } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 /** A project folder with the given files (relative path -> text) and a project file that turns on the library sections it names. */
 export function libraryProject(files: Record<string, string>, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}): { project: ProjectConfig; orders: Orders; dir: string; root: string; write: (rel: string, text: string) => void } {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-lib-'));
+  const dir = tmpDir('alba-lib-');
   const root = path.join(dir, 'game');
   mkdirSync(root, { recursive: true });
   mkdirSync(path.join(dir, 'orders'), { recursive: true });

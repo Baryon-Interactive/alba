@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
@@ -15,9 +14,10 @@ import { balanceDrop, type QuotaReading } from '../src/workers/quota.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { balanceChange, workersPage } from '../src/web/html.ts';
 import { Hub } from '../src/api/hub.ts';
+import { tmpDir } from './tmp.ts';
 
 const dirs: string[] = [];
-const tmp = () => { const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-quota-')); dirs.push(dir); return dir; };
+const tmp = () => { const dir = tmpDir('alba-quota-'); dirs.push(dir); return dir; };
 after(() => { closeStateStores(); for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
 const reading = (n: number, source = 'q'): QuotaReading => ({ source, at: new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString(), ok: true, windows: [], entries: 1, balance: { raw: String(1000 - n), amount: 1000 - n } });
 const jsonl = (values: QuotaReading[]) => values.map(q => JSON.stringify(q) + '\n').join('');

@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
-import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import fs, { chmodSync, existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import { removeTree, removeTreeSync } from '../src/fs/remove-tree.mjs';
 import { runRemote } from '../src/workers/adapters/remote-run.mjs';
+import { tmpDir } from './tmp.ts';
 
 test('owned tree cleanup removes read-only files and directories without changing link targets', async () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-remote-cleanup-'));
+  const root = tmpDir('alba-remote-cleanup-');
   try {
     const outside = path.join(root, 'retained'); mkdirSync(outside);
     const retained = path.join(outside, 'object'); writeFileSync(retained, 'retained'); chmodSync(retained, 0o444);
@@ -29,7 +29,7 @@ test('owned tree cleanup removes read-only files and directories without changin
 });
 
 test('read-only repair stays within the owned tree after a permission failure', t => {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-remote-repair-'));
+  const root = tmpDir('alba-remote-repair-');
   const nativeRemove = fs.rmSync;
   try {
     const outside = path.join(root, 'retained'); mkdirSync(outside); chmodSync(outside, 0o555);
@@ -50,7 +50,7 @@ test('read-only repair stays within the owned tree after a permission failure', 
 });
 
 test('unremovable remote staging is diagnostic and preserves worker exit codes and primary errors', async t => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-remote-deferred-'));
+  const dir = tmpDir('alba-remote-deferred-');
   const nativeRemove = fs.rmSync;
   try {
     const prompt = path.join(dir, 'prompt.md'); writeFileSync(prompt, 'Prompt');
@@ -75,7 +75,7 @@ test('unremovable remote staging is diagnostic and preserves worker exit codes a
 
 test('Windows synchronous and async cleanup retry a temporary exclusive file lock', { skip: process.platform !== 'win32' ? 'Windows file sharing semantics' : false, timeout: 20_000 }, async () => {
   for (const remove of [removeTreeSync, removeTree]) {
-    const dir = mkdtempSync(path.join(tmpdir(), 'alba-remote-lock-'));
+    const dir = tmpDir('alba-remote-lock-');
     const file = path.join(dir, 'object'); writeFileSync(file, 'locked briefly');
     const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', "$f = [IO.File]::Open($env:ALBA_TEST_LOCK, 'Open', 'Read', 'None'); [Console]::WriteLine('locked'); Start-Sleep -Milliseconds 350; $f.Dispose()"], { windowsHide: true, env: { ...process.env, ALBA_TEST_LOCK: file }, stdio: ['ignore', 'pipe', 'pipe'] });
     const closed = once(child, 'close');

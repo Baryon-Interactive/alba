@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { validateProject } from '../../src/config.ts';
 import { FileStore } from '../../src/orders/store.ts';
@@ -9,11 +9,12 @@ import { producerAct, createChatCase } from '../../src/producer/producer.ts';
 import type { Probes } from '../../src/tick/gather.ts';
 import type { DirectorMessage } from '../../src/producer/conversation-state.ts';
 import { producerFactsFixture, NOW } from './producer-facts.ts';
+import { tmpDir } from '../tmp.ts';
 
 /** Entirely local, no coordinator or model process. All state stays in the worktree. */
 export async function workspaceFixture() {
   const parent = path.resolve('.alba/TASK45'); mkdirSync(parent, { recursive: true });
-  const dir = mkdtempSync(path.join(parent, 'fixture-'));
+  const dir = tmpDir('fixture-', { parent: parent });
   const root = path.join(dir, 'project'); mkdirSync(path.join(root, 'orders'), { recursive: true });
   const project = validateProject({ id: 'demo', name: 'Demo studio', root, work_orders: path.join(root, 'orders'), state_dir: path.join(dir, 'state'), state: { backend: 'files' }, producer: { enabled: true, rules: [{ id: 'review', action: 'hold', instruction: 'Review proposed order changes', mode: 'propose' }], budgets: { usage_per_day: 100000 }, session: { enabled: false, model: 'fixture-model' } } }, path.join(dir, 'alba.yaml'));
   const orders = new Orders(new FileStore(project.state_dir), () => NOW);

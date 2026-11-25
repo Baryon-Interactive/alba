@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
-import { hostname, tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'node:test';
@@ -19,6 +19,7 @@ import { planTick, type TickInput, type TickOrder } from '../src/tick/plan.ts';
 import type { Probes } from '../src/tick/gather.ts';
 import { validateWorkers, type WorkerConfig } from '../src/workers/config.ts';
 import { removeTreeSync } from '../src/fs/remove-tree.mjs';
+import { tmpDir } from './tmp.ts';
 
 const repo = pathToFileURL(path.resolve(import.meta.dirname, '..') + '/').href;
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -259,7 +260,7 @@ test('R-10: posix stop sends SIGTERM, then SIGKILL to what is still the same pro
 
 test('R-11: the machine lock is taken over from a holder whose file was never finished or whose pid was reused, never from a live one', () => {
   const helper = fileURLToPath(new URL('../src/run/lock-helper.mjs', import.meta.url));
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-lock-'));
+  const dir = tmpDir('alba-lock-');
   try {
     const env = { ...process.env, ALBA_LOCK_DIR: dir };
     const lock = path.join(dir, 'capture.lock');

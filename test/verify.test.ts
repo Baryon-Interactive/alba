@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { validateProject } from '../src/config.ts';
@@ -14,6 +12,7 @@ import { decodePng, imageFormat, summarizePng } from '../src/verify/png.ts';
 import { lintReworkNote } from '../src/producer/delivery-lint.ts';
 import { producerSystemPrompt } from '../src/producer/session.ts';
 import { testStore } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 test('order acceptance sections parse evidence and path rules, with warnings for vague text', () => {
   const sections = parseOrderSections(`# T1
@@ -75,7 +74,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function fixture(markdown: string, options: { protectedGates?: string[] } = {}): Fixture {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-verify-'));
+  const dir = tmpDir('alba-verify-');
   const root = path.join(dir, 'game');
   const ordersDir = path.join(root, 'orders');
   const worktree = path.join(dir, 'game-r1');

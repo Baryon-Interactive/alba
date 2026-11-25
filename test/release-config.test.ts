@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { loadProject } from '../src/config.ts';
+import { tmpDir } from './tmp.ts';
 
 test('project loader accepts release config and applies hardening defaults', t => {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-release-config-'));
+  const root = tmpDir('alba-release-config-');
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const file = path.join(root, 'alba.yaml');
   const load = (release = '') => {
