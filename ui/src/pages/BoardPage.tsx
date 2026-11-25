@@ -1,4 +1,5 @@
 import { ChildList } from '@/components/SplitOrders';
+import { AgentCount } from '@/components/LiveAgents';
 import { PhaseBadge } from '@/components/OrderPhases';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -70,6 +71,7 @@ export function BoardCard({ project, o, overlapTags }: { project: string; o: Ord
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
         {o.lintBounced && <Badge tone="warning">{t('Lint rework')}</Badge>}
         {o.phase && <PhaseBadge phase={o.phase} />}
+        <AgentCount count={o.agentsRunning} />
         {o.kind && <Badge tone="outline">{o.kind}</Badge>}
         {o.heavy && <Badge tone="outline">{t('Heavy class {kind}', { kind: o.heavy })}</Badge>}
         {(o.run?.worker || o.nextWorker || o.worker) && <Badge tone="neutral">{o.run?.worker ?? (o.nextWorker ? `${t('Next worker')}: ${o.nextWorker}` : o.worker)}</Badge>}

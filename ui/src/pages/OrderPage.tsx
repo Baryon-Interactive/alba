@@ -3,6 +3,7 @@ import { AcceptanceCard } from '@/components/AcceptanceCard';
 import { OrderAccounting } from '@/components/Usage';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { SplitOrders } from '@/components/SplitOrders';
+import { LiveAgents } from '@/components/LiveAgents';
 import { PhaseStrip } from '@/components/OrderPhases';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router';
 import { ArrowRight, CircleDot, FileText, Pencil, Play } from 'lucide-react';
@@ -343,6 +344,7 @@ export function OrderPage() {
         </div>
       </div>
 
+      <LiveAgents project={project} tag={tag} agents={d.agents} />
       <SplitOrders project={project} detail={d} />
       {d.phases && <PhaseStrip phases={d.phases} />}
       {(closing || (wanted === 'close' && d.actions.includes('close'))) && (

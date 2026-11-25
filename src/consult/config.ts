@@ -97,6 +97,24 @@ export function parseConsultRecords(text: string): ConsultRecord[] {
   return out;
 }
 
+/** A consult in progress: written when the consultant process starts, removed when it ends (any outcome). */
+export interface ActiveConsult { at: string; question: string; consultant: string; model: string; model_family?: string; timeout_minutes: number }
+export const activeConsultFileOf = (stateDir: string, tag: string, runId: string): string =>
+  path.join(stateDir, 'runs', `${tag}-${runId}.consult-active.json`);
+/** The consult running now for this run, if any. A marker older than its timeout plus five minutes is a leftover of a
+ * killed consult process and is ignored. */
+export function readActiveConsult(stateDir: string | undefined, tag: string, runId: string, now = Date.now()): ActiveConsult | undefined {
+  if (!stateDir) return undefined;
+  const file = activeConsultFileOf(stateDir, tag, runId);
+  if (!existsSync(file)) return undefined;
+  try {
+    const active = JSON.parse(readFileSync(file, 'utf8')) as ActiveConsult;
+    const started = Date.parse(active.at);
+    if (!Number.isFinite(started) || now - started > ((active.timeout_minutes || 10) + 5) * 60_000) return undefined;
+    return active;
+  } catch { return undefined; }
+}
+
 export function readRunConsults(stateDir: string | undefined, tag: string, runId: string): ConsultRecord[] {
   if (!stateDir) return [];
   const file = consultsFileOf(stateDir, tag, runId);

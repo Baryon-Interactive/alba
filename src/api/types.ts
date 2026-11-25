@@ -390,9 +390,26 @@ export interface AttentionState {
 }
 
 export interface ChildSummary { tag: string; stage: Stage; title: string; worker?: string; model?: string }
+/** One agent working on an order right now: its own runs (by phase or role), a consult one of them is waiting on, an
+ * independent check, a monitor job, or a run of one of its child orders. */
+export interface LiveAgent {
+  kind: 'run' | 'consult' | 'check' | 'monitor' | 'child';
+  /** The order the agent works for (a child's tag for `child`). */
+  tag: string;
+  /** Phase id, role, or the kind when neither is known. */
+  label: string;
+  worker?: string;
+  model?: string;
+  started?: string;
+  /** The run to watch (for `consult`, the run that asked). */
+  run?: string;
+  question?: string;
+}
 export interface OrderSummary extends AttentionState {
   parent?: string;
   children?: ChildSummary[];
+  /** How many agents are working on the order now, its children's runs included (see `OrderDetail.agents`). */
+  agentsRunning?: number;
   phase?: { id: string; index: number; count: number };
   liveness?: Liveness;
   waitingQuestion?: { text: string; options?: QuestionOption[] };
@@ -634,6 +651,8 @@ export interface OrderPhase {
 export interface OrderDetail extends AttentionState {
   parent?: string;
   children?: ChildSummary[];
+  /** Every agent working on the order now; absent when none is. */
+  agents?: LiveAgent[];
   split?: { report: number; subtasks: import('../orders/subtasks.ts').Subtask[]; pending: boolean; decision?: Decision & { automatic?: true; report?: number; children?: string[]; author?: string; selection?: { key: string; tag: string; title: string; kind: string }[] } };
   phases?: OrderPhase[];
   reroutes?: { id: string; at: string; from: string; to: string; note: string; brief: string }[];

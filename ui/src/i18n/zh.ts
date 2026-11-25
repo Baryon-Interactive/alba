@@ -1836,4 +1836,10 @@ export const zh: Record<string, string> = {
   'Consult': '跨模型咨询',
   'worktree modified': '工作树被改动',
   'Answer ({n} chars)': '回答（{n} 字符）',
+  'Independent check': '独立复核',
+  'Child order': '子工单',
+  'Running agents': '在跑的 agent',
+  'started {when}': '{when}开始',
+  'Agents working on this order now': '现在在这张单上干活的 agent 数',
+  '{n} agents': '{n} 个 agent',
 };
