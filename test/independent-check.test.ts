@@ -147,8 +147,8 @@ test('Codex disables every configured MCP server and refuses unreadable configur
   const f = fixture(t);
   f.probes.runCommand = () => JSON.stringify([{ name: 'sample.tools' }, { name: 'other' }]);
   assert.equal(startIndependentCheck(f, 'CAT1').status, 'running');
-  assert.ok(f.spawned[0].args.includes('mcp_servers."sample.tools".enabled=false'));
-  assert.ok(f.spawned[0].args.includes('mcp_servers."other".enabled=false'));
+  assert.ok(f.spawned[0].args.includes('mcp_servers={"sample.tools"={enabled=false},"other"={enabled=false}}'));
+  assert.ok(!f.spawned[0].args.some(a => /^mcp_servers\."/.test(a)), 'no quoted -c key paths: codex-cli keeps the quotes');
   f.finish(block(failed));
   f.probes.runCommand = () => 'unreadable';
   assert.equal(startIndependentCheck(f, 'CAT1', true).status, 'failed');

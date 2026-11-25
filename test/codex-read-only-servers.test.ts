@@ -22,6 +22,13 @@ test('the MCP listing for a read-only Codex run uses the same feature switches a
 
   const args = codex.verifierArgs!({ id: 'w', engine: 'codex-cli', launch: { program: 'codex', args: [], env: {} } } as never, 'D:/work', 'Plan it', 'last.txt', names);
   for (const flag of codexReadOnlyFeatures.filter(x => x !== '-c')) assert.ok(args.includes(flag), `run carries ${flag}`);
-  assert.deepEqual(args.filter(x => x.startsWith('mcp_servers.')), disableServers(names).filter(x => x !== '-c'));
+  assert.deepEqual(args.filter(x => x.startsWith('mcp_servers')), ['mcp_servers={"node_repl"={enabled=false},"unityMCP"={enabled=false}}']);
   assert.ok(!args.some(x => x.includes('codex_app')), 'never disables a server the run does not define');
+});
+
+// codex-cli 0.166 keeps quote characters in -c key paths, so `mcp_servers."godot-ai".enabled=false` named a server
+// `"godot-ai"` without a transport. The value side is TOML: one inline table with quoted keys merges into the real entries.
+test('disabling MCP servers uses one TOML inline table, never quoted key paths', () => {
+  assert.deepEqual(disableServers([]), []);
+  assert.deepEqual(disableServers(['godot-ai', 'sample.tools']), ['-c', 'mcp_servers={"godot-ai"={enabled=false},"sample.tools"={enabled=false}}']);
 });

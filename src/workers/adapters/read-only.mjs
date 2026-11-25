@@ -14,7 +14,13 @@ export function codexVerifierServers(program, cwd, run) {
   return servers.map(s => s.name);
 }
 
-export const disableServers = names => names.flatMap(name => ['-c', `mcp_servers.${JSON.stringify(name)}.enabled=false`]);
+/** Codex `-c` key paths split on dots and keep quote characters (checked with codex-cli 0.166): `mcp_servers."x".enabled`
+ * names a different server `"x"` without a transport and Codex refuses to start. The value side is parsed as TOML and an
+ * inline table merges into the configured servers, so one override with quoted keys disables every server, including
+ * names with dots or dashes, and keeps their transports. */
+export const disableServers = names => names.length
+  ? ['-c', `mcp_servers={${names.map(name => `${JSON.stringify(name)}={enabled=false}`).join(',')}}`]
+  : [];
 
 /** Include HEAD, the index, tracked changes and untracked file contents, including a dirty starting checkout. */
 export function worktreeFingerprint(cwd) {

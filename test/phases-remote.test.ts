@@ -36,7 +36,7 @@ test('the SSH worker disables host MCP servers and returns a checkout check afte
     execFileSync(process.execPath, [path.join(dir, 'worker.mjs')], { timeout: 120000, windowsHide: true });
     const args = JSON.parse(readFileSync(received, 'utf8')) as string[];
     assert.ok(args.includes('read-only'));
-    assert.ok(args.includes('mcp_servers."sample.server".enabled=false'), JSON.stringify(args));
+    assert.ok(args.includes('mcp_servers={"sample.server"={enabled=false}}'), JSON.stringify(args));
     assert.equal(readFileSync(path.join(dir, 'result/worktree-check'), 'utf8'), modify === 'yes' ? 'changed' : 'unchanged');
   }
 });
