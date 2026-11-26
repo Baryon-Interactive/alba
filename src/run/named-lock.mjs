@@ -4,6 +4,8 @@ import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, rmSync, sta
 import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 
+// One machine-wide folder shared by every Alba process (serves, runs, lock helpers); it stays on purpose so that separate
+// processes find each other's locks. Each lock file is removed when its holder releases it or is found stale.
 export const lockDirectory = () => process.env.ALBA_LOCK_DIR || path.join(tmpdir(), 'alba-locks');
 const host = hostname(), reuseChecked = new Map();
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };

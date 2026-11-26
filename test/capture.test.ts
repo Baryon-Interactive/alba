@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { parse } from 'yaml';
@@ -11,6 +10,7 @@ import type { ProjectConfig } from '../src/config.ts';
 import { decodePng } from '../src/verify/png.ts';
 import { tempOrders } from './helpers.ts';
 import { validateProject } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-C', cwd, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
@@ -93,7 +93,7 @@ function makeCaptureFixture(t: TestContext, extraProject: Record<string, unknown
 }
 
 test('capture config refuses shell strings, duplicate shot names, missing {out}, unknown placeholders and unknown keys with the key named', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-cap-cfg-'));
+  const dir = tmpDir('alba-cap-cfg-');
   mkdirSync(path.join(dir, 'orders'), { recursive: true });
   const base = { id: 'demo', name: 'Demo', root: dir, work_orders: 'orders', state_dir: 'state' };
   const checkThrows = (capture: unknown, expectedKey: RegExp) => {

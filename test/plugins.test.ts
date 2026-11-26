@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { readManifest } from '../src/plugins/manifest.ts';
@@ -11,8 +10,9 @@ import { doctorTool } from '../src/plugins/doctor.ts';
 import { mountRole } from '../src/roles/mount.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import type { OrderDoc } from '../src/orders/model.ts';
+import { tmpDir } from './tmp.ts';
 
-const temp = () => mkdtempSync(path.join(tmpdir(), 'alba-plugins-'));
+const temp = () => tmpDir('alba-plugins-');
 const slash = (p: string) => path.resolve(p).replace(/\\/g, '/');
 
 /** A plugin folder with a manifest (YAML text) and, when asked, a skill. */

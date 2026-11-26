@@ -1,17 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { validateProject } from '../src/config.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { createBoard } from '../src/web/server.ts';
 import type { Probes } from '../src/tick/gather.ts';
+import { tmpDir } from './tmp.ts';
 
 // With port 0 the board asks for a free port first and listens later. Closing it before then must stop it from listening at all;
 // otherwise a serve stopped right after it started keeps a server open and its process never exits.
 test('a board closed before its free port arrives never starts listening', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-early-close-'));
+  const dir = tmpDir('alba-early-close-');
   try {
     const root = path.join(dir, 'game');
     mkdirSync(path.join(root, 'orders'), { recursive: true });

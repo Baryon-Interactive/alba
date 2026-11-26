@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { validateProject } from '../../src/config.ts';
 import { FileStore } from '../../src/orders/store.ts';
@@ -6,10 +6,11 @@ import { Orders } from '../../src/orders/service.ts';
 import { createBoard } from '../../src/web/server.ts';
 import type { Probes } from '../../src/tick/gather.ts';
 import { ACTIVITY_NOW, seedProducerActivity } from './producer-activity.ts';
+import { tmpDir } from '../tmp.ts';
 
 export async function activityBoard() {
   const parent = path.resolve('.alba/TASK54'); mkdirSync(parent, { recursive: true });
-  const dir = mkdtempSync(path.join(parent, 'fixture-')), root = path.join(dir, 'project');
+  const dir = tmpDir('fixture-', { parent: parent }), root = path.join(dir, 'project');
   mkdirSync(path.join(root, 'orders'), { recursive: true });
   const project = validateProject({ id: 'demo', name: 'Demo studio', root, work_orders: path.join(root, 'orders'), state_dir: path.join(dir, 'state'), state: { backend: 'files' },
     producer: { enabled: true, rules: [{ id: 'review', action: 'accept', instruction: 'Review the delivery against its stored acceptance evidence.', mode: 'auto' }], budgets: { turns_per_hour: 20, usage_per_day: 100000, review_runs_per_day: 10, draft_runs_per_day: 5 }, round: { enabled: true, every_minutes: 60 } },

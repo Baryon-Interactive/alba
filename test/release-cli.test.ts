@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { alba, projectDir } from './cli-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const windows = process.platform === 'win32';
 const fixture = fileURLToPath(new URL('./fixtures/release-engine.mjs', import.meta.url));
@@ -21,7 +21,7 @@ function executable(file: string) {
 }
 
 function setup(t: TestContext, engine: string, yaml: string) {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba release cli '));
+  const root = tmpDir('alba release cli ');
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const trace = path.join(root, 'trace.jsonl');
   const exe = executable(path.join(root, windows ? 'fake engine.cmd' : 'fake engine'));

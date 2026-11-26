@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -26,6 +25,7 @@ import { createBoard } from '../src/web/server.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { alba } from './cli-helper.ts';
 import { ready } from './helpers.ts';
+import { tmpDir } from './tmp.ts';
 
 const helper = fileURLToPath(new URL('../src/run/lock-helper.mjs', import.meta.url));
 const repoUrl = new URL('../', import.meta.url).href;
@@ -36,7 +36,7 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 
 function withIsolatedMachineEnv<T>(fn: (dirs: { root: string; machineDir: string; lockDir: string }) => T | Promise<T>): Promise<T> {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-mq-'));
+  const root = tmpDir('alba-mq-');
   const machineDir = path.join(root, 'machine');
   const lockDir = path.join(root, 'locks');
   mkdirSync(lockDir, { recursive: true });

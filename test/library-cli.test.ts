@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { alba, projectDir } from './cli-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const PICK = 'id: P1\ntitle: Door\nquestion: Which door?\nmulti: false\noptions:\n  - { key: a, label: Round, images: [] }\n  - { key: b, label: Square, images: [] }\n';
 
 function setup() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-libcli-'));
+  const dir = tmpDir('alba-libcli-');
   const put = (rel: string, body: string) => { const p = path.join(dir, rel); mkdirSync(path.dirname(p), { recursive: true }); writeFileSync(p, body); };
   put('Docs/picks/P1.yaml', PICK);
   put('Docs/art/refs.yaml', '- { id: r1, image: https://img.example.test/a.png, title: Dusk, work: W, tags: [dusk], learn: light }\n');
@@ -74,7 +74,7 @@ test('cli: spend list and approve, usage', () => {
 });
 
 test('cli: a project without the sections says so', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-libcli-'));
+  const dir = tmpDir('alba-libcli-');
   const file = projectDir(dir);
   assert.match(alba(file, ['picks']).out, /no pick sets/);
   assert.match(alba(file, ['art']).out, /no art section/);

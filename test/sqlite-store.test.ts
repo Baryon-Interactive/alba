@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { Orders } from '../src/orders/service.ts';
 import { SqliteStore } from '../src/orders/sqlite-store.ts';
 import { StaleWrite, type OrderStore } from '../src/orders/store.ts';
+import { tmpDir } from './tmp.ts';
 
 test('sqlite detects stale writes and preserves the winning document', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-sqlite-'));
+  const dir = tmpDir('alba-sqlite-');
   const a = new SqliteStore(dir);
   const b = new SqliteStore(dir);
   try {
@@ -26,7 +25,7 @@ test('sqlite detects stale writes and preserves the winning document', () => {
 });
 
 test('Orders retries the original update after a concurrent write', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-retry-'));
+  const dir = tmpDir('alba-retry-');
   const a = new SqliteStore(dir);
   const b = new SqliteStore(dir);
   let once = true;
@@ -51,7 +50,7 @@ test('Orders retries the original update after a concurrent write', () => {
 });
 
 test('Orders revalidates an action after a concurrent cancellation', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-retry-action-'));
+  const dir = tmpDir('alba-retry-action-');
   const a = new SqliteStore(dir);
   const b = new SqliteStore(dir);
   let once = true;

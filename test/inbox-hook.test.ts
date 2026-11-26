@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { handleApi } from '../src/api/handler.ts';
@@ -17,6 +16,7 @@ import type { Probes } from '../src/tick/gather.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { tempOrders } from './helpers.ts';
 import { validateProject } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-C', cwd, '-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], {
@@ -26,7 +26,7 @@ const git = (cwd: string, ...args: string[]) =>
   });
 
 function makeWorktree(): { dir: string; hook: string } {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-hook-'));
+  const dir = tmpDir('alba-hook-');
   ensureInbox(dir);
   const hook = installInboxHook(dir);
   return { dir, hook };

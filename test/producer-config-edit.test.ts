@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fixture } from './api-fixture.ts';
 import { validateProject } from './state-helper.ts';
 import { editProducerConfig, lineDiff, readProducerConfig } from '../src/producer/config-edit.ts';
+import { tmpDir } from './tmp.ts';
 
 const settings = () => ({ producer: { enabled: true, rules: [], budgets: {}, session: { enabled: true, engine: 'claude', max_turns: 100 } } });
 
 test('producer settings: the producer section is shown and replaced as text, the rest of the file stays byte for byte, an invalid file is never written', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-producer-config-'));
+  const dir = tmpDir('alba-producer-config-');
   const file = path.join(dir, 'alba.yaml');
   const head = '# History\r\nid: demo\r\nname: Demo\r\nroot: .\r\nwork_orders: .\r\nstate_dir: .state\r\n';
   const producer = 'producer:\r\n  enabled: false   # off for now\r\n  session:\r\n    enabled: true\r\n\r\n  # rules follow\r\n  rules: []\r\n';

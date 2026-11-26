@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { decodePng, meanAbsoluteLuminanceDifference, meanLuminance } from '../src/verify/png.ts';
 import { collectArtifacts } from '../src/review/acceptance.ts';
 import { validateProject } from '../src/config.ts';
+import { tmpDir } from './tmp.ts';
 
 function png(width: number, height: number, pixels: Buffer): Buffer {
   const raw = Buffer.concat(Array.from({ length: height }, (_, y) => Buffer.concat([Buffer.from([0]), pixels.subarray(y * width * 3, (y + 1) * width * 3)])));
@@ -28,14 +28,14 @@ test('evidence gates image metrics use Rec.709 and honor regions', () => {
 });
 
 test('evidence gates verify config accepts measured luminance and motion rules', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-evidence-config-')); mkdirSync(path.join(dir, 'orders'));
+  const dir = tmpDir('alba-evidence-config-'); mkdirSync(path.join(dir, 'orders'));
   const project = validateProject({ id: 'g', name: 'G', root: dir, work_orders: 'orders', state_dir: 'state', verify: { screenshots: { luminance: [{ match: '**/*-cin*.png', mean_min: 0.22 }], motion: [{ a: '**/{name}-t0.png', b: '**/{name}-t1.png', min: 0.5 }] } } }, path.join(dir, 'alba.yaml'));
   assert.equal(project.verify.screenshots !== 'off' && project.verify.screenshots.luminance?.[0]?.mean_min, 0.22);
   assert.equal(project.verify.screenshots !== 'off' && project.verify.screenshots.motion?.[0]?.min, 0.5);
 });
 
 test('evidence gates image CLI returns JSON numbers and decode exit code 3', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-evidence-cli-')), a = path.join(dir, 'a.png'), b = path.join(dir, 'b.png');
+  const dir = tmpDir('alba-evidence-cli-'), a = path.join(dir, 'a.png'), b = path.join(dir, 'b.png');
   writeFileSync(a, png(2, 1, Buffer.alloc(6))); writeFileSync(b, png(2, 1, Buffer.alloc(6, 255)));
   const cli = path.resolve('src/cli/main.ts');
   const lum = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', cli, 'image', 'lum', a, '--json'], { encoding: 'utf8' });
@@ -47,7 +47,7 @@ test('evidence gates image CLI returns JSON numbers and decode exit code 3', () 
 });
 
 test('evidence gates artifact receipts stream hashes and warn on missing optional globs', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-evidence-artifacts-')), file = path.join(dir, 'dist', 'package.exe'); mkdirSync(path.dirname(file), { recursive: true });
+  const dir = tmpDir('alba-evidence-artifacts-'), file = path.join(dir, 'dist', 'package.exe'); mkdirSync(path.dirname(file), { recursive: true });
   const bytes = Buffer.from('package bytes'); writeFileSync(file, bytes);
   const result = collectArtifacts({ artifacts: ['dist/*.exe', 'missing/*.json'] }, dir, dir);
   assert.equal(result.receipts[0]!.path, 'dist/package.exe');
@@ -57,7 +57,7 @@ test('evidence gates artifact receipts stream hashes and warn on missing optiona
 });
 
 test('evidence gates lock helper preserves child exit code and releases its file', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-evidence-lock-')), helper = path.resolve('src/run/lock-helper.mjs');
+  const dir = tmpDir('alba-evidence-lock-'), helper = path.resolve('src/run/lock-helper.mjs');
   const child = spawn(process.execPath, [helper, 'test', '--', process.execPath, '-e', 'process.exit(4)'], { env: { ...process.env, ALBA_LOCK_DIR: dir } });
   const code = await new Promise<number | null>(resolve => child.on('close', resolve));
   assert.equal(code, 4); assert.deepEqual(spawnSync(process.execPath, [helper, 'test', '--', process.execPath, '-e', 'process.exit(0)'], { env: { ...process.env, ALBA_LOCK_DIR: dir } }).status, 0);

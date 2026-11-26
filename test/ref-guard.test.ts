@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { installBaseGuard } from '../src/run/ref-guard.ts';
 import { removeTreeSync } from '../src/fs/remove-tree.mjs';
+import { tmpDir } from './tmp.ts';
 
 const ident = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com'];
 /** Runs git; `run` set puts ALBA_RUN into its environment like a worker's. */
@@ -18,7 +18,7 @@ function git(cwd: string, args: string[], run?: string) {
 const head = (cwd: string, ref: string) => git(cwd, ['rev-parse', ref]).stdout.trim();
 
 test('base-branch guard: a worker run cannot move main from anywhere, works normally on its branch (git merge main included); the lead can', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-guard-'));
+  const dir = tmpDir('alba-guard-');
   try {
     const root = path.join(dir, 'repo'), tree = path.join(dir, 'tree');
     mkdirSync(root);

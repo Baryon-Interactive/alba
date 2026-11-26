@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { auditSource } from '../scripts/audit-source.mjs';
 import { checkDocs } from '../scripts/check-docs.mjs';
 import { checkChangelog } from '../scripts/check-changelog.mjs';
 import { validateArt, validatePicks, validateCredits } from '../src/library/config.ts';
+import { tmpDir } from './tmp.ts';
 
 test('library formats reject unknown formats for every library section', () => {
   for (const validate of [validateArt, validatePicks, validateCredits]) {
@@ -17,7 +17,7 @@ test('library formats reject unknown formats for every library section', () => {
 });
 
 test('release scan covers new files and each prohibited class without reading ignored state', () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-release-'));
+  const root = tmpDir('alba-release-');
   try {
     execFileSync('git', ['init', root], { stdio: 'ignore', windowsHide: true });
     writeFileSync(path.join(root, '.gitignore'), '.alba/\n.pnpm-store/\n');
@@ -63,7 +63,7 @@ test('release scan covers new files and each prohibited class without reading ig
 });
 
 test('document and changelog checks reject missing files, anchors, references and versions', () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-doc-check-'));
+  const root = tmpDir('alba-doc-check-');
   try {
     execFileSync('git', ['init', root], { stdio: 'ignore', windowsHide: true });
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.0' }));

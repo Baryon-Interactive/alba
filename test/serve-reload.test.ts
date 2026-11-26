@@ -6,7 +6,6 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -14,7 +13,6 @@ import {
 } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { loadProject } from '../src/config.ts';
@@ -27,6 +25,7 @@ import { checkGitReadyForReload, handoverFile, isPidAlive, readHandover } from '
 import { MachineStore } from '../src/resources/machine-store.ts';
 import { keyFile, readKeyFile } from '../src/web/auth.ts';
 import { openStream } from './helpers.ts';
+import { tmpDir } from './tmp.ts';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const MAIN_TS = path.join(REPO_ROOT, 'src', 'cli', 'main.ts');
@@ -97,7 +96,7 @@ interface TempHarness {
 }
 
 function makeHarness(projectIds = ['demo'], extraWorkersYaml = ''): TempHarness {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'alba-reload-test-'));
+  const root = tmpDir('alba-reload-test-');
   tempDirs.push(root);
   const machineDir = path.join(root, 'machine');
   const lockDir = path.join(root, 'locks');

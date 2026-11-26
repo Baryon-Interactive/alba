@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { ORDER_ACTIONS } from '../src/api/types.ts';
@@ -18,6 +17,7 @@ import type { WorkerConfig } from '../src/workers/config.ts';
 import { fixture as apiFixture } from './api-fixture.ts';
 import { tempOrders } from './helpers.ts';
 import { validateProject } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const tempDirs: string[] = [];
 after(() => {
@@ -511,7 +511,7 @@ test('API and console: POST /api/orders/:tag/actions close returns 200/409/400, 
 });
 
 test('mergeBaseBeforeReview falls back to Alba <alba@localhost> when repository and global git identity are unset', () => {
-  const emptyHome = mkdtempSync(path.join(tmpdir(), 'alba-empty-home-'));
+  const emptyHome = tmpDir('alba-empty-home-');
   tempDirs.push(emptyHome);
   const f = makeTempRepo();
   const project = f.makeProject({

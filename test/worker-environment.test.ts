@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { workerEnvironment } from '../src/run/environment.ts';
 import { systemProbes } from '../src/tick/gather.ts';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { tmpDir } from './tmp.ts';
 
 test('worker environment strips control-plane settings, preserves provider credentials, applies explicit values and then removals', () => {
   const env = workerEnvironment({ ALBA_PROJECT: 'private', alba_future_setting: 'private', ALBA_TOKEN: 'private', CONSOLE_TOKEN: 'private', SERVICE_AUTH_TOKEN: 'private', SERVER_TOKEN: 'private', TOKEN_CONTROL: 'private', OPENAI_API_KEY: 'model-credential', PATH: 'tools', ordinary: 'keep' }, { ALBA_LAST_FILE: 'report.txt', ALBA_PROJECT: 'blocked', ALBA_SERVICE_TOKEN: 'blocked', SERVICE_TOKEN: 'blocked', ordinary: 'override' }, ['PATH']);
@@ -17,7 +17,7 @@ test('ordinary variable overrides and removals retain native platform case seman
 });
 
 test('one-shot verifier subprocesses use the same worker environment boundary', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-verifier-env-'));
+  const dir = tmpDir('alba-verifier-env-');
   const saved = process.env.ALBA_SERVICE_TOKEN;
   process.env.ALBA_SERVICE_TOKEN = 'parent-control-value';
   try {

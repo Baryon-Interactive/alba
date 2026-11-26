@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { removeTreeSync } from '../src/fs/remove-tree.mjs';
+import { tmpDir } from './tmp.ts';
 
 const helper = fileURLToPath(new URL('../src/run/lock-helper.mjs', import.meta.url));
 
 test('lock.mjs: two runs take turns at a named lock; the command\'s exit code comes back; a dead holder\'s lock is taken over', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-lock-'));
+  const dir = tmpDir('alba-lock-');
   try {
     const env = { ...process.env, ALBA_LOCK_DIR: dir };
     const log = path.join(dir, 'order.txt');

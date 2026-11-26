@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { cancelJob, machineJobs, startJob, type MachineJob } from '../src/machines/jobs.ts';
 import { InstallRefused, installPlan, type InstallPlan } from '../src/machines/install.ts';
 import { unrealDest } from '../src/machines/engines/unreal-install.ts';
 import { suggestRoles } from '../src/machines/capabilities.ts';
+import { tmpDir } from './tmp.ts';
 
-const project = () => ({ state_dir: mkdtempSync(path.join(os.tmpdir(), 'alba-jobs-')), state: { backend: 'files' as const } });
+const project = () => ({ state_dir: tmpDir('alba-jobs-'), state: { backend: 'files' as const } });
 const node = (code: string) => [process.execPath, '-e', code];
 const plan = (steps: InstallPlan['steps'], extra: Partial<InstallPlan> = {}): InstallPlan => ({ machine: 'box', item: 'git', title: 'Git', estimate: '', notes: [], display: [], steps, ...extra });
 const finished = (p: ReturnType<typeof project>, run: (end: (j: MachineJob) => void) => void) => new Promise<MachineJob>(resolve => run(resolve));

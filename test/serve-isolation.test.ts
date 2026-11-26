@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpDir } from './tmp.ts';
 import path from 'node:path';
 import { test } from 'node:test';
 import { validateProject } from '../src/config.ts';
@@ -18,7 +19,7 @@ import { WorkerChannel } from '../src/serve/channel.ts';
 
 function fixture() {
   mkdirSync('.alba', { recursive: true });
-  const root = mkdtempSync(path.resolve('.alba/serve-isolation-'));
+  const root = tmpDir('serve-isolation-', { parent: path.resolve('.alba') });
   return validateProject({ id: 'fixture', name: 'Fixture', root, work_orders: root, state_dir: path.join(root, 'state'), state: { backend: 'sqlite' } }, path.join(root, 'project.yaml'));
 }
 

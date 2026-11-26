@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { Orders } from '../src/orders/service.ts';
 import { FileStore } from '../src/orders/store.ts';
 import { SqliteStore } from '../src/orders/sqlite-store.ts';
 import { checkState, exportState, migrateState } from '../src/orders/state.ts';
+import { tmpDir } from './tmp.ts';
 
-function tmp(): string { return mkdtempSync(path.join(os.tmpdir(), 'alba-state-')); }
+function tmp(): string { return tmpDir('alba-state-'); }
 
 test('migrate imports files, preserves equality, and export round-trips', () => {
   const dir = tmp();
@@ -19,7 +19,8 @@ test('migrate imports files, preserves equality, and export round-trips', () => 
   const before = files.store.read('T1');
   const migrated = migrateState(dir);
   assert.equal(migrated.from.orders, 1);
-  assert.deepEqual(new SqliteStore(dir).read('T1'), before);
+  const sqlite = new SqliteStore(dir);
+  try { assert.deepEqual(sqlite.read('T1'), before); } finally { sqlite.close(); }
   const out = path.join(dir, 'exported');
   assert.equal(exportState(dir, out).orders, 1);
   assert.deepEqual(new FileStore(out).read('T1'), before);
@@ -44,7 +45,8 @@ test('migration dry-run does not create a database and export can be re-imported
   const out = path.join(dir, 'roundtrip');
   exportState(dir, out);
   const imported = new FileStore(out);
-  assert.deepEqual(imported.read('T1'), new SqliteStore(dir).read('T1'));
+  const sqlite = new SqliteStore(dir);
+  try { assert.deepEqual(imported.read('T1'), sqlite.read('T1')); } finally { sqlite.close(); }
   assert.match(readFileSync(path.join(out, 'events.jsonl'), 'utf8'), /order-added/);
   assert.ok(migrated.backup);
 });

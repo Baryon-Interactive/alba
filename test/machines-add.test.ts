@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parse } from 'yaml';
 import { addMachine, appendSshHost, classifySsh, hostPublicKeys, removeMachine, setMachineRoles, sshHasHost, sshHostBlock, testSsh } from '../src/machines/edit.ts';
 import { parseCapabilities, suggestRoles } from '../src/machines/capabilities.ts';
 import { validateMachines } from '../src/machines/config.ts';
 import { EditRefused } from '../src/yamledit.ts';
+import { tmpDir } from './tmp.ts';
 
-const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'alba-machines-add-'));
+const tmp = () => tmpDir('alba-machines-add-');
 const box = (id = 'build-box') => ({ id, name: 'Build box', os: 'windows', connect: { ssh: id }, roles: ['package'], slots: 2, min_free_mem_gb: 8,
   services: [{ id: 'agent', check: { process: 'agent.exe' }, start_hint: 'Start the agent.' }] });
 

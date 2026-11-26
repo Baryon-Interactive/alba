@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { tmpDir } from './tmp.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -22,7 +22,7 @@ test('package: the files list carries what the built code reads at run time, and
 });
 
 test('package: the built JavaScript runs through bin/alba.mjs when there is no src/ (as under node_modules)', () => {
-  const out = mkdtempSync(path.join(tmpdir(), 'alba-package-'));
+  const out = tmpDir('alba-package-');
   execFileSync(process.execPath, [path.join(root, 'scripts/build.mjs'), '--out', path.join(out, 'dist')], { cwd: root, stdio: 'pipe' });
   for (const helper of ['run/environment.mjs', 'run/capture.mjs', 'workers/adapters/remote-run.mjs', 'workers/adapters/remote-run.ps1']) assert.ok(existsSync(path.join(out, 'dist', helper)), helper);
   const main = readFileSync(path.join(out, 'dist/cli/main.js'), 'utf8');

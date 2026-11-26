@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fixture } from './api-fixture.ts';
@@ -8,10 +8,11 @@ import { BRIEFS_STATE } from '../src/producer/briefs.ts';
 import { writeStateFile } from '../src/orders/state-files.ts';
 import { createChatCase, producerAct } from '../src/producer/producer.ts';
 import { fixtureBrief, trustSuggestionFixture } from './fixtures/producer-trust-briefs.ts';
+import { tmpDir } from './tmp.ts';
 
 function fixtureOptions() {
   const base = path.resolve('.alba/producer-trust-briefs-tests'); mkdirSync(base, { recursive: true });
-  const state = mkdtempSync(path.join(base, 'api-'));
+  const state = tmpDir('api-', { parent: base });
   return { populate: false, project: () => ({ state_dir: state, producer: { enabled: true, rules: [{ id: 'review', action: 'accept', instruction: 'Review', mode: 'propose' }, { id: 'small', action: 'answer', instruction: 'Answer', mode: 'observe' }, { id: 'notes', action: 'note', instruction: 'Notes', mode: 'propose' }] } }) };
 }
 

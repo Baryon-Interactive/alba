@@ -1,13 +1,13 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
 import { validateProject } from '../../src/config.ts';
 import { stateStore } from '../../src/orders/backend.ts';
 import { Orders } from '../../src/orders/service.ts';
 import type { ChangeSet } from '../../src/design/model.ts';
+import { tmpDir } from '../tmp.ts';
 
 export function designFixture() {
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-design-'));
+  const root = tmpDir('alba-design-');
   mkdirSync(path.join(root, 'orders')); mkdirSync(path.join(root, 'content'));
   writeFileSync(path.join(root, 'content/economy.json'), JSON.stringify({ gold: 7, unregistered: 11, 'a/b': { '~count': 2 }, enabled: true }));
   writeFileSync(path.join(root, 'rules.md'), '# Economy\nGold accumulates each turn.\n');

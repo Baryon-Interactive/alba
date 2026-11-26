@@ -1,6 +1,6 @@
 import { zh as translated } from '../src/i18n-zh.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { validateProject } from '../src/config.ts';
@@ -12,10 +12,11 @@ import { ProducerSessionManager, type SessionEngine, type SessionEvent } from '.
 import { fixtureBrief, fixtureNow, trustBriefFixture } from './fixtures/producer-trust-briefs.ts';
 import { refreshAgreement, agreementRecords } from '../src/producer/trust.ts';
 import { createChatCase, producerAct, producerActions, runProducerAction, rejectProducerAction } from '../src/producer/producer.ts';
+import { tmpDir } from './tmp.ts';
 
 function project(backend: 'files' | 'sqlite' = 'files') {
   const base = path.resolve('.alba/producer-trust-briefs-tests'); mkdirSync(base, { recursive: true });
-  const dir = mkdtempSync(path.join(base, 'fixture-'));
+  const dir = tmpDir('fixture-', { parent: base });
   mkdirSync(path.join(dir, 'orders')); mkdirSync(path.join(dir, 'state'));
   const p = validateProject({ id: 'fixture', name: 'Fixture', root: dir, work_orders: path.join(dir, 'orders'), state_dir: path.join(dir, 'state'), state: { backend }, producer: { enabled: true, brief: { every_minutes: 60, language: 'en' }, rules: [{ id: 'notes', instruction: 'Record notes', action: 'note', mode: 'propose' }], session: { enabled: true, max_turns: 40, timeout_ms: 100 } } }, path.join(dir, 'alba.yaml'));
   return { p, orders: new Orders(stateStore(p), () => fixtureNow) };

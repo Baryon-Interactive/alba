@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { spawnDetachedProgram } from '../src/run/spawn.ts';
 import { stopProcessTree } from '../src/run/kill-tree.ts';
 import { systemProbes } from '../src/tick/gather.ts';
+import { tmpDir } from './tmp.ts';
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const waitFor = async (what: () => boolean, ms = 10000) => { for (let i = 0; i < ms / 100 && !what(); i++) await sleep(100); return what(); };
 
 for (const capture of [false, true]) test(`spawnDetachedProgram: 100k UTF-8 context reaches stdin with EOF${capture ? ' through capture' : ''}`, async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-stdin-')), input = path.join(dir, 'prompt.md'), log = path.join(dir, 'run.log'), events = path.join(dir, 'events.jsonl');
+  const dir = tmpDir('alba-stdin-'), input = path.join(dir, 'prompt.md'), log = path.join(dir, 'run.log'), events = path.join(dir, 'events.jsonl');
   const prompt = '€'.repeat(100000); writeFileSync(input, prompt);
   const pid = spawnDetachedProgram(process.execPath, ['-e', 'let text="";process.stdin.setEncoding("utf8");process.stdin.on("data",v=>text+=v);process.stdin.on("end",()=>console.log(JSON.stringify({length:text.length,last:text.slice(-1)})))'], { cwd: dir, env: {}, envUnset: [], logFile: log, stdinFile: input, ...(capture ? { eventsFile: events } : {}) });
   try {
@@ -25,7 +25,7 @@ for (const capture of [false, true]) test(`spawnDetachedProgram: 100k UTF-8 cont
 });
 
 test('spawnDetachedProgram: returns the pid of the program itself, with its output appended to the log and the given environment', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-spawn-'));
+  const dir = tmpDir('alba-spawn-');
   const log = path.join(dir, 'sub', 'run.log');
   const pid = spawnDetachedProgram(process.execPath, ['-e', 'console.log("hello " + process.env.ALBA_PROBE + " " + process.cwd()); setTimeout(() => {}, 1500)'], { cwd: dir, env: { ALBA_PROBE: 'yes' }, envUnset: [], logFile: log });
   assert.ok(pid > 0);
@@ -37,12 +37,12 @@ test('spawnDetachedProgram: returns the pid of the program itself, with its outp
 });
 
 test('spawnDetachedProgram: a program that cannot be started is an error, not a pid', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-spawn-'));
+  const dir = tmpDir('alba-spawn-');
   assert.throws(() => spawnDetachedProgram(path.join(dir, 'no-such-program'), [], { cwd: dir, env: {}, envUnset: [], logFile: path.join(dir, 'x.log') }), /Could not start/);
 });
 
 test('spawnDetachedProgram: the program survives the end of the whole process tree that started it', { skip: process.platform !== 'win32' ? 'Windows tree kill' : false }, async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-spawn-'));
+  const dir = tmpDir('alba-spawn-');
   const marker = `alba-survivor-${Date.now()}`;
   const module = pathToFileURL(path.resolve('src/run/spawn.ts')).href;
   // a stand-in for `alba serve`: starts a long program through spawnDetachedProgram, prints its pid, and keeps running

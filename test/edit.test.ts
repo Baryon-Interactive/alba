@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { BACKUPS_KEPT, EditRefused } from '../src/yamledit.ts';
@@ -10,6 +9,7 @@ import { Orders } from '../src/orders/service.ts';
 import { testStore } from './state-helper.ts';
 import { fixture } from './api-fixture.ts';
 import { alba, projectDir } from './cli-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const FILE = `# The workers of the studio. Comments are the owner's notes.
 workers:
@@ -35,7 +35,7 @@ workers:
 `;
 
 function workers(text = FILE, eol = '\n') {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-edit-'));
+  const dir = tmpDir('alba-edit-');
   const file = path.join(dir, 'workers.yaml');
   writeFileSync(file, eol === '\n' ? text : text.replace(/\n/g, eol));
   return { dir, file };
@@ -148,7 +148,7 @@ test('a new worker: a copy goes right after the original, under a new id, with c
 });
 
 test('files with CRLF line endings and a byte-order mark keep both', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-edit-'));
+  const dir = tmpDir('alba-edit-');
   const file = path.join(dir, 'workers.yaml');
   writeFileSync(file, '﻿' + FILE.replace(/\n/g, '\r\n'));
   editWorker(file, 'coder', [{ path: ['concurrency'], value: 7 }]);

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, afterEach, test } from 'node:test';
 import type { RunTranscript, TranscriptEntry } from '../src/api/types.ts';
@@ -20,13 +19,14 @@ import { createBoard, type Board } from '../src/web/server.ts';
 import { validateWorkers } from '../src/workers/config.ts';
 import { openStream } from './helpers.ts';
 import { validateProject } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const FIXTURES = path.join(import.meta.dirname, 'fixtures');
 const FIXED_AT = '2026-02-10T12:00:00.000Z';
 
 const prevMachineDir = process.env.ALBA_MACHINE_DIR;
 const prevLockDir = process.env.ALBA_LOCK_DIR;
-const sandboxRoot = mkdtempSync(path.join(tmpdir(), 'alba-transcript-env-'));
+const sandboxRoot = tmpDir('alba-transcript-env-');
 process.env.ALBA_MACHINE_DIR = path.join(sandboxRoot, 'machine');
 process.env.ALBA_LOCK_DIR = path.join(sandboxRoot, 'locks');
 
@@ -400,7 +400,7 @@ test('chunk-independence, partial UTF-8 last line, rotation rebuild and 10-minut
   }
 
   // Incremental file reader: partial last line, completion, rotation (both shrink and larger overwrite), and TTL eviction.
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-transcript-runs-'));
+  const dir = tmpDir('alba-transcript-runs-');
   const file = path.join(dir, 'T1-r1.events.jsonl');
   const line1 = JSON.stringify({ type: 'item.completed', alba_at: FIXED_AT, item: { id: 'a', type: 'agent_message', text: 'First step' } });
   const line2 = JSON.stringify({ type: 'item.completed', alba_at: FIXED_AT, item: { id: 'b', type: 'agent_message', text: 'Second — step' } });
@@ -463,7 +463,7 @@ test('chunk-independence, partial UTF-8 last line, rotation rebuild and 10-minut
 });
 
 test('API route and SSE stream: paging, backwards next, running-before-after rule, 404 without file, and live run.transcript events', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-transcript-api-'));
+  const dir = tmpDir('alba-transcript-api-');
   const root = path.join(dir, 'repo');
   const workOrders = path.join(dir, 'orders');
   const stateDir = path.join(dir, 'state');

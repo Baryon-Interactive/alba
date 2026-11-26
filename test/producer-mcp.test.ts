@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
@@ -11,11 +11,12 @@ import { readStateFile, writeStateFile } from '../src/orders/state-files.ts';
 import { runProducerMcp } from '../src/producer/mcp.ts';
 import { producerAct, producerActions, producerAudit, type ProducerCase } from '../src/producer/producer.ts';
 import { PRODUCER_READ_KINDS } from '../src/producer/tool-schemas.ts';
+import { tmpDir } from './tmp.ts';
 
 function fixture(backend: 'files' | 'sqlite' = 'files') {
   const parent = path.resolve('.state/producer-mcp-tests');
   mkdirSync(parent, { recursive: true });
-  const root = mkdtempSync(path.join(parent, 'fixture-'));
+  const root = tmpDir('fixture-', { parent: parent });
   mkdirSync(path.join(root, 'orders'));
   const file = path.join(root, 'alba.yaml');
   writeFileSync(file, stringify({

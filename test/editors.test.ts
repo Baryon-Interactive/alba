@@ -8,6 +8,7 @@ import { validateProject } from './state-helper.ts';
 import { answers, findEditors, stopEditors, type EditorSpec } from '../src/editors/editor-helper.mjs';
 import { editorSlots, reconcileEditors } from '../src/editors/pool.ts';
 import { capHolds, heavyOf, usesOf } from '../src/resources/leases.ts';
+import { tmpDir } from './tmp.ts';
 
 const ident = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com'];
 const base = 18000 + Math.floor(Math.random() * 800) * 2;
@@ -149,11 +150,9 @@ test('run start: a free port on the machine, the editor helper in front of the w
 
 test('URL MCP servers mount as http for Claude, url for Codex and remote for OpenCode', async () => {
   const { mountRole } = await import('../src/workers/adapters/role-mount.ts');
-  const { mkdtempSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
   const role = { id: 'r', source: 'project', definition: { mcp: { unreal: { url: 'http://127.0.0.1:8101/mcp', command: '', args: [] } } } } as unknown as import('../src/roles/config.ts').ResolvedRole;
   for (const engine of ['codex-cli', 'claude-cli', 'opencode']) {
-    const cwd = mkdtempSync(path.join(tmpdir(), 'alba-editor-mount-'));
+    const cwd = tmpDir('alba-editor-mount-');
     execFileSync('git', ['init', '-q', cwd]);
     const mount = mountRole(cwd, engine, role);
     if (engine === 'codex-cli') assert.deepEqual(mount.args, ['-c', 'mcp_servers.unreal.url="http://127.0.0.1:8101/mcp"']);

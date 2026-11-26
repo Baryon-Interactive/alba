@@ -4,11 +4,11 @@ import { test } from 'node:test';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { sendJson } from '../src/web/response.ts';
 import { fixture } from './api-fixture.ts';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { SqliteStore } from '../src/orders/sqlite-store.ts';
 import { writeStateFile } from '../src/orders/state-files.ts';
+import { tmpDir } from './tmp.ts';
 
 test('JSON compression negotiates encoding and weak validators return an empty 304', async () => {
   const value = { text: 'Repeated fixture content. '.repeat(200) };
@@ -78,7 +78,7 @@ test('projects cache refreshes immediately after an external order write and boa
 });
 
 test('a new WAL reader opens and reads while another connection holds the writer lock', () => {
-  const folder = mkdtempSync(path.join(tmpdir(), 'alba-reader-'));
+  const folder = tmpDir('alba-reader-');
   const writer = new SqliteStore(folder);
   writer.db.exec('BEGIN IMMEDIATE');
   let reader: SqliteStore | undefined;
@@ -121,7 +121,7 @@ test('producer history and decisions are bounded pages without losing open cases
 });
 
 test('hashed static assets are compressed, immutable, and support HEAD', async () => {
-  const uiDir = mkdtempSync(path.join(tmpdir(), 'alba-static-'));
+  const uiDir = tmpDir('alba-static-');
   mkdirSync(path.join(uiDir, 'assets'));
   writeFileSync(path.join(uiDir, 'assets', 'index-abcdefgh.js'), 'export const value = 1;\n'.repeat(200));
   const f = await fixture({ populate: false, uiDir });

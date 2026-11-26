@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { validateProject, type ProjectConfig } from '../src/config.ts';
@@ -23,6 +22,7 @@ import { startServe, type Serve } from '../src/serve/serve.ts';
 import type { Probes, TickResult } from '../src/tick/gather.ts';
 import type { Problem, TickReport } from '../src/tick/plan.ts';
 import { loadWorkers, validateWorkers, type WorkersFile } from '../src/workers/config.ts';
+import { tmpDir } from './tmp.ts';
 
 const tempDirs: string[] = [];
 const servers: Server[] = [];
@@ -37,7 +37,7 @@ after(async () => {
 });
 
 function makeTempDir(prefix = 'alba-notify-'): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = tmpDir(prefix);
   tempDirs.push(dir);
   return dir;
 }

@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
 import { after, test } from 'node:test';
 import { closeStateStores, stateStore } from '../src/orders/backend.ts';
 import { Orders } from '../src/orders/service.ts';
@@ -17,12 +16,13 @@ import { prepareRunWorktree } from '../src/run/launch.ts';
 import { lintDelivery } from '../src/producer/delivery-lint.ts';
 import { trialAcceptance } from '../src/review/acceptance.ts';
 import { checkDesign } from '../src/design/read.ts';
+import { tmpDir } from './tmp.ts';
 
 after(() => closeStateStores());
 
 function intakeFixture(prefix: string, configuredAccept = false) {
   const source = path.resolve('examples/intake-demo');
-  const root = mkdtempSync(path.join(tmpdir(), prefix));
+  const root = tmpDir(prefix);
   cpSync(source, root, { recursive: true });
   if (configuredAccept) writeFileSync(path.join(root, 'alba.yaml'), `${readFileSync(path.join(root, 'alba.yaml'), 'utf8')}\naccept:\n  steps:\n    - { name: smoke, command: ["node", "-e", "process.exit(0)"], timeout_minutes: 1 }\n`, 'utf8');
   const project = loadProject(path.join(root, 'alba.yaml'));
@@ -323,7 +323,7 @@ test('design document blocks keep content-based ids and database imports dedupli
   const first = chunkMarkdown('# Core\n\nA stable paragraph.\n\n## Rules\n\nA rule.');
   const second = chunkMarkdown('# Core\n\nA stable paragraph.\n\n## Rules\n\nA rule.\n\n');
   assert.deepEqual(second.map(b => b.id), first.map(b => b.id));
-  const root = mkdtempSync(path.join(tmpdir(), 'alba-docs-')), docs = path.join(root, 'docs'); mkdirSync(docs); mkdirSync(path.join(root, 'orders'));
+  const root = tmpDir('alba-docs-'), docs = path.join(root, 'docs'); mkdirSync(docs); mkdirSync(path.join(root, 'orders'));
   const md = path.join(docs, 'draft.md'); writeFileSync(md, '# Draft\n\nOne paragraph.\n');
   const projectFile = path.join(root, 'alba.yaml'); writeFileSync(projectFile, 'id: docs\nname: Docs\nroot: .\nwork_orders: orders\nstate_dir: state\nstate: { backend: sqlite }\n');
   const project = validateProject({ id: 'docs', name: 'Docs', root: '.', work_orders: 'orders', state_dir: 'state', state: { backend: 'sqlite' } }, projectFile);
@@ -337,7 +337,7 @@ test('design document blocks keep content-based ids and database imports dedupli
 });
 
 test('intake check accepts the standard example and catches an unclassified block', () => {
-  const source = path.resolve('examples/intake-demo'), root = mkdtempSync(path.join(tmpdir(), 'alba-intake-'));
+  const source = path.resolve('examples/intake-demo'), root = tmpDir('alba-intake-');
   cpSync(source, root, { recursive: true });
   const project = loadProject(path.join(root, 'alba.yaml'));
   const orders = new Orders(stateStore(project));
@@ -348,7 +348,7 @@ test('intake check accepts the standard example and catches an unclassified bloc
 });
 
 test('intake check rejects invalid proposals, too few targets, bad supersession, unknown mappings and question gaps', () => {
-  const source = path.resolve('examples/intake-demo'), root = mkdtempSync(path.join(tmpdir(), 'alba-intake-failures-')); cpSync(source, root, { recursive: true });
+  const source = path.resolve('examples/intake-demo'), root = tmpDir('alba-intake-failures-'); cpSync(source, root, { recursive: true });
   const project = loadProject(path.join(root, 'alba.yaml')), orders = new Orders(stateStore(project)), answer = path.join(root, 'answers', 'alba'); mkdirSync(path.join(root, '.alba'), { recursive: true }); cpSync(answer, path.join(root, '.alba'), { recursive: true });
   const changes = path.join(root, '.alba', 'design', 'changes', 'intake-RUN.json'), set = JSON.parse(readFileSync(changes, 'utf8'));
   set.changes = set.changes.filter((change: { kind: string; id: string }) => change.kind !== 'target' || change.id === 'RUN-T01'); writeFileSync(changes, JSON.stringify(set));

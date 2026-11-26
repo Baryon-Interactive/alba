@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { acceptanceMergeRunning } from '../src/review/acceptance.ts';
+import { tmpDir } from './tmp.ts';
 
 test('a live merge lock means an acceptance merge is running; a missing or dead one does not', () => {
-  const state_dir = mkdtempSync(path.join(os.tmpdir(), 'alba-merge-lock-'));
+  const state_dir = tmpDir('alba-merge-lock-');
   const project = { state_dir } as any;
   assert.equal(acceptanceMergeRunning(project), false);
   mkdirSync(path.join(state_dir, 'acceptance'), { recursive: true });

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { catalogEntryFor, writeAtomic } from '../src/producer/engines/codex.ts';
+import { tmpDir } from './tmp.ts';
 
 test('an unknown model id takes the metadata of the closest bundled model', () => {
   const models = [{ slug: 'alpha-1' }, { slug: 'model-x' }, { slug: 'model-x-mini' }, { slug: 'other-2' }];
@@ -14,7 +14,7 @@ test('an unknown model id takes the metadata of the closest bundled model', () =
 });
 
 test('shared catalog and instruction files are replaced atomically', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'alba-codex-catalog-'));
+  const dir = tmpDir('alba-codex-catalog-');
   const file = path.join(dir, 'catalog.json');
   writeAtomic(file, 'first');
   writeAtomic(file, 'second');

@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { codexCommand, codexExecArgs } from '../src/producer/engines/codex.ts';
+import { tmpDir } from './tmp.ts';
 
 // Optional installed-CLI check; the only provider is a loopback HTTP server, never a paid endpoint.
 test('installed Codex exposes no shell or apply_patch in its effective request tools', { skip: !process.env.ALBA_CODEX_TEST_CLI ? 'Set ALBA_CODEX_TEST_CLI to enable the optional installed-Codex catalog check.' : false, timeout: 90000 }, async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-codex-tools-')), mcp = path.join(dir, 'mcp.json');
+  const dir = tmpDir('alba-codex-tools-'), mcp = path.join(dir, 'mcp.json');
   writeFileSync(mcp, JSON.stringify({ mcpServers: {} }));
   let received!: (value: any) => void;
   const request = new Promise<any>(resolve => { received = resolve; });

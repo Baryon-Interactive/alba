@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parse } from 'yaml';
 import { addMachine, editMachine, machineOpsFromSet } from '../src/machines/edit.ts';
 import { editSshHost, readSshHost, rewriteSshHost, sshHostInfo } from '../src/machines/ssh-config.ts';
 import { validateMachines } from '../src/machines/config.ts';
 import { EditRefused } from '../src/yamledit.ts';
+import { tmpDir } from './tmp.ts';
 
-const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'alba-machines-edit-'));
+const tmp = () => tmpDir('alba-machines-edit-');
 const REGISTRY = `# studio machines
 probe_minutes: 5
 machines:

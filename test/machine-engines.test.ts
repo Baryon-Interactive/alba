@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { capabilityCommand, parseCapabilities, suggestRoles } from '../src/machines/capabilities.ts';
 import { ENGINE_IDS, engineModule } from '../src/machines/engines/index.ts';
@@ -13,6 +12,7 @@ import { machinesView, probeMachines, scanCapabilities } from '../src/machines/p
 import { InstallRefused, installPlan } from '../src/machines/install.ts';
 import { writeStateFile } from '../src/orders/state-files.ts';
 import { validateProject } from './state-helper.ts';
+import { tmpDir } from './tmp.ts';
 
 const machine = (os: Machine['os'] = 'windows', engine?: string): Machine => ({ id: 'box', name: 'Box', os, connect: { local: true }, hardware: {}, roles: [], slots: 1, min_free_mem_gb: 0, timing_allowed: false, services: [], ...(engine ? { engine } : {}) });
 const unpack = (argv: string[]) => {
@@ -94,7 +94,7 @@ test('scanning runs exactly the selected module and isolates its failures from g
 });
 
 test('project selection, machine overrides, cache filtering and config changes trigger fresh module scans', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-engines-'));
+  const dir = tmpDir('alba-engines-');
   const project = validateProject({ id: 'demo', name: 'Demo', root: dir, work_orders: dir, state_dir: dir, engine: 'unreal' }, path.join(dir, 'alba.yaml'));
   const config = validateMachines({ machines: [machine()] });
   let moduleScans = 0;
@@ -151,7 +151,7 @@ test('every generic installer generates OS-specific commands without running pac
 });
 
 test('engine copy partitions cover every file once with eight balanced gzip streams', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'alba-parts-'));
+  const dir = tmpDir('alba-parts-');
   for (let i = 0; i < 80; i++) { const folder = path.join(dir, 'Engine', 'part-' + i % 4); mkdirSync(folder, { recursive: true }); writeFileSync(path.join(folder, 'file-' + i), 'x'); }
   const groups = splitParts(dir, 8);
   assert.equal(groups.length, 8);
